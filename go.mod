@@ -1,4 +1,4 @@
-module github.com/kjloveless/piper
+module github.com/teal-fm/piper
 
 go 1.24.0
 
