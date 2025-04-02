@@ -30,6 +30,11 @@ func NewOAuthService() *OAuthService {
   }
 }
 
+func home(w http.ResponseWriter, r *http.Request) {
+  w.Header().Set("Content-Type", "text/html")
+  w.Write([]byte("visit <a href='/login'>/login</a> to get started"))
+}
+
 func (o *OAuthService) HandleLogin(w http.ResponseWriter, r *http.Request) {
   url := o.cfg.AuthCodeURL("state")
   fmt.Println("Complete authorization at:", url)
@@ -91,6 +96,7 @@ func main() {
 
   oauthService := NewOAuthService()
 
+  http.HandleFunc("/", home)
   http.HandleFunc("/login", oauthService.HandleLogin)
   http.HandleFunc("/callback", oauthService.HandleCallback)
 
