@@ -2,6 +2,7 @@ package main
 
 import (
   "context"
+  "encoding/json"
   "fmt"
   "log"
   "net/http"
@@ -50,7 +51,36 @@ func (o *OAuthService) HandleCallback(w http.ResponseWriter, r *http.Request) {
     return
   }
 
-  fmt.Printf("token: %v+\n", token)
+  client := o.cfg.Client(context.Background(), token)
+  userInfo, err := getUserInfo(client)
+  if err != nil {
+    http.Error(w, "failed to get user info", http.StatusInternalServerError)
+    log.Println("user info error: ", err)
+    return
+  }
+  fmt.Fprintf(w, "logged in successfully! user: %s\n", userInfo)
+}
+
+func getUserInfo(client *http.Client) (string, error) {
+  resp, err := client.Get("https://api.spotify.com/v1/me")
+  if err != nil {
+    return "", fmt.Errorf("failed to get user info: %w", err)
+  }
+  defer resp.Body.Close()
+
+  if resp.StatusCode != http.StatusOK {
+    return "", fmt.Errorf("error response from Spotify: %s", resp.Status)
+  }
+
+  var user struct {
+    Name string `json:"display_name"`
+  }
+
+  if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
+    return "", fmt.Errorf("failed to decode user info: %w", err)
+  }
+
+  return user.Name, nil
 }
 
 func main() {
