@@ -88,7 +88,6 @@ func getUserInfo(client *http.Client) (*User, error) {
 	if err != nil {
 		log.Fatal("failed to read resp.Body")
 	}
-	fmt.Println("body: ", string(body))
 
 	var user User
 
