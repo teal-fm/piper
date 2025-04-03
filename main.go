@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -17,6 +18,11 @@ import (
 type OAuthService struct {
 	cfg      *oauth2.Config
 	verifier string
+}
+
+type User struct {
+	Name string `json:"display_name"`
+	ID   string `json:"id"`
 }
 
 func NewOAuthService() *OAuthService {
@@ -65,29 +71,32 @@ func (o *OAuthService) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		log.Println("user info error: ", err)
 		return
 	}
-	fmt.Fprintf(w, "logged in successfully! user: %s\n", userInfo)
+	fmt.Fprintf(w, "logged in successfully!\nuser: %s; id: %s\n", userInfo.Name, userInfo.ID)
 }
 
-func getUserInfo(client *http.Client) (string, error) {
+func getUserInfo(client *http.Client) (*User, error) {
 	resp, err := client.Get("https://api.spotify.com/v1/me")
 	if err != nil {
-		return "", fmt.Errorf("failed to get user info: %w", err)
+		return nil, fmt.Errorf("failed to get user info: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("error response from Spotify: %s", resp.Status)
+		return nil, fmt.Errorf("error response from Spotify: %s", resp.Status)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatal("failed to read resp.Body")
+	}
+	fmt.Println("body: ", string(body))
+
+	var user User
+
+	if err := json.Unmarshal(body, &user); err != nil {
+		return nil, fmt.Errorf("failed to decode user info: %w", err)
 	}
 
-	var user struct {
-		Name string `json:"display_name"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
-		return "", fmt.Errorf("failed to decode user info: %w", err)
-	}
-
-	return user.Name, nil
+	return &user, nil
 }
 
 func main() {
