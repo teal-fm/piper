@@ -45,7 +45,6 @@ func home(w http.ResponseWriter, r *http.Request) {
 
 func (o *OAuthService) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	url := o.cfg.AuthCodeURL("state", oauth2.AccessTypeOffline, oauth2.S256ChallengeOption(o.verifier))
-	fmt.Println("Complete authorization at:", url)
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
