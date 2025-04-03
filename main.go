@@ -15,7 +15,8 @@ import (
 )
 
 type OAuthService struct {
-	cfg *oauth2.Config
+	cfg      *oauth2.Config
+	verifier string
 }
 
 func NewOAuthService() *OAuthService {
@@ -27,6 +28,7 @@ func NewOAuthService() *OAuthService {
 			RedirectURL:  os.Getenv("REDIRECT_URL"),
 			Scopes:       []string{"user-read-private", "user-read-email"},
 		},
+		verifier: oauth2.GenerateVerifier(),
 	}
 }
 
@@ -36,7 +38,7 @@ func home(w http.ResponseWriter, r *http.Request) {
 }
 
 func (o *OAuthService) HandleLogin(w http.ResponseWriter, r *http.Request) {
-	url := o.cfg.AuthCodeURL("state")
+	url := o.cfg.AuthCodeURL("state", oauth2.S256ChallengeOption(o.verifier))
 	fmt.Println("Complete authorization at:", url)
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
@@ -49,7 +51,7 @@ func (o *OAuthService) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := o.cfg.Exchange(context.Background(), code)
+	token, err := o.cfg.Exchange(context.Background(), code, oauth2.VerifierOption(o.verifier))
 	if err != nil {
 		http.Error(w, "failed to exchange token", http.StatusInternalServerError)
 		log.Println("token exchange error:", err)
