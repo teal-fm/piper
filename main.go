@@ -25,6 +25,20 @@ type User struct {
 	ID   string `json:"id"`
 }
 
+type Playlist struct {
+	Name string `json:"name"`
+	ID   string `json:"id"`
+}
+
+type PlaylistResponse struct {
+	Limit    int        `json:"limit"`
+	Next     string     `json:"next"`
+	Offset   int        `json:"offset"`
+	Previous string     `json:"previous"`
+	Total    int        `json:"total"`
+	Items    []Playlist `json:"items"`
+}
+
 func NewOAuthService() *OAuthService {
 	return &OAuthService{
 		cfg: &oauth2.Config{
@@ -32,7 +46,7 @@ func NewOAuthService() *OAuthService {
 			ClientSecret: os.Getenv("CLIENT_SECRET"),
 			Endpoint:     spotify.Endpoint,
 			RedirectURL:  os.Getenv("REDIRECT_URL"),
-			Scopes:       []string{"user-read-private", "user-read-email"},
+			Scopes:       []string{"user-read-private", "user-read-email", "user-library-read"},
 		},
 		verifier: oauth2.GenerateVerifier(),
 	}
@@ -70,7 +84,15 @@ func (o *OAuthService) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		log.Println("user info error: ", err)
 		return
 	}
+
+	playlistsInfo, err := getUserPlaylists(client)
+	if err != nil {
+		http.Error(w, "failed to get user playlists", http.StatusInternalServerError)
+		log.Println("user playlist info error: ", err)
+		return
+	}
 	fmt.Fprintf(w, "logged in successfully!\nuser: %s; id: %s\n", userInfo.Name, userInfo.ID)
+	fmt.Fprintf(w, "playlistResponse: %v\n", playlistsInfo)
 }
 
 func getUserInfo(client *http.Client) (*User, error) {
@@ -95,6 +117,30 @@ func getUserInfo(client *http.Client) (*User, error) {
 	}
 
 	return &user, nil
+}
+
+func getUserPlaylists(client *http.Client) (*PlaylistResponse, error) {
+	resp, err := client.Get("https://api.spotify.com/v1/me/playlists")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user playlists: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("error response from Spotify: %s", resp.Status)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatal("failed to read resp.Body")
+	}
+
+	var playlistResponse PlaylistResponse
+
+	if err := json.Unmarshal(body, &playlistResponse); err != nil {
+		return nil, fmt.Errorf("failed to decode user playlists: %w", err)
+	}
+
+	return &playlistResponse, nil
 }
 
 func main() {
