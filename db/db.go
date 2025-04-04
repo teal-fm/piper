@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -14,13 +15,10 @@ type DB struct {
 	*sql.DB
 }
 
-// New creates a new database connection
 func New(dbPath string) (*DB, error) {
-	// Ensure directory exists
 	dir := filepath.Dir(dbPath)
 	if dir != "." && dir != "/" {
-		// Ensure directory exists
-		// In a production app, you'd want to add os.MkdirAll here
+		os.MkdirAll(dir, 755)
 	}
 
 	db, err := sql.Open("sqlite3", dbPath)
@@ -36,7 +34,6 @@ func New(dbPath string) (*DB, error) {
 	return &DB{db}, nil
 }
 
-// Initialize sets up the database tables
 func (db *DB) Initialize() error {
 	// Create users table
 	_, err := db.Exec(`
@@ -79,7 +76,6 @@ func (db *DB) Initialize() error {
 	return nil
 }
 
-// CreateUser adds a new user to the database
 func (db *DB) CreateUser(user *models.User) (int64, error) {
 	now := time.Now()
 
@@ -95,7 +91,6 @@ func (db *DB) CreateUser(user *models.User) (int64, error) {
 	return result.LastInsertId()
 }
 
-// GetUserBySpotifyID retrieves a user by their Spotify ID
 func (db *DB) GetUserBySpotifyID(spotifyID string) (*models.User, error) {
 	user := &models.User{}
 
@@ -117,7 +112,6 @@ func (db *DB) GetUserBySpotifyID(spotifyID string) (*models.User, error) {
 	return user, nil
 }
 
-// UpdateUserToken updates a user's Spotify tokens
 func (db *DB) UpdateUserToken(userID int64, accessToken, refreshToken string, expiry time.Time) error {
 	now := time.Now()
 
@@ -130,7 +124,6 @@ func (db *DB) UpdateUserToken(userID int64, accessToken, refreshToken string, ex
 	return err
 }
 
-// SaveTrack stores a track in the database
 func (db *DB) SaveTrack(userID int64, track *models.Track) (int64, error) {
 	// Convert the Artist array to a string for storage
 	// In a production environment, you'd want to use proper JSON serialization
@@ -151,7 +144,6 @@ func (db *DB) SaveTrack(userID int64, track *models.Track) (int64, error) {
 	return trackID, err
 }
 
-// UpdateTrack updates an existing track in the database
 func (db *DB) UpdateTrack(trackID int64, track *models.Track) error {
 	// Convert the Artist array to a string for storage
 	// In a production environment, you'd want to use proper JSON serialization
@@ -180,7 +172,6 @@ func (db *DB) UpdateTrack(trackID int64, track *models.Track) error {
 	return err
 }
 
-// GetRecentTracks gets recent tracks for a user
 func (db *DB) GetRecentTracks(userID int64, limit int) ([]*models.Track, error) {
 	rows, err := db.Query(`
     SELECT id, name, artist, album, url, timestamp, duration_ms, progress_ms, service_base_url, isrc, has_stamped

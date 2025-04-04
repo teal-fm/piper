@@ -26,7 +26,6 @@ func generateRandomState() string {
 	return base64.URLEncoding.EncodeToString(b)
 }
 
-// NewOAuth2Service creates a new OAuth2Service with PKCE support
 func NewOAuth2Service(clientID, clientSecret, redirectURI string, scopes []string, provider string) *OAuth2Service {
 	var endpoint oauth2.Endpoint
 
@@ -41,7 +40,6 @@ func NewOAuth2Service(clientID, clientSecret, redirectURI string, scopes []strin
 		}
 	}
 
-	// Create code verifier and challenge for PKCE
 	codeVerifier := generateCodeVerifier()
 	codeChallenge := generateCodeChallenge(codeVerifier)
 
@@ -75,20 +73,17 @@ func generateCodeChallenge(verifier string) string {
 	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 }
 
-// HandleLogin redirects the user to the authorization page with PKCE
+// redirect to auth page
 func (o *OAuth2Service) HandleLogin(w http.ResponseWriter, r *http.Request) {
-	// Set up authorization options with PKCE
+	// use pkce here
 	opts := []oauth2.AuthCodeOption{
 		oauth2.SetAuthURLParam("code_challenge", o.codeChallenge),
 		oauth2.SetAuthURLParam("code_challenge_method", "S256"),
 	}
-
-	// Redirect to authorization page
 	authURL := o.config.AuthCodeURL(o.state, opts...)
 	http.Redirect(w, r, authURL, http.StatusSeeOther)
 }
 
-// HandleCallback processes the callback from the OAuth provider using PKCE
 func (o *OAuth2Service) HandleCallback(w http.ResponseWriter, r *http.Request, tokenReceiver TokenReceiver) int64 {
 	// Verify state
 	state := r.URL.Query().Get("state")
@@ -97,14 +92,12 @@ func (o *OAuth2Service) HandleCallback(w http.ResponseWriter, r *http.Request, t
 		return 0
 	}
 
-	// Get authorization code
 	code := r.URL.Query().Get("code")
 	if code == "" {
 		http.Error(w, "No code provided", http.StatusBadRequest)
 		return 0
 	}
 
-	// Exchange code for access token using PKCE
 	opts := []oauth2.AuthCodeOption{
 		oauth2.SetAuthURLParam("code_verifier", o.codeVerifier),
 	}
@@ -123,7 +116,6 @@ func (o *OAuth2Service) HandleCallback(w http.ResponseWriter, r *http.Request, t
 
 // GetToken returns the OAuth2 token using the authorization code
 func (o *OAuth2Service) GetToken(code string) (*oauth2.Token, error) {
-	// Exchange code for token using PKCE
 	opts := []oauth2.AuthCodeOption{
 		oauth2.SetAuthURLParam("code_verifier", o.codeVerifier),
 	}
@@ -131,12 +123,10 @@ func (o *OAuth2Service) GetToken(code string) (*oauth2.Token, error) {
 	return o.config.Exchange(context.Background(), code, opts...)
 }
 
-// GetClient returns an authenticated HTTP client
 func (o *OAuth2Service) GetClient(token *oauth2.Token) *http.Client {
 	return o.config.Client(context.Background(), token)
 }
 
-// RefreshToken refreshes an OAuth2 token
 func (o *OAuth2Service) RefreshToken(token *oauth2.Token) (*oauth2.Token, error) {
 	source := o.config.TokenSource(context.Background(), token)
 	return oauth2.ReuseTokenSource(token, source).Token()
