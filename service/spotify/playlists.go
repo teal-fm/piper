@@ -23,7 +23,6 @@ type PlaylistResponse struct {
 }
 
 func (s *SpotifyService) getUserPlaylists(userID int64) (*PlaylistResponse, error) {
-
 	s.mu.RLock()
 	token, exists := s.userTokens[userID]
 	s.mu.RUnlock()

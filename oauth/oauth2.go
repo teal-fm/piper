@@ -13,7 +13,6 @@ import (
 	"golang.org/x/oauth2/spotify"
 )
 
-// OAuth2Service represents an OAuth2 service with PKCE support
 type OAuth2Service struct {
 	config        oauth2.Config
 	state         string
@@ -21,7 +20,6 @@ type OAuth2Service struct {
 	codeChallenge string
 }
 
-// generateRandomState creates a random state string for CSRF protection
 func generateRandomState() string {
 	b := make([]byte, 16)
 	rand.Read(b)
@@ -32,12 +30,11 @@ func generateRandomState() string {
 func NewOAuth2Service(clientID, clientSecret, redirectURI string, scopes []string, provider string) *OAuth2Service {
 	var endpoint oauth2.Endpoint
 
-	// Select the appropriate provider endpoint
 	switch strings.ToLower(provider) {
 	case "spotify":
 		endpoint = spotify.Endpoint
 	default:
-		// Use custom endpoints if not a predefined provider
+		// TODO: support custom endpoints plus lastfm
 		endpoint = oauth2.Endpoint{
 			AuthURL:  "https://example.com/auth",
 			TokenURL: "https://example.com/token",

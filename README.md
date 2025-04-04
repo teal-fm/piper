@@ -23,3 +23,9 @@ run air:
 ```
 air
 ```
+
+air should automatically build and run piper, and watch for changes on relevant files.
+
+#### docker
+
+TODO
