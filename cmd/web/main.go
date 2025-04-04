@@ -34,18 +34,9 @@ func main() {
 		logger: logger,
 	}
 
-	mux := http.NewServeMux()
-
-  fileServer := http.FileServer(http.Dir("./ui/static/"))
-  mux.Handle("GET /static/", http.StripPrefix("/static", fileServer))
-
-	mux.HandleFunc("GET /{$}", app.home)
-	mux.HandleFunc("/login", oauthService.HandleLogin)
-	mux.HandleFunc("/callback", oauthService.HandleCallback)
-
 	logger.Info(fmt.Sprintf("starting server at: http://localhost%s", *port))
 
-	err = http.ListenAndServe(*port, mux)
+	err = http.ListenAndServe(*port, app.routes())
 	logger.Error(err.Error())
 	os.Exit(1)
 }
