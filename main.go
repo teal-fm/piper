@@ -1,160 +1,200 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
-	"os"
+	"time"
 
-	"github.com/joho/godotenv"
-
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/spotify"
+	"github.com/spf13/viper"
+	"github.com/teal-fm/piper/config"
+	"github.com/teal-fm/piper/db"
+	"github.com/teal-fm/piper/oauth"
+	apikeyService "github.com/teal-fm/piper/service/apikey"
+	"github.com/teal-fm/piper/service/spotify"
+	"github.com/teal-fm/piper/session"
 )
-
-type OAuthService struct {
-	cfg      *oauth2.Config
-	verifier string
-}
-
-type User struct {
-	Name string `json:"display_name"`
-	ID   string `json:"id"`
-}
-
-type Playlist struct {
-	Name string `json:"name"`
-	ID   string `json:"id"`
-}
-
-type PlaylistResponse struct {
-	Limit    int        `json:"limit"`
-	Next     string     `json:"next"`
-	Offset   int        `json:"offset"`
-	Previous string     `json:"previous"`
-	Total    int        `json:"total"`
-	Items    []Playlist `json:"items"`
-}
-
-func NewOAuthService() *OAuthService {
-	return &OAuthService{
-		cfg: &oauth2.Config{
-			ClientID:     os.Getenv("CLIENT_ID"),
-			ClientSecret: os.Getenv("CLIENT_SECRET"),
-			Endpoint:     spotify.Endpoint,
-			RedirectURL:  os.Getenv("REDIRECT_URL"),
-			Scopes:       []string{"user-read-private", "user-read-email", "user-library-read"},
-		},
-		verifier: oauth2.GenerateVerifier(),
-	}
-}
 
 func home(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
-	w.Write([]byte("visit <a href='/login'>/login</a> to get started"))
+
+	// Check if user is logged in
+	cookie, err := r.Cookie("session")
+	isLoggedIn := err == nil && cookie != nil
+
+	html := `
+		<html>
+		<head>
+			<title>Piper - Spotify Tracker</title>
+			<style>
+				body {
+					font-family: Arial, sans-serif;
+					max-width: 800px;
+					margin: 0 auto;
+					padding: 20px;
+					line-height: 1.6;
+				}
+				h1 {
+					color: #1DB954; /* Spotify green */
+				}
+				.nav {
+					display: flex;
+					margin-bottom: 20px;
+				}
+				.nav a {
+					margin-right: 15px;
+					text-decoration: none;
+					color: #1DB954;
+					font-weight: bold;
+				}
+				.card {
+					border: 1px solid #ddd;
+					border-radius: 8px;
+					padding: 20px;
+					margin-bottom: 20px;
+				}
+			</style>
+		</head>
+		<body>
+			<h1>Piper - Multi-User Spotify Tracker</h1>
+			<div class="nav">
+				<a href="/">Home</a>`
+
+	if isLoggedIn {
+		html += `
+				<a href="/current-track">Current Track</a>
+				<a href="/history">Track History</a>
+				<a href="/api-keys">API Keys</a>
+				<a href="/logout">Logout</a>`
+	} else {
+		html += `
+				<a href="/login/spotify">Login with Spotify</a>`
+	}
+
+	html += `
+			</div>
+
+			<div class="card">
+				<h2>Welcome to Piper</h2>
+				<p>Piper is a multi-user Spotify tracking application that records what you're listening to and saves your listening history.</p>`
+
+	if !isLoggedIn {
+		html += `
+				<p><a href="/login/spotify">Login with Spotify</a> to get started!</p>`
+	} else {
+		html += `
+				<p>You're logged in! Check out your <a href="/current-track">current track</a> or view your <a href="/history">listening history</a>.</p>
+				<p>You can also manage your <a href="/api-keys">API keys</a> for programmatic access.</p>`
+	}
+
+	html += `
+		</body>
+		</html>
+	`
+
+	w.Write([]byte(html))
 }
 
-func (o *OAuthService) HandleLogin(w http.ResponseWriter, r *http.Request) {
-	url := o.cfg.AuthCodeURL("state", oauth2.AccessTypeOffline, oauth2.S256ChallengeOption(o.verifier))
-	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+// JSON API handlers
+
+// jsonResponse returns a JSON response
+func jsonResponse(w http.ResponseWriter, statusCode int, data any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	if data != nil {
+		json.NewEncoder(w).Encode(data)
+	}
 }
 
-func (o *OAuthService) HandleCallback(w http.ResponseWriter, r *http.Request) {
-	state := r.URL.Query().Get("state")
-	code := r.URL.Query().Get("code")
-	if state != "state" {
-		http.Error(w, "invalid state", http.StatusBadRequest)
-		return
-	}
+// API endpoint for current track
+func apiCurrentTrack(spotifyService *spotify.SpotifyService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := session.GetUserID(r.Context())
+		if !ok {
+			jsonResponse(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+			return
+		}
 
-	token, err := o.cfg.Exchange(context.Background(), code, oauth2.VerifierOption(o.verifier))
-	if err != nil {
-		http.Error(w, "failed to exchange token", http.StatusInternalServerError)
-		log.Println("token exchange error:", err)
-		return
-	}
+		track, err := spotifyService.DB.GetRecentTracks(userID, 1)
+		if err != nil {
+			jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
 
-	client := o.cfg.Client(context.Background(), token)
-	userInfo, err := getUserInfo(client)
-	if err != nil {
-		http.Error(w, "failed to get user info", http.StatusInternalServerError)
-		log.Println("user info error: ", err)
-		return
+		jsonResponse(w, http.StatusOK, track)
 	}
-
-	playlistsInfo, err := getUserPlaylists(client)
-	if err != nil {
-		http.Error(w, "failed to get user playlists", http.StatusInternalServerError)
-		log.Println("user playlist info error: ", err)
-		return
-	}
-	fmt.Fprintf(w, "logged in successfully!\nuser: %s; id: %s\n", userInfo.Name, userInfo.ID)
-	fmt.Fprintf(w, "playlistResponse: %v\n", playlistsInfo)
 }
 
-func getUserInfo(client *http.Client) (*User, error) {
-	resp, err := client.Get("https://api.spotify.com/v1/me")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user info: %w", err)
+// API endpoint for history
+func apiTrackHistory(spotifyService *spotify.SpotifyService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := session.GetUserID(r.Context())
+		if !ok {
+			jsonResponse(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+			return
+		}
+
+		limit := 50 // Default limit
+		tracks, err := spotifyService.DB.GetRecentTracks(userID, limit)
+		if err != nil {
+			jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+
+		jsonResponse(w, http.StatusOK, tracks)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("error response from Spotify: %s", resp.Status)
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatal("failed to read resp.Body")
-	}
-
-	var user User
-
-	if err := json.Unmarshal(body, &user); err != nil {
-		return nil, fmt.Errorf("failed to decode user info: %w", err)
-	}
-
-	return &user, nil
-}
-
-func getUserPlaylists(client *http.Client) (*PlaylistResponse, error) {
-	resp, err := client.Get("https://api.spotify.com/v1/me/playlists")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user playlists: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("error response from Spotify: %s", resp.Status)
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatal("failed to read resp.Body")
-	}
-
-	var playlistResponse PlaylistResponse
-
-	if err := json.Unmarshal(body, &playlistResponse); err != nil {
-		return nil, fmt.Errorf("failed to decode user playlists: %w", err)
-	}
-
-	return &playlistResponse, nil
 }
 
 func main() {
-	err := godotenv.Load()
+	config.Load()
+
+	database, err := db.New(viper.GetString("db.path"))
 	if err != nil {
-		log.Fatalf("Error loading .env file")
+		log.Fatalf("Error connecting to database: %v", err)
 	}
 
-	oauthService := NewOAuthService()
+	if err := database.Initialize(); err != nil {
+		log.Fatalf("Error initializing database: %v", err)
+	}
 
+	oauthManager := oauth.NewOAuthServiceManager()
+
+	spotifyOAuth := oauth.NewOAuth2Service(
+		viper.GetString("spotify.client_id"),
+		viper.GetString("spotify.client_secret"),
+		viper.GetString("callback.spotify"),
+		viper.GetStringSlice("spotify.scopes"),
+		"spotify",
+	)
+	oauthManager.RegisterOAuth2Service("spotify", spotifyOAuth)
+
+	spotifyService := spotify.NewSpotifyService(database)
+	sessionManager := session.NewSessionManager()
+	apiKeyService := apikeyService.NewAPIKeyService(database, sessionManager)
+
+	// Web browser routes
 	http.HandleFunc("/", home)
-	http.HandleFunc("/login", oauthService.HandleLogin)
-	http.HandleFunc("/callback", oauthService.HandleCallback)
+	http.HandleFunc("/login/spotify", oauthManager.HandleLogin("spotify"))
+	http.HandleFunc("/callback/spotify", oauthManager.HandleCallback("spotify", spotifyService))
+	http.HandleFunc("/current-track", session.WithAuth(spotifyService.HandleCurrentTrack, sessionManager))
+	http.HandleFunc("/history", session.WithAuth(spotifyService.HandleTrackHistory, sessionManager))
+	http.HandleFunc("/api-keys", session.WithAuth(apiKeyService.HandleAPIKeyManagement, sessionManager))
+	http.HandleFunc("/logout", sessionManager.HandleLogout)
 
-	fmt.Println("server running at: http://localhost:8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	// API routes
+	http.HandleFunc("/api/v1/current-track", session.WithAPIAuth(apiCurrentTrack(spotifyService), sessionManager))
+	http.HandleFunc("/api/v1/history", session.WithAPIAuth(apiTrackHistory(spotifyService), sessionManager))
+
+	trackerInterval := time.Duration(viper.GetInt("tracker.interval")) * time.Second
+
+	if err := spotifyService.LoadAllUsers(); err != nil {
+		log.Printf("Warning: Failed to preload users: %v", err)
+	}
+
+	go spotifyService.StartListeningTracker(trackerInterval)
+
+	serverAddr := fmt.Sprintf("%s:%s", viper.GetString("server.host"), viper.GetString("server.port"))
+	fmt.Printf("Server running at: http://%s\n", serverAddr)
+	log.Fatal(http.ListenAndServe(serverAddr, nil))
 }
