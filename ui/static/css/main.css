@@ -22,16 +22,44 @@ header, nav, main, footer {
 }
 
 main {
-  margin-top: 50px;
-  margin-bottom: 50px;
+  margin-top: 54;
+  margin-bottom: 54px;
   min-height: calc(100vh - 345px);
   overflow: auto;
 }
 
+h1 a {
+  font-size: 36px;
+  font-weight: bold;
+  height: 36px;
+  padding-left: 50px;
+  position: relative;
+}
+
+h1 a:hover {
+  text-decoration: none;
+  color: #34495e;
+}
+
+h2 {
+  font-size: 22px;
+  margin-bottom: 36px;
+  position: relative;
+  top: -9px;
+}
+
+header {
+  border-bottom: 1px solid #e4e5e7;
+  overflow: auto;
+  padding-top: 33px;
+  padding-bottom: 27px;
+  text-align: left;
+}
+
 footer {
   border-top: 1px solid #e4e5e7;
-  padding-top: 20px;
-  padding-bottom: 20px;
+  padding-top: 17px;
+  padding-bottom: 15px;
   background: #f7f9fa;
   height: 60px;
   color: ##6a6c6f;
