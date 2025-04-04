@@ -5,13 +5,13 @@ import (
 	"net/http"
 	"os"
 
-  "github.com/teal-fm/piper/services/oauth"
+	"github.com/teal-fm/piper/services/oauth"
 
 	"github.com/joho/godotenv"
 )
 
 type application struct {
-  logger  *slog.Logger
+	logger *slog.Logger
 }
 
 func main() {
@@ -24,19 +24,19 @@ func main() {
 
 	oauthService := oauth.NewOAuthService(logger)
 
-  app := &application{
-    logger: logger,
-  }
+	app := &application{
+		logger: logger,
+	}
 
-  mux := http.NewServeMux()
+	mux := http.NewServeMux()
 
-  mux.HandleFunc("GET /{$}", app.home)
-  mux.HandleFunc("/login", oauthService.HandleLogin)
-  mux.HandleFunc("/callback", oauthService.HandleCallback)
+	mux.HandleFunc("GET /{$}", app.home)
+	mux.HandleFunc("/login", oauthService.HandleLogin)
+	mux.HandleFunc("/callback", oauthService.HandleCallback)
 
 	logger.Info("starting server at: http://localhost:8080")
 
-  err = http.ListenAndServe(":8080", mux)
-  logger.Error(err.Error())
-  os.Exit(1)
+	err = http.ListenAndServe(":8080", mux)
+	logger.Error(err.Error())
+	os.Exit(1)
 }
