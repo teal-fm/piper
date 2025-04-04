@@ -1,6 +1,8 @@
 package main
 
 import (
+  "flag"
+  "fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -15,6 +17,10 @@ type application struct {
 }
 
 func main() {
+  port := flag.String("addr", ":8080", "HTTP network port")
+
+  flag.Parse()
+
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	err := godotenv.Load()
@@ -30,13 +36,16 @@ func main() {
 
 	mux := http.NewServeMux()
 
+  fileServer := http.FileServer(http.Dir("./ui/static/"))
+  mux.Handle("GET /static/", http.StripPrefix("/static", fileServer))
+
 	mux.HandleFunc("GET /{$}", app.home)
 	mux.HandleFunc("/login", oauthService.HandleLogin)
 	mux.HandleFunc("/callback", oauthService.HandleCallback)
 
-	logger.Info("starting server at: http://localhost:8080")
+	logger.Info(fmt.Sprintf("starting server at: http://localhost%s", *port))
 
-	err = http.ListenAndServe(":8080", mux)
+	err = http.ListenAndServe(*port, mux)
 	logger.Error(err.Error())
 	os.Exit(1)
 }
