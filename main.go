@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/spf13/viper"
@@ -148,6 +149,9 @@ func apiTrackHistory(spotifyService *spotify.SpotifyService) http.HandlerFunc {
 
 func main() {
 	config.Load()
+
+	// create data folder if not exists with proper perms
+	os.Mkdir("./data", 755)
 
 	database, err := db.New(viper.GetString("db.path"))
 	if err != nil {
