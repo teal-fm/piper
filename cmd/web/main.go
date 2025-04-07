@@ -1,12 +1,11 @@
 package main
 
 import (
-  "flag"
-  "fmt"
+	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
-
 
 	"github.com/joho/godotenv"
 )
@@ -16,9 +15,9 @@ type application struct {
 }
 
 func main() {
-  port := flag.String("addr", ":8080", "HTTP network port")
+	port := flag.String("addr", ":8080", "HTTP network port")
 
-  flag.Parse()
+	flag.Parse()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
@@ -26,7 +25,6 @@ func main() {
 	if err != nil {
 		logger.Error("Error loading .env file")
 	}
-
 
 	app := &application{
 		logger: logger,

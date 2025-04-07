@@ -1,11 +1,11 @@
 package spotify
 
 import (
-  "encoding/json"
-  "fmt"
-  "log/slog"
-  "net/http"
-  "io"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
 )
 
 func GetUserInfo(client *http.Client, logger *slog.Logger) (*User, error) {
@@ -55,4 +55,3 @@ func GetUserPlaylists(client *http.Client, logger *slog.Logger) (*PlaylistRespon
 
 	return &playlistResponse, nil
 }
-

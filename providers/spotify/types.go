@@ -18,4 +18,3 @@ type PlaylistResponse struct {
 	Total    int        `json:"total"`
 	Items    []Playlist `json:"items"`
 }
-

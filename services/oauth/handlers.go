@@ -1,17 +1,17 @@
 package oauth
 
 import (
-  "context"
-  "fmt"
-  "net/http"
+	"context"
+	"fmt"
+	"net/http"
 
-  "github.com/teal-fm/piper/providers/spotify"
-  
-  "golang.org/x/oauth2"
+	"github.com/teal-fm/piper/providers/spotify"
+
+	"golang.org/x/oauth2"
 )
 
 func (o *OAuthService) HandleLogin(w http.ResponseWriter, r *http.Request) {
-	url := o.cfg.AuthCodeURL("state", oauth2.AccessTypeOffline/*, oauth2.S256ChallengeOption(o.verifier)*/)
+	url := o.cfg.AuthCodeURL("state", oauth2.AccessTypeOffline /*, oauth2.S256ChallengeOption(o.verifier)*/)
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
@@ -23,7 +23,7 @@ func (o *OAuthService) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := o.cfg.Exchange(context.Background(), code/*, oauth2.VerifierOption(o.verifier)*/)
+	token, err := o.cfg.Exchange(context.Background(), code /*, oauth2.VerifierOption(o.verifier)*/)
 	if err != nil {
 		http.Error(w, "failed to exchange token", http.StatusInternalServerError)
 		o.logger.Error("token exchange error:", err)
@@ -47,4 +47,3 @@ func (o *OAuthService) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "logged in successfully!\nuser: %s; id: %s\n", userInfo.Name, userInfo.ID)
 	fmt.Fprintf(w, "playlistResponse: %v\n", playlistsInfo)
 }
-
