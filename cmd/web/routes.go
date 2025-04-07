@@ -6,7 +6,7 @@ import (
 	"github.com/teal-fm/piper/services/oauth"
 )
 
-func (app *application) routes() *http.ServeMux {
+func (app *application) routes() http.Handler {
 	mux := http.NewServeMux()
 
 	oauthService := oauth.NewOAuthService(app.logger)
@@ -18,5 +18,5 @@ func (app *application) routes() *http.ServeMux {
 	mux.HandleFunc("/login", oauthService.HandleLogin)
 	mux.HandleFunc("/callback", oauthService.HandleCallback)
 
-	return mux
+	return app.logRequest(commonHeaders(mux))
 }
