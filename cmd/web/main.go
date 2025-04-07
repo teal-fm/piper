@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/teal-fm/piper/services/oauth"
 
 	"github.com/joho/godotenv"
 )
@@ -28,7 +27,6 @@ func main() {
 		logger.Error("Error loading .env file")
 	}
 
-	oauthService := oauth.NewOAuthService(logger)
 
 	app := &application{
 		logger: logger,

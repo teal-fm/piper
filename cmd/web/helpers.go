@@ -22,6 +22,6 @@ func (app *application) serverError(w http.ResponseWriter, r *http.Request, err 
 // the clientError helper sends a specific status code and corresponding description
 // to the user. we'll use this later in the book to send responses like 400 "Bad Request"
 // when there's a problem with the requesst that the user sent.
-func (app *application) clientError(w http.ResponseWriter, staus int) {
+func (app *application) clientError(w http.ResponseWriter, status int) {
   http.Error(w, http.StatusText(status), status)
 }
