@@ -18,5 +18,5 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("/login", oauthService.HandleLogin)
 	mux.HandleFunc("/callback", oauthService.HandleCallback)
 
-	return app.logRequest(commonHeaders(mux))
+	return app.recoverPanic(app.logRequest(commonHeaders(mux)))
 }
