@@ -4,6 +4,8 @@ import (
 	"net/http"
 
 	"github.com/teal-fm/piper/services/oauth"
+
+  "github.com/justinas/alice"
 )
 
 func (app *application) routes() http.Handler {
@@ -14,9 +16,13 @@ func (app *application) routes() http.Handler {
 	fileServer := http.FileServer(http.Dir("./ui/static/"))
 	mux.Handle("GET /static/", http.StripPrefix("/static", fileServer))
 
-	mux.HandleFunc("GET /{$}", app.home)
-	mux.HandleFunc("/login", oauthService.HandleLogin)
-	mux.HandleFunc("/callback", oauthService.HandleCallback)
+  dynamic := alice.New(app.sessionManager.LoadAndSave)
 
-	return app.recoverPanic(app.logRequest(commonHeaders(mux)))
+	mux.Handle("GET /{$}", dynamic.ThenFunc(app.home))
+	mux.Handle("/login", dynamic.ThenFunc(oauthService.HandleLogin))
+	mux.Handle("/callback", dynamic.ThenFunc(oauthService.HandleCallback))
+
+  standard := alice.New(app.recoverPanic, app.logRequest, commonHeaders)
+
+	return standard.Then(mux)
 }

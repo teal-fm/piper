@@ -3,7 +3,9 @@ module github.com/teal-fm/piper
 go 1.24.0
 
 require (
+	github.com/alexedwards/scs/v2 v2.8.0
 	github.com/joho/godotenv v1.5.1
+	github.com/justinas/alice v1.2.0
 	golang.org/x/oauth2 v0.28.0
 )
 

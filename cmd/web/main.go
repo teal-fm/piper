@@ -6,17 +6,20 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+  "time"
 
 	"github.com/joho/godotenv"
+  "github.com/alexedwards/scs/v2/memstore"
+  "github.com/alexedwards/scs/v2"
 )
 
 type application struct {
-	logger *slog.Logger
+	logger          *slog.Logger
+  sessionManager  *scs.SessionManager
 }
 
 func main() {
 	port := flag.String("addr", ":8080", "HTTP network port")
-
 	flag.Parse()
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -26,8 +29,14 @@ func main() {
 		logger.Error("Error loading .env file")
 	}
 
+  sessionManager := scs.New()
+  sessionManager.Store = memstore.New()
+  sessionManager.Lifetime = 12 * time.Hour
+
+
 	app := &application{
-		logger: logger,
+		logger:         logger,
+    sessionManager: sessionManager,
 	}
 
 	logger.Info(fmt.Sprintf("starting server at: http://localhost%s", *port))
