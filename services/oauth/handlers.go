@@ -42,6 +42,7 @@ func (o *OAuthService) HandleCallback(w http.ResponseWriter, r *http.Request) {
     return
   }
   o.sessionManager.Put(r.Context(), "token", tok)
+  o.sessionManager.Put(r.Context(), "flash", "token added to session!")
 
   http.Redirect(w, r, "/", http.StatusSeeOther)
 
