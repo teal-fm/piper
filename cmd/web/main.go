@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+  "html/template"
 	"log/slog"
 	"net/http"
 	"os"
@@ -16,6 +17,7 @@ import (
 type application struct {
 	logger          *slog.Logger
   sessionManager  *scs.SessionManager
+  templateCache   map[string]*template.Template
 }
 
 func main() {
@@ -29,6 +31,12 @@ func main() {
 		logger.Error("Error loading .env file")
 	}
 
+  templateCache, err := newTemplateCache()
+  if err != nil {
+    logger.Error(err.Error())
+    os.Exit(1)
+  }
+
   sessionManager := scs.New()
   sessionManager.Store = memstore.New()
   sessionManager.Lifetime = 12 * time.Hour
@@ -37,6 +45,7 @@ func main() {
 	app := &application{
 		logger:         logger,
     sessionManager: sessionManager,
+    templateCache:  templateCache,
 	}
 
 	logger.Info(fmt.Sprintf("starting server at: http://localhost%s", *port))

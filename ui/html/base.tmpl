@@ -14,9 +14,12 @@
     </header>
     {{ template "nav" . }}
     <main>
+      {{ with .Flash }}
+        <div class='flash'>{{ . }}</div>
+      {{ end }}
       {{ template "main" . }}
     </main>
-    <footer>powered by music and caffiene</footer>
+    <footer>powered by music and caffiene | {{ .CurrentYear }}</footer>
     <script src='/static/js/main.js' type='text/javascript'></script>
   </body>
 </html>
