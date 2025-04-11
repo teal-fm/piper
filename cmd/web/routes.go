@@ -11,7 +11,7 @@ import (
 func (app *application) routes() http.Handler {
 	mux := http.NewServeMux()
 
-	oauthService := oauth.NewOAuthService(app.logger)
+	oauthService := oauth.NewOAuthService(app.logger, app.sessionManager)
 
 	fileServer := http.FileServer(http.Dir("./ui/static/"))
 	mux.Handle("GET /static/", http.StripPrefix("/static", fileServer))
