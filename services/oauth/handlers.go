@@ -12,7 +12,7 @@ import (
 )
 
 func (o *OAuthService) HandleLogin(w http.ResponseWriter, r *http.Request) {
-	url := o.cfg.AuthCodeURL("state", oauth2.AccessTypeOffline /*, oauth2.S256ChallengeOption(o.verifier)*/)
+	url := o.Cfg.AuthCodeURL("state", oauth2.AccessTypeOffline /*, oauth2.S256ChallengeOption(o.verifier)*/)
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
@@ -24,7 +24,7 @@ func (o *OAuthService) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := o.cfg.Exchange(context.Background(), code /*, oauth2.VerifierOption(o.verifier)*/)
+	token, err := o.Cfg.Exchange(context.Background(), code /*, oauth2.VerifierOption(o.verifier)*/)
 	if err != nil {
 		http.Error(w, "failed to exchange token", http.StatusInternalServerError)
 		return
@@ -46,13 +46,6 @@ func (o *OAuthService) HandleCallback(w http.ResponseWriter, r *http.Request) {
 
   http.Redirect(w, r, "/", http.StatusSeeOther)
 
-	//client := o.cfg.Client(context.Background(), token)
-	//userInfo, err := spotify.GetUserInfo(client, o.logger)
-	//if err != nil {
-	//	http.Error(w, "failed to get user info", http.StatusInternalServerError)
-	//	o.logger.Error("user info error: ", err)
-	//	return
-	//}
 
 	//playlistsInfo, err := spotify.GetUserPlaylists(client, o.logger)
 	//if err != nil {

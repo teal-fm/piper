@@ -11,7 +11,7 @@ import (
 )
 
 type OAuthService struct {
-	cfg             *oauth2.Config
+	Cfg             *oauth2.Config
 	logger          *slog.Logger
   sessionManager  *scs.SessionManager
 }
@@ -21,7 +21,7 @@ func NewOAuthService(
   sessionManager *scs.SessionManager,
 ) *OAuthService {
 	return &OAuthService{
-		cfg: &oauth2.Config{
+		Cfg: &oauth2.Config{
 			ClientID:     os.Getenv("CLIENT_ID"),
 			ClientSecret: os.Getenv("CLIENT_SECRET"),
 			Endpoint:     spotify.Endpoint,
