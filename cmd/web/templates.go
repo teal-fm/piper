@@ -7,8 +7,9 @@ import (
 )
 
 type templateData struct {
-	CurrentYear int
-	Flash       string
+	CurrentYear     int
+	Flash           string
+  IsAuthenticated bool
 }
 
 func humanDate(t time.Time) string {

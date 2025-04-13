@@ -4,8 +4,11 @@
       <a href='/'>home</a>
     </div>
     <div>
-      <a href='/login'>login</a>
-      <a href='/logout'>logout</a>        
+      {{ if not .IsAuthenticated }}
+        <a href='/login'>login</a>
+      {{ else  }}
+        <a href='/logout'>logout</a>
+      {{ end }}        
     </div>
   </nav>
 {{ end }}
