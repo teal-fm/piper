@@ -2,7 +2,7 @@ package oauth
 
 import (
 	"context"
-  "encoding/json"
+	"encoding/json"
 	//"fmt"
 	"net/http"
 
@@ -30,22 +30,21 @@ func (o *OAuthService) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-  err = o.sessionManager.RenewToken(r.Context())
-  if err != nil {
-    http.Error(w, "failed to renew token", http.StatusInternalServerError)
-    return
-  }
+	err = o.sessionManager.RenewToken(r.Context())
+	if err != nil {
+		http.Error(w, "failed to renew token", http.StatusInternalServerError)
+		return
+	}
 
-  tok, err := json.Marshal(token)
-  if err != nil {
-    http.Error(w, "failed to marshal user token", http.StatusInternalServerError)
-    return
-  }
-  o.sessionManager.Put(r.Context(), "token", string(tok))
-  o.sessionManager.Put(r.Context(), "flash", "token added to session!")
+	tok, err := json.Marshal(token)
+	if err != nil {
+		http.Error(w, "failed to marshal user token", http.StatusInternalServerError)
+		return
+	}
+	o.sessionManager.Put(r.Context(), "token", string(tok))
+	o.sessionManager.Put(r.Context(), "flash", "token added to session!")
 
-  http.Redirect(w, r, "/", http.StatusSeeOther)
-
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 
 	//playlistsInfo, err := spotify.GetUserPlaylists(client, o.logger)
 	//if err != nil {

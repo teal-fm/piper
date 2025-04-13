@@ -3,24 +3,24 @@ package main
 import (
 	"flag"
 	"fmt"
-  "html/template"
+	"html/template"
 	"log/slog"
 	"net/http"
 	"os"
-  "time"
+	"time"
 
+	"github.com/alexedwards/scs/v2"
+	"github.com/alexedwards/scs/v2/memstore"
 	"github.com/joho/godotenv"
-  "github.com/alexedwards/scs/v2/memstore"
-  "github.com/alexedwards/scs/v2"
 
-  "github.com/teal-fm/piper/services/oauth"
+	"github.com/teal-fm/piper/services/oauth"
 )
 
 type application struct {
-	logger          *slog.Logger
-    oauthService    *oauth.OAuthService
-  sessionManager  *scs.SessionManager
-  templateCache   map[string]*template.Template
+	logger         *slog.Logger
+	oauthService   *oauth.OAuthService
+	sessionManager *scs.SessionManager
+	templateCache  map[string]*template.Template
 }
 
 func main() {
@@ -34,29 +34,37 @@ func main() {
 		logger.Error("Error loading .env file")
 	}
 
-  templateCache, err := newTemplateCache()
-  if err != nil {
-    logger.Error(err.Error())
-    os.Exit(1)
-  }
+	templateCache, err := newTemplateCache()
+	if err != nil {
+		logger.Error(err.Error())
+		os.Exit(1)
+	}
 
-  sessionManager := scs.New()
-  sessionManager.Store = memstore.New()
-  sessionManager.Lifetime = 12 * time.Hour
+	sessionManager := scs.New()
+	sessionManager.Store = memstore.New()
+	sessionManager.Lifetime = 12 * time.Hour
 
-    oauthService := oauth.NewOAuthService(logger, sessionManager)
-
+	oauthService := oauth.NewOAuthService(logger, sessionManager)
 
 	app := &application{
 		logger:         logger,
-        oauthService:   oauthService,
-    sessionManager: sessionManager,
-    templateCache:  templateCache,
+		oauthService:   oauthService,
+		sessionManager: sessionManager,
+		templateCache:  templateCache,
 	}
+
+  srv := &http.Server{
+    Addr:   *port,
+    Handler: app.routes(),
+    ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError),
+    IdleTimeout: time.Minute,
+    ReadTimeout: 5 * time.Second,
+    WriteTimeout: 10 * time.Second,
+  }
 
 	logger.Info(fmt.Sprintf("starting server at: http://localhost%s", *port))
 
-	err = http.ListenAndServe(*port, app.routes())
+	err = srv.ListenAndServe()
 	logger.Error(err.Error())
 	os.Exit(1)
 }
