@@ -1,3 +1,4 @@
+// Modify piper/oauth/oauth_manager.go
 package oauth
 
 import (
@@ -9,66 +10,72 @@ import (
 	"github.com/teal-fm/piper/session"
 )
 
-// TokenReceiver interface for services that can receive OAuth tokens
-type TokenReceiver interface {
-	SetAccessToken(token string) int64
-}
-
-// manages multiple oauth2 client services
+// manages multiple oauth client services
 type OAuthServiceManager struct {
-	oauth2Services map[string]*OAuth2Service
+	services       map[string]AuthService // Changed from *OAuth2Service to AuthService interface
 	sessionManager *session.SessionManager
 	mu             sync.RWMutex
 }
 
 func NewOAuthServiceManager() *OAuthServiceManager {
 	return &OAuthServiceManager{
-		oauth2Services: make(map[string]*OAuth2Service),
+		services:       make(map[string]AuthService), // Initialize the new map
 		sessionManager: session.NewSessionManager(),
 	}
 }
 
-func (m *OAuthServiceManager) RegisterOAuth2Service(name string, service *OAuth2Service) {
+// RegisterService registers any service that implements the AuthService interface.
+func (m *OAuthServiceManager) RegisterService(name string, service AuthService) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.oauth2Services[name] = service
+	m.services[name] = service
+	log.Printf("Registered auth service: %s", name)
 }
 
-func (m *OAuthServiceManager) GetOAuth2Service(name string) (*OAuth2Service, bool) {
+// GetService retrieves a registered AuthService by name.
+func (m *OAuthServiceManager) GetService(name string) (AuthService, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	service, exists := m.oauth2Services[name]
+	service, exists := m.services[name]
 	return service, exists
 }
 
 func (m *OAuthServiceManager) HandleLogin(serviceName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		m.mu.RLock()
-		oauth2Service, oauth2Exists := m.oauth2Services[serviceName]
+		service, exists := m.services[serviceName]
 		m.mu.RUnlock()
 
-		if oauth2Exists {
-			oauth2Service.HandleLogin(w, r)
+		if exists {
+			service.HandleLogin(w, r) // Call interface method
 			return
 		}
 
-		http.Error(w, fmt.Sprintf("OAuth service '%s' not found", serviceName), http.StatusNotFound)
+		log.Printf("Auth service '%s' not found for login request", serviceName)
+		http.Error(w, fmt.Sprintf("Auth service '%s' not found", serviceName), http.StatusNotFound)
 	}
 }
 
-func (m *OAuthServiceManager) HandleCallback(serviceName string, tokenReceiver TokenReceiver) http.HandlerFunc {
+func (m *OAuthServiceManager) HandleCallback(serviceName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		m.mu.RLock()
-		oauth2Service, oauth2Exists := m.oauth2Services[serviceName]
+		service, exists := m.services[serviceName]
 		m.mu.RUnlock()
 
-		var userID int64
+		log.Printf("Logging in with service %s", serviceName)
 
-		if oauth2Exists {
-			// Handle OAuth2 with PKCE callback
-			userID = oauth2Service.HandleCallback(w, r, tokenReceiver)
-		} else {
+		if !exists {
+			log.Printf("Auth service '%s' not found for callback request", serviceName)
 			http.Error(w, fmt.Sprintf("OAuth service '%s' not found", serviceName), http.StatusNotFound)
+			return
+		}
+
+		// Call the service's HandleCallback, which now returns the user ID
+		userID, err := service.HandleCallback(w, r) // Call interface method
+
+		if err != nil {
+			log.Printf("Error handling callback for service '%s': %v", serviceName, err)
+			http.Error(w, fmt.Sprintf("Error handling callback for service '%s'", serviceName), http.StatusInternalServerError)
 			return
 		}
 
@@ -79,10 +86,16 @@ func (m *OAuthServiceManager) HandleCallback(serviceName string, tokenReceiver T
 			// Set session cookie
 			m.sessionManager.SetSessionCookie(w, session)
 
-			log.Printf("Created session for user %d", userID)
-		}
+			log.Printf("Created session for user %d via service %s", userID, serviceName)
 
-		// Redirect to homepage
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+			// Redirect to homepage after successful login and session creation
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+		} else {
+			log.Printf("Callback for service '%s' did not result in a valid user ID.", serviceName)
+			// Optionally redirect to an error page or show an error message
+			// For now, just redirecting home, but this might hide errors.
+			// Consider adding error handling based on why userID might be 0.
+			http.Redirect(w, r, "/", http.StatusSeeOther) // Or redirect to a login/error page
+		}
 	}
 }

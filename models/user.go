@@ -4,13 +4,17 @@ import "time"
 
 // User represents a user of the application
 type User struct {
-	ID           int64     `json:"id"`
-	Username     string    `json:"username"`
-	Email        string    `json:"email"`
-	SpotifyID    string    `json:"spotify_id"`
-	AccessToken  string    `json:"-"` // Not exposed in JSON
-	RefreshToken string    `json:"-"` // Not exposed in JSON
-	TokenExpiry  time.Time `json:"-"` // Not exposed in JSON
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID                  int64
+	Username            string
+	Email               *string    // Use pointer for nullable fields
+	SpotifyID           *string    // Use pointer for nullable fields
+	AccessToken         *string    // Spotify Access Token
+	RefreshToken        *string    // Spotify Refresh Token
+	TokenExpiry         *time.Time // Spotify Token Expiry
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	ATProtoDID          *string    // ATProto DID
+	ATProtoAccessToken  *string    // ATProto Access Token
+	ATProtoRefreshToken *string    // ATProto Refresh Token
+	ATProtoTokenExpiry  *time.Time // ATProto Token Expiry
 }

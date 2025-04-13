@@ -30,60 +30,71 @@ func NewSpotifyService(database *db.DB) *SpotifyService {
 	}
 }
 
-// SetAccessToken is called from OAuth callback and now identifies the user
-// SetAccessToken is called from OAuth callback and now identifies the user
-func (s *SpotifyService) SetAccessToken(token string) int64 {
+func (s *SpotifyService) SetAccessToken(token string, userId int64, hasSession bool) (int64, error) {
 	// Identify the user synchronously instead of in a goroutine
-	userID := s.identifyAndStoreUser(token)
-	return userID
+	userID, err := s.identifyAndStoreUser(token, userId, hasSession)
+	if err != nil {
+		log.Printf("Error identifying and storing user: %v", err)
+		return 0, err
+	}
+	return userID, nil
 }
 
-func (s *SpotifyService) identifyAndStoreUser(token string) int64 {
+func (s *SpotifyService) identifyAndStoreUser(token string, userId int64, hasSession bool) (int64, error) {
 	// Get Spotify user profile
 	userProfile, err := s.fetchSpotifyProfile(token)
 	if err != nil {
 		log.Printf("Error fetching Spotify profile: %v", err)
-		return 0
+		return 0, err
 	}
+
+	fmt.Printf("uid: %d hasSession: %t", userId, hasSession)
 
 	// Check if user exists
 	user, err := s.DB.GetUserBySpotifyID(userProfile.ID)
 	if err != nil {
-		log.Printf("Error checking for user: %v", err)
-		return 0
+		// This error might mean DB connection issue, not just user not found.
+		log.Printf("Error checking for user by Spotify ID %s: %v", userProfile.ID, err)
+		return 0, err
 	}
 
-	// If user doesn't exist, create them
+	tokenExpiryTime := time.Now().Add(1 * time.Hour) // Spotify tokens last ~1 hour
+
+	// We don't intend users to log in via spotify!
 	if user == nil {
-		user = &models.User{
-			Username:    userProfile.DisplayName,
-			Email:       userProfile.Email,
-			SpotifyID:   userProfile.ID,
-			AccessToken: token,
-			TokenExpiry: time.Now().Add(1 * time.Hour), // Spotify tokens last ~1 hour
+		if !hasSession {
+			log.Printf("User does not seem to exist")
+			return 0, fmt.Errorf("user does not seem to exist")
+		} else {
+			// overwrite prev user
+			user, err = s.DB.AddSpotifySession(userId, userProfile.DisplayName, userProfile.Email, userProfile.ID, token, "", tokenExpiryTime)
+			if err != nil {
+				log.Printf("Error adding Spotify session for user ID %d: %v", userId, err)
+				return 0, err
+			}
 		}
-
-		userID, err := s.DB.CreateUser(user)
-		if err != nil {
-			log.Printf("Error creating user: %v", err)
-			return 0
-		}
-		user.ID = userID
 	} else {
-		// Update token
-		err = s.DB.UpdateUserToken(user.ID, token, "", time.Now().Add(1*time.Hour))
+		// Update existing user's token and expiry
+		err = s.DB.UpdateUserToken(user.ID, token, "", tokenExpiryTime)
 		if err != nil {
-			log.Printf("Error updating user token: %v", err)
+			log.Printf("Error updating user token for user ID %d: %v", user.ID, err)
+			// Consider if we should return 0 or the user ID even if update fails
+			// Sticking to original behavior: log and continue
+		} else {
+			log.Printf("Updated token for existing user: %s (ID: %d)", user.Username, user.ID)
 		}
 	}
+	// Keep the local 'user' object consistent (optional but good practice)
+	user.AccessToken = &token
+	user.TokenExpiry = &tokenExpiryTime
 
-	// Store token in memory
+	// Store token in memory cache regardless of new/existing user
 	s.mu.Lock()
 	s.userTokens[user.ID] = token
 	s.mu.Unlock()
 
-	log.Printf("User authenticated: %s (ID: %d)", user.Username, user.ID)
-	return user.ID
+	log.Printf("User authenticated via Spotify: %s (ID: %d)", user.Username, user.ID)
+	return user.ID, nil
 }
 
 type spotifyProfile struct {
@@ -105,8 +116,8 @@ func (s *SpotifyService) LoadAllUsers() error {
 	count := 0
 	for _, user := range users {
 		// Only load users with valid tokens
-		if user.AccessToken != "" && user.TokenExpiry.After(time.Now()) {
-			s.userTokens[user.ID] = user.AccessToken
+		if user.AccessToken != nil && user.TokenExpiry.After(time.Now()) {
+			s.userTokens[user.ID] = *user.AccessToken
 			count++
 		}
 	}
@@ -124,7 +135,7 @@ func (s *SpotifyService) RefreshToken(userID string) error {
 		return fmt.Errorf("error loading user: %v", err)
 	}
 
-	if user.RefreshToken == "" {
+	if user.RefreshToken == nil {
 		return fmt.Errorf("no refresh token for user %s", userID)
 	}
 
@@ -150,7 +161,7 @@ func (s *SpotifyService) RefreshExpiredTokens() {
 	refreshed := 0
 	for _, user := range users {
 		// Skip users without refresh tokens
-		if user.RefreshToken == "" {
+		if user.RefreshToken == nil {
 			continue
 		}
 

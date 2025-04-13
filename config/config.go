@@ -25,6 +25,11 @@ func Load() {
 	viper.SetDefault("tracker.interval", 30)
 	viper.SetDefault("db.path", "./data/piper.db")
 
+	// server metadata
+	viper.SetDefault("server.root_url", "http://localhost:8080")
+	viper.SetDefault("atproto.metadata_url", "http://localhost:8080/metadata")
+	viper.SetDefault("atproto.callback_url", "/metadata")
+
 	// Configure Viper to read environment variables
 	viper.AutomaticEnv()
 

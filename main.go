@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/spf13/viper"
 	"github.com/teal-fm/piper/config"
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/oauth"
+	"github.com/teal-fm/piper/oauth/atproto"
 	apikeyService "github.com/teal-fm/piper/service/apikey"
 	"github.com/teal-fm/piper/service/spotify"
 	"github.com/teal-fm/piper/session"
@@ -19,9 +21,12 @@ import (
 func home(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 
-	// Check if user is logged in
+	// Check if user has an active session cookie
 	cookie, err := r.Cookie("session")
 	isLoggedIn := err == nil && cookie != nil
+	// TODO: Add logic here to fetch user details from DB using session ID
+	// to check if Spotify is already connected, if desired for finer control.
+	// For now, we'll just check if *any* session exists.
 
 	html := `
 		<html>
@@ -57,7 +62,7 @@ func home(w http.ResponseWriter, r *http.Request) {
 			</style>
 		</head>
 		<body>
-			<h1>Piper - Multi-User Spotify Tracker</h1>
+			<h1>Piper - Multi-User Spotify Tracker via ATProto</h1>
 			<div class="nav">
 				<a href="/">Home</a>`
 
@@ -66,10 +71,11 @@ func home(w http.ResponseWriter, r *http.Request) {
 				<a href="/current-track">Current Track</a>
 				<a href="/history">Track History</a>
 				<a href="/api-keys">API Keys</a>
+				<a href="/login/spotify">Connect Spotify Account</a> <!-- Link to connect Spotify -->
 				<a href="/logout">Logout</a>`
 	} else {
 		html += `
-				<a href="/login/spotify">Login with Spotify</a>`
+				<a href="/login/atproto">Login with ATProto</a>` // Primary login is ATProto
 	}
 
 	html += `
@@ -81,17 +87,19 @@ func home(w http.ResponseWriter, r *http.Request) {
 
 	if !isLoggedIn {
 		html += `
-				<p><a href="/login/spotify">Login with Spotify</a> to get started!</p>`
+				<p><a href="/login/atproto">Login with ATProto</a> to get started!</p>` // Prompt to login via ATProto
 	} else {
 		html += `
-				<p>You're logged in! Check out your <a href="/current-track">current track</a> or view your <a href="/history">listening history</a>.</p>
+				<p>You're logged in! <a href="/login/spotify">Connect your Spotify account</a> to start tracking.</p>
+				<p>Once connected, you can check out your <a href="/current-track">current track</a> or view your <a href="/history">listening history</a>.</p>
 				<p>You can also manage your <a href="/api-keys">API keys</a> for programmatic access.</p>`
 	}
 
 	html += `
+			</div> <!-- Close card div -->
 		</body>
 		</html>
-	`
+	` // Added closing div tag
 
 	w.Write([]byte(html))
 }
@@ -158,6 +166,8 @@ func main() {
 		log.Fatalf("Error initializing database: %v", err)
 	}
 
+	spotifyService := spotify.NewSpotifyService(database)
+	sessionManager := session.NewSessionManager()
 	oauthManager := oauth.NewOAuthServiceManager()
 
 	spotifyOAuth := oauth.NewOAuth2Service(
@@ -166,17 +176,45 @@ func main() {
 		viper.GetString("callback.spotify"),
 		viper.GetStringSlice("spotify.scopes"),
 		"spotify",
+		spotifyService,
 	)
-	oauthManager.RegisterOAuth2Service("spotify", spotifyOAuth)
-
-	spotifyService := spotify.NewSpotifyService(database)
-	sessionManager := session.NewSessionManager()
+	oauthManager.RegisterService("spotify", spotifyOAuth)
 	apiKeyService := apikeyService.NewAPIKeyService(database, sessionManager)
+
+	// init atproto svc
+	jwksBytes, err := os.ReadFile("./jwks.json")
+	if err != nil {
+		log.Fatalf("Error reading JWK file: %v", err)
+	}
+
+	jwks, err := atproto.LoadJwks(jwksBytes)
+	if err != nil {
+		log.Fatalf("Error loading JWK: %v", err)
+	}
+
+	atprotoService, err := atproto.NewATprotoAuthService(
+		database,
+		jwks,
+		viper.GetString("atproto.client_id"),
+		viper.GetString("atproto.callback_url"),
+	)
+	if err != nil {
+		log.Fatalf("Error creating ATproto auth service: %v", err)
+	}
+
+	oauthManager.RegisterService("atproto", atprotoService)
 
 	// Web browser routes
 	http.HandleFunc("/", home)
+
+	// oauth (scraper) logins
 	http.HandleFunc("/login/spotify", oauthManager.HandleLogin("spotify"))
-	http.HandleFunc("/callback/spotify", oauthManager.HandleCallback("spotify", spotifyService))
+	http.HandleFunc("/callback/spotify", session.WithPossibleAuth(oauthManager.HandleCallback("spotify"), sessionManager))
+
+	// atproto login
+	http.HandleFunc("/login/atproto", oauthManager.HandleLogin("atproto"))
+	http.HandleFunc("/callback/atproto", oauthManager.HandleCallback("atproto"))
+
 	http.HandleFunc("/current-track", session.WithAuth(spotifyService.HandleCurrentTrack, sessionManager))
 	http.HandleFunc("/history", session.WithAuth(spotifyService.HandleTrackHistory, sessionManager))
 	http.HandleFunc("/api-keys", session.WithAuth(apiKeyService.HandleAPIKeyManagement, sessionManager))
@@ -185,6 +223,16 @@ func main() {
 	// API routes
 	http.HandleFunc("/api/v1/current-track", session.WithAPIAuth(apiCurrentTrack(spotifyService), sessionManager))
 	http.HandleFunc("/api/v1/history", session.WithAPIAuth(apiTrackHistory(spotifyService), sessionManager))
+
+	serverUrlRoot := viper.GetString("server.root_url")
+	atpClientId := viper.GetString("atproto.client_id")
+	atpCallbackUrl := viper.GetString("atproto.callback_url")
+
+	http.HandleFunc("/.well-known/client-metadata.json", func(w http.ResponseWriter, r *http.Request) {
+		atprotoService.HandleClientMetadata(w, r, serverUrlRoot, atpClientId, atpCallbackUrl)
+	})
+
+	http.HandleFunc("/oauth/jwks.json", atprotoService.HandleJwks)
 
 	trackerInterval := time.Duration(viper.GetInt("tracker.interval")) * time.Second
 

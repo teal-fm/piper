@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"time"
@@ -39,14 +40,20 @@ func (db *DB) Initialize() error {
 	_, err := db.Exec(`
 	CREATE TABLE IF NOT EXISTS users (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		username TEXT NOT NULL,
-		email TEXT UNIQUE,
-		spotify_id TEXT UNIQUE,
-		access_token TEXT,
-		refresh_token TEXT,
-		token_expiry TIMESTAMP,
-		created_at TIMESTAMP,
-		updated_at TIMESTAMP
+		username TEXT,                      -- Made nullable, might not have username initially
+		email TEXT UNIQUE,                  -- Made nullable
+		spotify_id TEXT UNIQUE,             -- Spotify specific ID
+		access_token TEXT,                  -- Spotify access token
+		refresh_token TEXT,                 -- Spotify refresh token
+		token_expiry TIMESTAMP,             -- Spotify token expiry
+		atproto_did TEXT UNIQUE,            -- Atproto DID (identifier)
+		atproto_access_token TEXT,          -- Atproto access token
+		atproto_refresh_token TEXT,         -- Atproto refresh token
+		atproto_token_expiry TIMESTAMP,     -- Atproto token expiry
+		atproto_scope TEXT,                 -- Atproto token scope
+		atproto_token_type TEXT,            -- Atproto token type
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Use default
+		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP  -- Use default
 	)`)
 	if err != nil {
 		return err
@@ -73,22 +80,81 @@ func (db *DB) Initialize() error {
 		return err
 	}
 
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS atproto_auth_data (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		state TEXT NOT NULL,
+		did TEXT,
+		pds_url TEXT NOT NULL,
+		authserver_issuer TEXT NOT NULL,
+		pkce_verifier TEXT NOT NULL,
+		dpop_authserver_nonce TEXT NOT NULL,
+		dpop_private_jwk TEXT NOT NULL,
+		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+	)`)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
+// create user without spotify id
 func (db *DB) CreateUser(user *models.User) (int64, error) {
 	now := time.Now()
 
 	result, err := db.Exec(`
-	INSERT INTO users (username, email, spotify_id, access_token, refresh_token, token_expiry, created_at, updated_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		user.Username, user.Email, user.SpotifyID, user.AccessToken, user.RefreshToken, user.TokenExpiry, now, now)
+	INSERT INTO users (username, email, created_at, updated_at)
+	VALUES (?, ?, ?, ?)`,
+		user.Username, user.Email, now, now)
 
 	if err != nil {
 		return 0, err
 	}
 
 	return result.LastInsertId()
+}
+
+// Add spotify session to user, returning the updated user
+func (db *DB) AddSpotifySession(userID int64, username, email, spotifyId, accessToken, refreshToken string, tokenExpiry time.Time) (*models.User, error) {
+	now := time.Now()
+
+	_, err := db.Exec(`
+	UPDATE users SET username = ?, email = ?, spotify_id = ?, access_token = ?, refresh_token = ?, token_expiry = ?, created_at = ?, updated_at = ?
+	WHERE id == ?
+	`,
+		username, email, spotifyId, accessToken, refreshToken, tokenExpiry, now, now, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	user, err := db.GetUserByID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	return user, err
+}
+
+func (db *DB) GetUserByID(ID int64) (*models.User, error) {
+	user := &models.User{}
+
+	err := db.QueryRow(`
+	SELECT id, username, email, spotify_id, access_token, refresh_token, token_expiry, created_at, updated_at
+	FROM users WHERE id = ?`, ID).Scan(
+		&user.ID, &user.Username, &user.Email, &user.SpotifyID,
+		&user.AccessToken, &user.RefreshToken, &user.TokenExpiry,
+		&user.CreatedAt, &user.UpdatedAt)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return user, nil
 }
 
 func (db *DB) GetUserBySpotifyID(spotifyID string) (*models.User, error) {
@@ -126,10 +192,14 @@ func (db *DB) UpdateUserToken(userID int64, accessToken, refreshToken string, ex
 
 func (db *DB) SaveTrack(userID int64, track *models.Track) (int64, error) {
 	// Convert the Artist array to a string for storage
-	// In a production environment, you'd want to use proper JSON serialization
 	artistString := ""
 	if len(track.Artist) > 0 {
-		artistString = track.Artist[0].Name
+		bytes, err := json.Marshal(track.Artist)
+		if err != nil {
+			return 0, err
+		} else {
+			artistString = string(bytes)
+		}
 	}
 
 	var trackID int64
@@ -149,7 +219,12 @@ func (db *DB) UpdateTrack(trackID int64, track *models.Track) error {
 	// In a production environment, you'd want to use proper JSON serialization
 	artistString := ""
 	if len(track.Artist) > 0 {
-		artistString = track.Artist[0].Name
+		bytes, err := json.Marshal(track.Artist)
+		if err != nil {
+			return err
+		} else {
+			artistString = string(bytes)
+		}
 	}
 
 	_, err := db.Exec(`
@@ -173,6 +248,8 @@ func (db *DB) UpdateTrack(trackID int64, track *models.Track) error {
 }
 
 func (db *DB) GetRecentTracks(userID int64, limit int) ([]*models.Track, error) {
+	// convert previous-format artist strings to current-format
+
 	rows, err := db.Query(`
     SELECT id, name, artist, album, url, timestamp, duration_ms, progress_ms, service_base_url, isrc, has_stamped
     FROM tracks
@@ -209,7 +286,13 @@ func (db *DB) GetRecentTracks(userID int64, limit int) ([]*models.Track, error) 
 		}
 
 		// Convert the artist string to the Artist array structure
-		track.Artist = []models.Artist{{Name: artistString}}
+		var artists []models.Artist
+		err = json.Unmarshal([]byte(artistString), &artists)
+		if err != nil {
+			// fallback to previous format
+			artists = []models.Artist{{Name: artistString}}
+		}
+		track.Artist = artists
 		tracks = append(tracks, track)
 	}
 

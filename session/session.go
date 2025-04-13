@@ -13,11 +13,15 @@ import (
 	"github.com/teal-fm/piper/db/apikey"
 )
 
+// session/session.go
 type Session struct {
-	ID        string
-	UserID    int64
-	CreatedAt time.Time
-	ExpiresAt time.Time
+	ID                  string
+	UserID              int64
+	ATprotoDID          string
+	ATprotoAccessToken  string
+	ATprotoRefreshToken string
+	CreatedAt           time.Time
+	ExpiresAt           time.Time
 }
 
 type SessionManager struct {
@@ -251,6 +255,49 @@ func WithAuth(handler http.HandlerFunc, sm *SessionManager) http.HandlerFunc {
 	}
 }
 
+func WithPossibleAuth(handler http.HandlerFunc, sm *SessionManager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		authenticated := false // Default to not authenticated
+
+		// 1. Try API key authentication
+		apiKeyStr, apiKeyErr := apikey.ExtractApiKey(r)
+		if apiKeyErr == nil && apiKeyStr != "" {
+			apiKey, valid := sm.apiKeyMgr.GetApiKey(apiKeyStr)
+			if valid {
+				// API Key valid: Add UserID, API flag, and set auth status
+				ctx = WithUserID(ctx, apiKey.UserID)
+				ctx = WithAPIRequest(ctx, true)
+				authenticated = true
+				// Update request context and call handler
+				r = r.WithContext(WithAuthStatus(ctx, authenticated))
+				handler(w, r)
+				return
+			}
+			// If API key was provided but invalid, we still proceed without auth
+		}
+
+		// 2. If no valid API key, try cookie authentication
+		if !authenticated { // Only check cookies if API key didn't authenticate
+			cookie, err := r.Cookie("session")
+			if err == nil { // Cookie exists
+				session, exists := sm.GetSession(cookie.Value)
+				if exists {
+					// Session valid: Add UserID and set auth status
+					ctx = WithUserID(ctx, session.UserID)
+					// ctx = WithAPIRequest(ctx, false) // Not strictly needed, default is false
+					authenticated = true
+				}
+				// If session cookie exists but is invalid/expired, we proceed without auth
+			}
+		}
+
+		// 3. Set final auth status (could be true or false) and call handler
+		r = r.WithContext(WithAuthStatus(ctx, authenticated))
+		handler(w, r)
+	}
+}
+
 // WithAPIAuth is a middleware specifically for API-only endpoints (no cookie fallback, returns 401 instead of redirect)
 func WithAPIAuth(handler http.HandlerFunc, sm *SessionManager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -288,6 +335,7 @@ type contextKey int
 const (
 	userIDKey contextKey = iota
 	apiRequestKey
+	authStatusKey
 )
 
 func WithUserID(ctx context.Context, userID int64) context.Context {
@@ -297,6 +345,10 @@ func WithUserID(ctx context.Context, userID int64) context.Context {
 func GetUserID(ctx context.Context) (int64, bool) {
 	userID, ok := ctx.Value(userIDKey).(int64)
 	return userID, ok
+}
+
+func WithAuthStatus(ctx context.Context, isAuthed bool) context.Context {
+	return context.WithValue(ctx, authStatusKey, isAuthed)
 }
 
 func WithAPIRequest(ctx context.Context, isAPI bool) context.Context {
