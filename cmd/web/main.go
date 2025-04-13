@@ -53,14 +53,14 @@ func main() {
 		templateCache:  templateCache,
 	}
 
-  srv := &http.Server{
-    Addr:   *port,
-    Handler: app.routes(),
-    ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError),
-    IdleTimeout: time.Minute,
-    ReadTimeout: 5 * time.Second,
-    WriteTimeout: 10 * time.Second,
-  }
+	srv := &http.Server{
+		Addr:         *port,
+		Handler:      app.routes(),
+		ErrorLog:     slog.NewLogLogger(logger.Handler(), slog.LevelError),
+		IdleTimeout:  time.Minute,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
 
 	logger.Info(fmt.Sprintf("starting server at: http://localhost%s", *port))
 

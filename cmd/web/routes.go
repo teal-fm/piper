@@ -16,7 +16,7 @@ func (app *application) routes() http.Handler {
 
 	mux.Handle("GET /{$}", dynamic.ThenFunc(app.home))
 	mux.Handle("/login", dynamic.ThenFunc(app.oauthService.HandleLogin))
-  mux.Handle("/logout", dynamic.ThenFunc(app.logout))
+	mux.Handle("/logout", dynamic.ThenFunc(app.logout))
 	mux.Handle("/callback", dynamic.ThenFunc(app.oauthService.HandleCallback))
 
 	standard := alice.New(app.recoverPanic, app.logRequest, commonHeaders)

@@ -35,15 +35,15 @@ func (app *application) home(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) logout(w http.ResponseWriter, r *http.Request) {
-  err := app.sessionManager.RenewToken(r.Context())
-  if err != nil {
-    app.serverError(w, r, err)
-    return
-  }
+	err := app.sessionManager.RenewToken(r.Context())
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
 
-  app.sessionManager.Remove(r.Context(), "token")
+	app.sessionManager.Remove(r.Context(), "token")
 
-  app.sessionManager.Put(r.Context(), "flash", "you've been logged out!")
+	app.sessionManager.Put(r.Context(), "flash", "you've been logged out!")
 
-  http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
