@@ -56,6 +56,32 @@ header {
   text-align: left;
 }
 
+nav {
+    border-bottom: 1px solid #e4e5e7;
+    padding-top: 17px;
+    padding-bottom: 15px;
+    height: 60px;
+}
+
+nav a {
+    margin-right: 1.5em;
+    display: inline-block;
+}
+
+nav div {
+    width: 50%;
+    float: left;
+}
+
+nav div:last-child {
+    text-align: right;
+}
+
+nav div:last-child a {
+    margin-left: 1.5em;
+    margin-right: 0;
+}
+
 footer {
   border-top: 1px solid #e4e5e7;
   padding-top: 17px;
