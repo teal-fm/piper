@@ -14,7 +14,7 @@ func (app *application) home(w http.ResponseWriter, r *http.Request) {
 	data := app.newTemplateData(r)
 
 	if app.sessionManager.Exists(r.Context(), "token") {
-		token := app.sessionManager.PopString(r.Context(), "token")
+		token := app.sessionManager.GetString(r.Context(), "token")
 		var tok oauth2.Token
 		err := json.Unmarshal([]byte(token), &tok)
 		if err != nil {
