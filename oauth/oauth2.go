@@ -1,4 +1,3 @@
-// Modify piper/oauth/oauth2.go
 package oauth
 
 import (
@@ -22,7 +21,6 @@ type OAuth2Service struct {
 	state         string
 	codeVerifier  string
 	codeChallenge string
-	// Added TokenReceiver field to handle user lookup/creation based on token
 	tokenReceiver TokenReceiver
 }
 
@@ -38,12 +36,11 @@ func NewOAuth2Service(clientID, clientSecret, redirectURI string, scopes []strin
 	switch strings.ToLower(provider) {
 	case "spotify":
 		endpoint = spotify.Endpoint
-	// Add other providers like Last.fm here
 	default:
-		// Placeholder for unconfigured providers
+		// placeholder
 		log.Printf("Warning: OAuth2 provider '%s' not explicitly configured. Using placeholder endpoints.", provider)
 		endpoint = oauth2.Endpoint{
-			AuthURL:  "https://example.com/auth", // Replace with actual endpoints if needed
+			AuthURL:  "https://example.com/auth",
 			TokenURL: "https://example.com/token",
 		}
 	}
@@ -62,25 +59,24 @@ func NewOAuth2Service(clientID, clientSecret, redirectURI string, scopes []strin
 		state:         GenerateRandomState(),
 		codeVerifier:  codeVerifier,
 		codeChallenge: codeChallenge,
-		tokenReceiver: tokenReceiver, // Store the token receiver
+		tokenReceiver: tokenReceiver,
 	}
 }
 
-// generateCodeVerifier creates a random code verifier for PKCE
+// generate a random code verifier, for PKCE
 func GenerateCodeVerifier() string {
 	b := make([]byte, 64)
 	rand.Read(b)
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-// generateCodeChallenge creates a code challenge from the code verifier using S256 method
+// generate a code challenge for verification later
 func GenerateCodeChallenge(verifier string) string {
 	h := sha256.New()
 	h.Write([]byte(verifier))
 	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 }
 
-// HandleLogin implements the AuthService interface method.
 func (o *OAuth2Service) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	opts := []oauth2.AuthCodeOption{
 		oauth2.SetAuthURLParam("code_challenge", o.codeChallenge),
@@ -128,7 +124,7 @@ func (o *OAuth2Service) HandleCallback(w http.ResponseWriter, r *http.Request) (
 
 	userId, hasSession := session.GetUserID(r.Context())
 
-	// Use the token receiver to store the token and get the user ID
+	// store token and get uid
 	userID, err := o.tokenReceiver.SetAccessToken(token.AccessToken, userId, hasSession)
 	if err != nil {
 		log.Printf("OAuth2 Callback Info: TokenReceiver did not return a valid user ID for token: %s...", token.AccessToken[:min(10, len(token.AccessToken))])
@@ -138,7 +134,6 @@ func (o *OAuth2Service) HandleCallback(w http.ResponseWriter, r *http.Request) (
 	return userID, nil
 }
 
-// GetToken remains unchanged
 func (o *OAuth2Service) GetToken(code string) (*oauth2.Token, error) {
 	opts := []oauth2.AuthCodeOption{
 		oauth2.SetAuthURLParam("code_verifier", o.codeVerifier),
@@ -146,18 +141,15 @@ func (o *OAuth2Service) GetToken(code string) (*oauth2.Token, error) {
 	return o.config.Exchange(context.Background(), code, opts...)
 }
 
-// GetClient remains unchanged
 func (o *OAuth2Service) GetClient(token *oauth2.Token) *http.Client {
 	return o.config.Client(context.Background(), token)
 }
 
-// RefreshToken remains unchanged
 func (o *OAuth2Service) RefreshToken(token *oauth2.Token) (*oauth2.Token, error) {
 	source := o.config.TokenSource(context.Background(), token)
 	return oauth2.ReuseTokenSource(token, source).Token()
 }
 
-// Helper function
 func min(a, b int) int {
 	if a < b {
 		return a

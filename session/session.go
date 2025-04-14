@@ -31,9 +31,7 @@ type SessionManager struct {
 	mu        sync.RWMutex
 }
 
-// NewSessionManager creates a new session manager
 func NewSessionManager() *SessionManager {
-	// Initialize session table if it doesn't exist
 	database, err := db.New("./data/piper.db")
 	if err != nil {
 		log.Printf("Error connecting to database for sessions, falling back to in memory only: %v", err)
@@ -56,7 +54,6 @@ func NewSessionManager() *SessionManager {
 		log.Printf("Error creating sessions table: %v", err)
 	}
 
-	// Create API key manager
 	apiKeyMgr := apikey.NewApiKeyManager(database)
 
 	return &SessionManager{
@@ -120,7 +117,7 @@ func (sm *SessionManager) GetSession(sessionID string) (*Session, bool) {
 		return session, true
 	}
 
-	// If not in memory and we have a database, check there
+	// if not in memory and we have a database, check there
 	if sm.db != nil {
 		session = &Session{ID: sessionID}
 
@@ -189,7 +186,6 @@ func (sm *SessionManager) ClearSessionCookie(w http.ResponseWriter) {
 	http.SetCookie(w, cookie)
 }
 
-// HandleLogout handles user logout
 func (sm *SessionManager) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("session")
 	if err == nil {
@@ -201,30 +197,26 @@ func (sm *SessionManager) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-// GetAPIKeyManager returns the API key manager
 func (sm *SessionManager) GetAPIKeyManager() *apikey.ApiKeyManager {
 	return sm.apiKeyMgr
 }
 
-// CreateAPIKey creates a new API key for a user
 func (sm *SessionManager) CreateAPIKey(userID int64, name string, validityDays int) (*apikey.ApiKey, error) {
 	return sm.apiKeyMgr.CreateApiKey(userID, name, validityDays)
 }
 
-// WithAuth is a middleware that checks if a user is authenticated via cookies or API key
+// middleware that checks if a user is authenticated via cookies or API key
 func WithAuth(handler http.HandlerFunc, sm *SessionManager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// First try API key authentication (for API requests)
+		// first: check API keys
 		apiKeyStr, apiKeyErr := apikey.ExtractApiKey(r)
 		if apiKeyErr == nil && apiKeyStr != "" {
-			// Validate API key
 			apiKey, valid := sm.apiKeyMgr.GetApiKey(apiKeyStr)
 			if valid {
-				// Add user ID to context
 				ctx := WithUserID(r.Context(), apiKey.UserID)
 				r = r.WithContext(ctx)
 
-				// Set a flag in the context that this is an API request
+				// set a flag for api requests
 				ctx = WithAPIRequest(r.Context(), true)
 				r = r.WithContext(ctx)
 
@@ -233,21 +225,19 @@ func WithAuth(handler http.HandlerFunc, sm *SessionManager) http.HandlerFunc {
 			}
 		}
 
-		// Fall back to cookie authentication (for browser requests)
+		// if not found, check cookies for session value
 		cookie, err := r.Cookie("session")
 		if err != nil {
 			http.Redirect(w, r, "/login/spotify", http.StatusSeeOther)
 			return
 		}
 
-		// Verify cookie session
 		session, exists := sm.GetSession(cookie.Value)
 		if !exists {
 			http.Redirect(w, r, "/login/spotify", http.StatusSeeOther)
 			return
 		}
 
-		// Add session information to request context
 		ctx := WithUserID(r.Context(), session.UserID)
 		r = r.WithContext(ctx)
 
@@ -255,53 +245,44 @@ func WithAuth(handler http.HandlerFunc, sm *SessionManager) http.HandlerFunc {
 	}
 }
 
+// middleware that checks if a user is authenticated but doesn't error out if not
 func WithPossibleAuth(handler http.HandlerFunc, sm *SessionManager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		authenticated := false // Default to not authenticated
+		authenticated := false
 
-		// 1. Try API key authentication
 		apiKeyStr, apiKeyErr := apikey.ExtractApiKey(r)
 		if apiKeyErr == nil && apiKeyStr != "" {
 			apiKey, valid := sm.apiKeyMgr.GetApiKey(apiKeyStr)
 			if valid {
-				// API Key valid: Add UserID, API flag, and set auth status
 				ctx = WithUserID(ctx, apiKey.UserID)
 				ctx = WithAPIRequest(ctx, true)
 				authenticated = true
-				// Update request context and call handler
 				r = r.WithContext(WithAuthStatus(ctx, authenticated))
 				handler(w, r)
 				return
 			}
-			// If API key was provided but invalid, we still proceed without auth
 		}
 
-		// 2. If no valid API key, try cookie authentication
-		if !authenticated { // Only check cookies if API key didn't authenticate
+		if !authenticated {
 			cookie, err := r.Cookie("session")
-			if err == nil { // Cookie exists
+			if err == nil {
 				session, exists := sm.GetSession(cookie.Value)
 				if exists {
-					// Session valid: Add UserID and set auth status
 					ctx = WithUserID(ctx, session.UserID)
-					// ctx = WithAPIRequest(ctx, false) // Not strictly needed, default is false
 					authenticated = true
 				}
-				// If session cookie exists but is invalid/expired, we proceed without auth
 			}
 		}
 
-		// 3. Set final auth status (could be true or false) and call handler
 		r = r.WithContext(WithAuthStatus(ctx, authenticated))
 		handler(w, r)
 	}
 }
 
-// WithAPIAuth is a middleware specifically for API-only endpoints (no cookie fallback, returns 401 instead of redirect)
+// middleware that only accepts API keys
 func WithAPIAuth(handler http.HandlerFunc, sm *SessionManager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Try API key authentication
 		apiKeyStr, apiKeyErr := apikey.ExtractApiKey(r)
 		if apiKeyErr != nil || apiKeyStr == "" {
 			w.Header().Set("Content-Type", "application/json")
@@ -310,7 +291,6 @@ func WithAPIAuth(handler http.HandlerFunc, sm *SessionManager) http.HandlerFunc 
 			return
 		}
 
-		// Validate API key
 		apiKey, valid := sm.apiKeyMgr.GetApiKey(apiKeyStr)
 		if !valid {
 			w.Header().Set("Content-Type", "application/json")
@@ -319,9 +299,7 @@ func WithAPIAuth(handler http.HandlerFunc, sm *SessionManager) http.HandlerFunc 
 			return
 		}
 
-		// Add user ID to context
 		ctx := WithUserID(r.Context(), apiKey.UserID)
-		// Mark as API request
 		ctx = WithAPIRequest(ctx, true)
 		r = r.WithContext(ctx)
 
@@ -329,7 +307,6 @@ func WithAPIAuth(handler http.HandlerFunc, sm *SessionManager) http.HandlerFunc 
 	}
 }
 
-// Context keys
 type contextKey int
 
 const (

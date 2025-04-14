@@ -1,4 +1,3 @@
-// Modify piper/oauth/atproto/atproto.go
 package atproto
 
 import (
@@ -88,7 +87,7 @@ func (a *ATprotoAuthService) getLoginUrlAndSaveState(ctx context.Context, handle
 		return nil, fmt.Errorf("failed PAR request to %s: %w", ui.AuthServer, err)
 	}
 
-	// Save state including generated PKCE verifier and DPoP key
+	// Save state
 	data := &models.ATprotoAuthData{
 		State:               parResp.State,
 		DID:                 ui.DID,
@@ -171,5 +170,5 @@ func (a *ATprotoAuthService) HandleCallback(w http.ResponseWriter, r *http.Reque
 	}
 
 	log.Printf("ATProto Callback Success: User %d (DID: %s) authenticated.", userID.ID, data.DID)
-	return userID.ID, nil // Return the piper user ID
+	return userID.ID, nil
 }

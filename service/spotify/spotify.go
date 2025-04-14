@@ -2,6 +2,7 @@ package spotify
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -31,7 +32,6 @@ func NewSpotifyService(database *db.DB) *SpotifyService {
 }
 
 func (s *SpotifyService) SetAccessToken(token string, userId int64, hasSession bool) (int64, error) {
-	// Identify the user synchronously instead of in a goroutine
 	userID, err := s.identifyAndStoreUser(token, userId, hasSession)
 	if err != nil {
 		log.Printf("Error identifying and storing user: %v", err)
@@ -41,7 +41,6 @@ func (s *SpotifyService) SetAccessToken(token string, userId int64, hasSession b
 }
 
 func (s *SpotifyService) identifyAndStoreUser(token string, userId int64, hasSession bool) (int64, error) {
-	// Get Spotify user profile
 	userProfile, err := s.fetchSpotifyProfile(token)
 	if err != nil {
 		log.Printf("Error fetching Spotify profile: %v", err)
@@ -50,7 +49,6 @@ func (s *SpotifyService) identifyAndStoreUser(token string, userId int64, hasSes
 
 	fmt.Printf("uid: %d hasSession: %t", userId, hasSession)
 
-	// Check if user exists
 	user, err := s.DB.GetUserBySpotifyID(userProfile.ID)
 	if err != nil {
 		// This error might mean DB connection issue, not just user not found.
@@ -74,21 +72,17 @@ func (s *SpotifyService) identifyAndStoreUser(token string, userId int64, hasSes
 			}
 		}
 	} else {
-		// Update existing user's token and expiry
 		err = s.DB.UpdateUserToken(user.ID, token, "", tokenExpiryTime)
 		if err != nil {
+			// for now log and continue
 			log.Printf("Error updating user token for user ID %d: %v", user.ID, err)
-			// Consider if we should return 0 or the user ID even if update fails
-			// Sticking to original behavior: log and continue
 		} else {
 			log.Printf("Updated token for existing user: %s (ID: %d)", user.Username, user.ID)
 		}
 	}
-	// Keep the local 'user' object consistent (optional but good practice)
 	user.AccessToken = &token
 	user.TokenExpiry = &tokenExpiryTime
 
-	// Store token in memory cache regardless of new/existing user
 	s.mu.Lock()
 	s.userTokens[user.ID] = token
 	s.mu.Unlock()
@@ -103,7 +97,6 @@ type spotifyProfile struct {
 	Email       string `json:"email"`
 }
 
-// LoadAllUsers loads all active users from the database into memory
 func (s *SpotifyService) LoadAllUsers() error {
 	users, err := s.DB.GetAllActiveUsers()
 	if err != nil {
@@ -115,7 +108,7 @@ func (s *SpotifyService) LoadAllUsers() error {
 
 	count := 0
 	for _, user := range users {
-		// Only load users with valid tokens
+		// load users with valid tokens
 		if user.AccessToken != nil && user.TokenExpiry.After(time.Now()) {
 			s.userTokens[user.ID] = *user.AccessToken
 			count++
@@ -124,6 +117,13 @@ func (s *SpotifyService) LoadAllUsers() error {
 
 	log.Printf("Loaded %d active users with valid tokens", count)
 	return nil
+}
+
+func (s *SpotifyService) refreshTokenInner(user models.User) error {
+	// implement token refresh logic here using Spotify's token refresh endpoint
+	// this would make a request to Spotify's token endpoint with grant_type=refresh_token
+	return errors.New("Not implemented yet")
+	// if successful, update the database and in-memory cache
 }
 
 func (s *SpotifyService) RefreshToken(userID string) error {
@@ -139,18 +139,10 @@ func (s *SpotifyService) RefreshToken(userID string) error {
 		return fmt.Errorf("no refresh token for user %s", userID)
 	}
 
-	// Implement token refresh logic here using Spotify's token refresh endpoint
-	// This would make a request to Spotify's token endpoint with grant_type=refresh_token
-
-	// If successful, update the database and in-memory cache
-	// we won't be now so just error out
-	return fmt.Errorf("token refresh not implemented")
-	//
-	//s.userTokens[user.ID] = newToken
-	//return nil
+	return s.refreshTokenInner(*user)
 }
 
-// RefreshExpiredTokens attempts to refresh expired tokens
+// attempt to refresh expired tokens
 func (s *SpotifyService) RefreshExpiredTokens() {
 	users, err := s.DB.GetUsersWithExpiredTokens()
 	if err != nil {
@@ -160,15 +152,18 @@ func (s *SpotifyService) RefreshExpiredTokens() {
 
 	refreshed := 0
 	for _, user := range users {
-		// Skip users without refresh tokens
+		// skip users without refresh tokens
 		if user.RefreshToken == nil {
 			continue
 		}
 
-		// Implement token refresh logic here using Spotify's token refresh endpoint
-		// This would make a request to Spotify's token endpoint with grant_type=refresh_token
+		err := s.refreshTokenInner(*user)
 
-		// If successful, update the database and in-memory cache
+		if err != nil {
+			// just print out errors here for now
+			log.Printf("Error from service/spotify/spotify.go when refreshing tokens: %s", err.Error())
+		}
+
 		refreshed++
 	}
 
@@ -231,7 +226,6 @@ func (s *SpotifyService) HandleTrackHistory(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Get recent tracks from database
 	tracks, err := s.DB.GetRecentTracks(userID, 20)
 	if err != nil {
 		http.Error(w, "Error retrieving track history", http.StatusInternalServerError)
@@ -252,7 +246,6 @@ func (s *SpotifyService) FetchCurrentTrack(userID int64) (*models.Track, error) 
 		return nil, fmt.Errorf("no access token for user %d", userID)
 	}
 
-	// Call Spotify API to get currently playing track
 	req, err := http.NewRequest("GET", "https://api.spotify.com/v1/me/player/currently-playing", nil)
 	if err != nil {
 		return nil, err
@@ -266,12 +259,12 @@ func (s *SpotifyService) FetchCurrentTrack(userID int64) (*models.Track, error) 
 	}
 	defer resp.Body.Close()
 
-	// No track playing
+	// nothing playing
 	if resp.StatusCode == 204 {
 		return nil, nil
 	}
 
-	// Token expired
+	// oops, token expired
 	if resp.StatusCode == 401 {
 		// attempt to refresh token
 		if err := s.RefreshToken(strconv.FormatInt(userID, 10)); err != nil {
@@ -282,13 +275,11 @@ func (s *SpotifyService) FetchCurrentTrack(userID int64) (*models.Track, error) 
 		}
 	}
 
-	// Error response
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("spotify API error: %s", body)
 	}
 
-	// Parse response
 	var response struct {
 		Item struct {
 			Name    string `json:"name"`
@@ -320,7 +311,6 @@ func (s *SpotifyService) FetchCurrentTrack(userID int64) (*models.Track, error) 
 		return nil, err
 	}
 
-	// Extract artist names/ids
 	var artists []models.Artist
 	for _, artist := range response.Item.Artists {
 		artists = append(artists, models.Artist{
@@ -329,7 +319,7 @@ func (s *SpotifyService) FetchCurrentTrack(userID int64) (*models.Track, error) 
 		})
 	}
 
-	// Create Track model
+	// assemble Track
 	track := &models.Track{
 		Name:           response.Item.Name,
 		Artist:         artists,
@@ -351,7 +341,7 @@ func (s *SpotifyService) StartListeningTracker(interval time.Duration) {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		// Copy userIDs to avoid holding the lock too long
+		// copy userIDs to avoid holding the lock too long
 		s.mu.RLock()
 		userIDs := make([]int64, 0, len(s.userTokens))
 		for userID := range s.userTokens {
@@ -359,7 +349,6 @@ func (s *SpotifyService) StartListeningTracker(interval time.Duration) {
 		}
 		s.mu.RUnlock()
 
-		// Check each user's currently playing track
 		for _, userID := range userIDs {
 			track, err := s.FetchCurrentTrack(userID)
 			if err != nil {
@@ -367,12 +356,10 @@ func (s *SpotifyService) StartListeningTracker(interval time.Duration) {
 				continue
 			}
 
-			// No change if no track is playing
 			if track == nil {
 				continue
 			}
 
-			// Check if this is a new track
 			s.mu.RLock()
 			currentTrack := s.userTracks[userID]
 			s.mu.RUnlock()
@@ -384,8 +371,7 @@ func (s *SpotifyService) StartListeningTracker(interval time.Duration) {
 				}
 			}
 
-			// If track is different or we've played more than either half of the track or 30 seconds since the start
-			// whichever is greater
+			// if flagged true, we have a new track
 			isNewTrack := currentTrack == nil ||
 				currentTrack.Name != track.Name ||
 				// just check the first one for now
@@ -426,7 +412,6 @@ func (s *SpotifyService) StartListeningTracker(interval time.Duration) {
 			}
 
 			if isNewTrack {
-				// Save to database
 				id, err := s.DB.SaveTrack(userID, track)
 				if err != nil {
 					log.Printf("Error saving track for user %d: %v", userID, err)

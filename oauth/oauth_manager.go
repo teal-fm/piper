@@ -12,19 +12,19 @@ import (
 
 // manages multiple oauth client services
 type OAuthServiceManager struct {
-	services       map[string]AuthService // Changed from *OAuth2Service to AuthService interface
+	services       map[string]AuthService
 	sessionManager *session.SessionManager
 	mu             sync.RWMutex
 }
 
 func NewOAuthServiceManager() *OAuthServiceManager {
 	return &OAuthServiceManager{
-		services:       make(map[string]AuthService), // Initialize the new map
+		services:       make(map[string]AuthService),
 		sessionManager: session.NewSessionManager(),
 	}
 }
 
-// RegisterService registers any service that implements the AuthService interface.
+// registers any service that impls AuthService
 func (m *OAuthServiceManager) RegisterService(name string, service AuthService) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -32,7 +32,7 @@ func (m *OAuthServiceManager) RegisterService(name string, service AuthService) 
 	log.Printf("Registered auth service: %s", name)
 }
 
-// GetService retrieves a registered AuthService by name.
+// get an AuthService by registered name
 func (m *OAuthServiceManager) GetService(name string) (AuthService, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -47,7 +47,7 @@ func (m *OAuthServiceManager) HandleLogin(serviceName string) http.HandlerFunc {
 		m.mu.RUnlock()
 
 		if exists {
-			service.HandleLogin(w, r) // Call interface method
+			service.HandleLogin(w, r)
 			return
 		}
 
@@ -70,8 +70,7 @@ func (m *OAuthServiceManager) HandleCallback(serviceName string) http.HandlerFun
 			return
 		}
 
-		// Call the service's HandleCallback, which now returns the user ID
-		userID, err := service.HandleCallback(w, r) // Call interface method
+		userID, err := service.HandleCallback(w, r)
 
 		if err != nil {
 			log.Printf("Error handling callback for service '%s': %v", serviceName, err)
@@ -80,22 +79,18 @@ func (m *OAuthServiceManager) HandleCallback(serviceName string) http.HandlerFun
 		}
 
 		if userID > 0 {
-			// Create session for the user
 			session := m.sessionManager.CreateSession(userID)
 
-			// Set session cookie
 			m.sessionManager.SetSessionCookie(w, session)
 
 			log.Printf("Created session for user %d via service %s", userID, serviceName)
 
-			// Redirect to homepage after successful login and session creation
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 		} else {
 			log.Printf("Callback for service '%s' did not result in a valid user ID.", serviceName)
-			// Optionally redirect to an error page or show an error message
-			// For now, just redirecting home, but this might hide errors.
-			// Consider adding error handling based on why userID might be 0.
-			http.Redirect(w, r, "/", http.StatusSeeOther) // Or redirect to a login/error page
+			// todo: redirect to an error page
+			// right now this just redirects home but we don't want this behaviour ideally
+			http.Redirect(w, r, "/", http.StatusSeeOther)
 		}
 	}
 }

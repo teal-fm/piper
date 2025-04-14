@@ -1,4 +1,3 @@
-// Add this struct definition to piper/models/atproto.go
 package models
 
 import (

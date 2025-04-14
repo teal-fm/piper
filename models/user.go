@@ -2,19 +2,24 @@ package models
 
 import "time"
 
-// User represents a user of the application
+// an end user of piper
 type User struct {
-	ID                  int64
-	Username            string
-	Email               *string    // Use pointer for nullable fields
-	SpotifyID           *string    // Use pointer for nullable fields
-	AccessToken         *string    // Spotify Access Token
-	RefreshToken        *string    // Spotify Refresh Token
-	TokenExpiry         *time.Time // Spotify Token Expiry
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
-	ATProtoDID          *string    // ATProto DID
-	ATProtoAccessToken  *string    // ATProto Access Token
-	ATProtoRefreshToken *string    // ATProto Refresh Token
-	ATProtoTokenExpiry  *time.Time // ATProto Token Expiry
+	ID       int64
+	Username string
+	Email    *string
+
+	// spotify information
+	SpotifyID    *string
+	AccessToken  *string
+	RefreshToken *string
+	TokenExpiry  *time.Time
+
+	// atp info
+	ATProtoDID          *string
+	ATProtoAccessToken  *string
+	ATProtoRefreshToken *string
+	ATProtoTokenExpiry  *time.Time
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }

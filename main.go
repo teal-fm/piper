@@ -21,12 +21,11 @@ import (
 func home(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 
-	// Check if user has an active session cookie
+	// check if user has an active session cookie
 	cookie, err := r.Cookie("session")
 	isLoggedIn := err == nil && cookie != nil
-	// TODO: Add logic here to fetch user details from DB using session ID
-	// to check if Spotify is already connected, if desired for finer control.
-	// For now, we'll just check if *any* session exists.
+	// TODO: add logic here to fetch user details from DB using session ID
+	// to check if Spotify is already connected
 
 	html := `
 		<html>
@@ -106,7 +105,6 @@ func home(w http.ResponseWriter, r *http.Request) {
 
 // JSON API handlers
 
-// jsonResponse returns a JSON response
 func jsonResponse(w http.ResponseWriter, statusCode int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
@@ -115,7 +113,6 @@ func jsonResponse(w http.ResponseWriter, statusCode int, data any) {
 	}
 }
 
-// API endpoint for current track
 func apiCurrentTrack(spotifyService *spotify.SpotifyService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID, ok := session.GetUserID(r.Context())
@@ -134,7 +131,6 @@ func apiCurrentTrack(spotifyService *spotify.SpotifyService) http.HandlerFunc {
 	}
 }
 
-// API endpoint for history
 func apiTrackHistory(spotifyService *spotify.SpotifyService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID, ok := session.GetUserID(r.Context())

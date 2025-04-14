@@ -11,7 +11,6 @@ import (
 	"github.com/teal-fm/piper/models"
 )
 
-// DB is a wrapper around sql.DB
 type DB struct {
 	*sql.DB
 }
@@ -36,7 +35,6 @@ func New(dbPath string) (*DB, error) {
 }
 
 func (db *DB) Initialize() error {
-	// Create users table
 	_, err := db.Exec(`
 	CREATE TABLE IF NOT EXISTS users (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,7 +57,6 @@ func (db *DB) Initialize() error {
 		return err
 	}
 
-	// Create tracks table
 	_, err = db.Exec(`
 	CREATE TABLE IF NOT EXISTS tracks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -115,7 +112,7 @@ func (db *DB) CreateUser(user *models.User) (int64, error) {
 	return result.LastInsertId()
 }
 
-// Add spotify session to user, returning the updated user
+// add spotify session to user, returning the updated user
 func (db *DB) AddSpotifySession(userID int64, username, email, spotifyId, accessToken, refreshToken string, tokenExpiry time.Time) (*models.User, error) {
 	now := time.Now()
 
@@ -191,7 +188,7 @@ func (db *DB) UpdateUserToken(userID int64, accessToken, refreshToken string, ex
 }
 
 func (db *DB) SaveTrack(userID int64, track *models.Track) (int64, error) {
-	// Convert the Artist array to a string for storage
+	// marshal artist json
 	artistString := ""
 	if len(track.Artist) > 0 {
 		bytes, err := json.Marshal(track.Artist)
@@ -215,8 +212,7 @@ func (db *DB) SaveTrack(userID int64, track *models.Track) (int64, error) {
 }
 
 func (db *DB) UpdateTrack(trackID int64, track *models.Track) error {
-	// Convert the Artist array to a string for storage
-	// In a production environment, you'd want to use proper JSON serialization
+	// marshal artist json
 	artistString := ""
 	if len(track.Artist) > 0 {
 		bytes, err := json.Marshal(track.Artist)
@@ -248,8 +244,6 @@ func (db *DB) UpdateTrack(trackID int64, track *models.Track) error {
 }
 
 func (db *DB) GetRecentTracks(userID int64, limit int) ([]*models.Track, error) {
-	// convert previous-format artist strings to current-format
-
 	rows, err := db.Query(`
     SELECT id, name, artist, album, url, timestamp, duration_ms, progress_ms, service_base_url, isrc, has_stamped
     FROM tracks
@@ -270,7 +264,7 @@ func (db *DB) GetRecentTracks(userID int64, limit int) ([]*models.Track, error) 
 		err := rows.Scan(
 			&track.PlayID,
 			&track.Name,
-			&artistString, // Scan into a string first
+			&artistString, // scan to be unmarshaled later
 			&track.Album,
 			&track.URL,
 			&track.Timestamp,
@@ -285,7 +279,7 @@ func (db *DB) GetRecentTracks(userID int64, limit int) ([]*models.Track, error) 
 			return nil, err
 		}
 
-		// Convert the artist string to the Artist array structure
+		// unmarshal artist json
 		var artists []models.Artist
 		err = json.Unmarshal([]byte(artistString), &artists)
 		if err != nil {

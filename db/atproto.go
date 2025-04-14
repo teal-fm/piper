@@ -39,7 +39,7 @@ func (db *DB) SaveATprotoAuthData(data *models.ATprotoAuthData) error {
 
 func (db *DB) GetATprotoAuthData(state string) (*models.ATprotoAuthData, error) {
 	var data models.ATprotoAuthData
-	var dpopPrivateJWKString string // Temporary variable to hold the JSON string
+	var dpopPrivateJWKString string
 
 	err := db.QueryRow(`
 	SELECT state, did, pds_url, authserver_issuer, pkce_verifier, dpop_authserver_nonce, dpop_private_jwk
@@ -52,10 +52,9 @@ func (db *DB) GetATprotoAuthData(state string) (*models.ATprotoAuthData, error) 
 		&data.AuthServerIssuer,
 		&data.PKCEVerifier,
 		&data.DPoPAuthServerNonce,
-		&dpopPrivateJWKString, // Scan into the temporary string
+		&dpopPrivateJWKString,
 	)
 	if err != nil {
-		// Return the original scan error if it occurred
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("no auth data found for state %s: %w", state, err)
 		}
@@ -64,12 +63,11 @@ func (db *DB) GetATprotoAuthData(state string) (*models.ATprotoAuthData, error) 
 
 	key, err := helpers.ParseJWKFromBytes([]byte(dpopPrivateJWKString))
 	if err != nil {
-		// Return an error if parsing fails
 		return nil, fmt.Errorf("failed to parse DPoPPrivateJWK for state %s: %w", state, err)
 	}
 	data.DPoPPrivateJWK = key
 
-	return &data, nil // Return nil error on success
+	return &data, nil
 }
 
 func (db *DB) FindOrCreateUserByDID(did string) (*models.User, error) {
@@ -97,21 +95,19 @@ func (db *DB) FindOrCreateUserByDID(did string) (*models.User, error) {
 		if idErr != nil {
 			return nil, fmt.Errorf("failed to get last insert id: %w", idErr)
 		}
-		// Populate the user struct with the newly created user's data
 		user.ID = lastID
 		user.ATProtoDID = &did
 		user.CreatedAt = now
 		user.UpdatedAt = now
-		return &user, nil // Return the created user and nil error
+		return &user, nil
 	} else if err != nil {
-		// Handle other potential errors from QueryRow
 		return nil, fmt.Errorf("failed to find user by DID: %w", err)
 	}
 
 	return &user, err
 }
 
-// Create or update the current user's ATproto session data.
+// create or update the current user's ATproto session data.
 func (db *DB) SaveATprotoSession(tokenResp *oauth.TokenResponse) error {
 
 	expiryTime := time.Now().Add(time.Second * time.Duration(tokenResp.ExpiresIn))
@@ -141,7 +137,7 @@ func (db *DB) SaveATprotoSession(tokenResp *oauth.TokenResponse) error {
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		// Error checking RowsAffected, but the update might have succeeded
+		// it's possible the update succeeded here?
 		return fmt.Errorf("failed to check rows affected after updating atproto session for did %s: %w", tokenResp.Sub, err)
 	}
 
