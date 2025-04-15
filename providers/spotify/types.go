@@ -1,8 +1,26 @@
 package spotify
 
 type User struct {
-	Name string `json:"display_name"`
-	ID   string `json:"id"`
+	Country         string `json:"country"`
+	DisplayName     string `json:"display_name"`
+	Email           string `json:"email"`
+	ExplicitContent struct {
+		FilterEnabled bool `json:"filter_enabled"`
+		FilterLocked  bool `json:"filter_locked"`
+	} `json:"explicit_content"`
+	ExternalURLS struct {
+		Spotify string `json:"spotify"`
+	} `json:"external_urls"`
+	Followers struct {
+		Href  string `json:"href"`
+		Total int    `json:"total"`
+	}
+	Href    string   `json:"hef"`
+	ID      string   `json:"id"`
+	Images  []string `json:"images"`
+	Product string   `json:"product"`
+	Type    string   `json:"type"`
+	Uri     string   `json:"uri"`
 }
 
 type Playlist struct {

@@ -28,7 +28,7 @@ func (app *application) home(w http.ResponseWriter, r *http.Request) {
 			app.logger.Error(err.Error())
 			return
 		}
-		app.logger.Info("user", "name", userInfo.Name)
+		app.logger.Info("user", "name", userInfo.DisplayName)
 	}
 
 	app.render(w, r, http.StatusOK, "home.tmpl", data)
