@@ -58,17 +58,17 @@ func (app *application) render(
 
 func (app *application) newTemplateData(r *http.Request) templateData {
 	return templateData{
-		CurrentYear:      time.Now().Year(),
-		Flash:            app.sessionManager.PopString(r.Context(), "flash"),
-    IsAuthenticated:  app.isAuthenticated(r),
+		CurrentYear:     time.Now().Year(),
+		Flash:           app.sessionManager.PopString(r.Context(), "flash"),
+		IsAuthenticated: app.isAuthenticated(r),
 	}
 }
 
 func (app *application) isAuthenticated(r *http.Request) bool {
-  isAuthenticated, ok := r.Context().Value(isAuthenticatedContextKey).(bool)
-  if !ok {
-    return false
-  }
+	isAuthenticated, ok := r.Context().Value(isAuthenticatedContextKey).(bool)
+	if !ok {
+		return false
+	}
 
-  return isAuthenticated
+	return isAuthenticated
 }

@@ -25,7 +25,7 @@ func (app *application) home(w http.ResponseWriter, r *http.Request) {
 		userInfo, err := spotify.GetUserInfo(client, app.logger)
 		if err != nil {
 			http.Error(w, "failed to get user info", http.StatusInternalServerError)
-			app.logger.Error("user info error: ", err)
+			app.logger.Error(err.Error())
 			return
 		}
 		app.logger.Info("user", "name", userInfo.Name)

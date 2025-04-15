@@ -1,7 +1,7 @@
 package ui
 
 import (
-  "embed"
+	"embed"
 )
 
 //go:embed "html" "static"

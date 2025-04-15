@@ -1,7 +1,7 @@
 package main
 
 import (
-  "context"
+	"context"
 	"fmt"
 	"net/http"
 )
@@ -56,29 +56,29 @@ func (app *application) recoverPanic(next http.Handler) http.Handler {
 }
 
 func (app *application) requireAuthentication(next http.Handler) http.Handler {
-  return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-    if !app.isAuthenticated(r) {
-      http.Redirect(w, r, "/login", http.StatusSeeOther)
-      return
-    }
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !app.isAuthenticated(r) {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
 
-    w.Header().Add("Cache-Control", "no-store")
+		w.Header().Add("Cache-Control", "no-store")
 
-    next.ServeHTTP(w, r)
-  })
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (app *application) authenticate(next http.Handler) http.Handler {
-  return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-    token := app.sessionManager.GetString(r.Context(), "token")
-    if token == "" {
-      next.ServeHTTP(w, r)
-      return
-    }
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := app.sessionManager.GetString(r.Context(), "token")
+		if token == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
 
-    ctx := context.WithValue(r.Context(), isAuthenticatedContextKey, true)
-    r = r.WithContext(ctx)
+		ctx := context.WithValue(r.Context(), isAuthenticatedContextKey, true)
+		r = r.WithContext(ctx)
 
-    next.ServeHTTP(w, r)
-  })
+		next.ServeHTTP(w, r)
+	})
 }

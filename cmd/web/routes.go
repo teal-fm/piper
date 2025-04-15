@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/justinas/alice"
-  "github.com/teal-fm/piper/ui"
+	"github.com/teal-fm/piper/ui"
 )
 
 func (app *application) routes() http.Handler {
@@ -19,7 +19,7 @@ func (app *application) routes() http.Handler {
 	mux.Handle("/logout", dynamic.ThenFunc(app.logout))
 	mux.Handle("/callback", dynamic.ThenFunc(app.oauthService.HandleCallback))
 
-  //protected := dynamic.Append(app.requireAuthentication)
+	//protected := dynamic.Append(app.requireAuthentication)
 
 	standard := alice.New(app.recoverPanic, app.logRequest, commonHeaders)
 
