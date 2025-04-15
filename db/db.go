@@ -45,11 +45,15 @@ func (db *DB) Initialize() error {
 		refresh_token TEXT,                 -- Spotify refresh token
 		token_expiry TIMESTAMP,             -- Spotify token expiry
 		atproto_did TEXT UNIQUE,            -- Atproto DID (identifier)
+		atproto_authserver_issuer TEXT,
 		atproto_access_token TEXT,          -- Atproto access token
 		atproto_refresh_token TEXT,         -- Atproto refresh token
 		atproto_token_expiry TIMESTAMP,     -- Atproto token expiry
+		atproto_sub TEXT,
 		atproto_scope TEXT,                 -- Atproto token scope
 		atproto_token_type TEXT,            -- Atproto token type
+		atproto_authserver_nonce TEXT,
+		atproto_dpop_private_jwk TEXT,
 		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Use default
 		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP  -- Use default
 	)`)

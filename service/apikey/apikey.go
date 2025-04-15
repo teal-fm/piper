@@ -12,13 +12,11 @@ import (
 	"github.com/teal-fm/piper/session"
 )
 
-// Service handles API key management
 type Service struct {
 	db       *db.DB
 	sessions *session.SessionManager
 }
 
-// NewAPIKeyService creates a new API key service
 func NewAPIKeyService(database *db.DB, sessionManager *session.SessionManager) *Service {
 	return &Service{
 		db:       database,
@@ -26,7 +24,6 @@ func NewAPIKeyService(database *db.DB, sessionManager *session.SessionManager) *
 	}
 }
 
-// HandleAPIKeyManagement renders the API key management page
 func (s *Service) HandleAPIKeyManagement(w http.ResponseWriter, r *http.Request) {
 	userID, ok := session.GetUserID(r.Context())
 	if !ok {
@@ -34,9 +31,8 @@ func (s *Service) HandleAPIKeyManagement(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Check if this is an API request or browser request
+	// if we have an api request return json
 	if session.IsAPIRequest(r.Context()) {
-		// Return JSON for API requests
 		keys, err := s.sessions.GetAPIKeyManager().GetUserApiKeys(userID)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Error fetching API keys: %v", err), http.StatusInternalServerError)
@@ -50,9 +46,8 @@ func (s *Service) HandleAPIKeyManagement(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Handle browser request - render HTML
+	// if not return html
 	if r.Method == "POST" {
-		// Create a new API key
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "Invalid form data", http.StatusBadRequest)
 			return
@@ -63,7 +58,7 @@ func (s *Service) HandleAPIKeyManagement(w http.ResponseWriter, r *http.Request)
 			keyName = fmt.Sprintf("API Key - %s", time.Now().Format(time.RFC3339))
 		}
 
-		validityDays := 30 // Default to 30 days
+		validityDays := 30
 
 		apiKey, err := s.sessions.CreateAPIKey(userID, keyName, validityDays)
 		if err != nil {
@@ -71,12 +66,11 @@ func (s *Service) HandleAPIKeyManagement(w http.ResponseWriter, r *http.Request)
 			return
 		}
 
-		// Redirect to avoid form resubmission
 		http.Redirect(w, r, "/api-keys?created="+apiKey.ID, http.StatusSeeOther)
 		return
 	}
 
-	// For DELETE requests
+	// if we want to delete a key
 	if r.Method == "DELETE" {
 		keyID := r.URL.Query().Get("key_id")
 		if keyID == "" {
@@ -84,7 +78,6 @@ func (s *Service) HandleAPIKeyManagement(w http.ResponseWriter, r *http.Request)
 			return
 		}
 
-		// Make sure the key belongs to this user
 		key, exists := s.sessions.GetAPIKeyManager().GetApiKey(keyID)
 		if !exists || key.UserID != userID {
 			http.Error(w, "Invalid API key", http.StatusBadRequest)
@@ -101,14 +94,13 @@ func (s *Service) HandleAPIKeyManagement(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// GET request - show keys
+	// show keys
 	keys, err := s.sessions.GetAPIKeyManager().GetUserApiKeys(userID)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error fetching API keys: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// Check if this is right after key creation
 	newlyCreatedKey := r.URL.Query().Get("created")
 
 	tmpl := `

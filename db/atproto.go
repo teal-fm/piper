@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -108,10 +109,15 @@ func (db *DB) FindOrCreateUserByDID(did string) (*models.User, error) {
 }
 
 // create or update the current user's ATproto session data.
-func (db *DB) SaveATprotoSession(tokenResp *oauth.TokenResponse) error {
+func (db *DB) SaveATprotoSession(tokenResp *oauth.TokenResponse, authserverIss string, dpopPrivateJWK jwk.Key) error {
 
 	expiryTime := time.Now().Add(time.Second * time.Duration(tokenResp.ExpiresIn))
 	now := time.Now()
+
+	dpopPrivateJWKBytes, err := json.Marshal(dpopPrivateJWK)
+	if err != nil {
+		return err
+	}
 
 	result, err := db.Exec(`
 		UPDATE users
@@ -119,14 +125,22 @@ func (db *DB) SaveATprotoSession(tokenResp *oauth.TokenResponse) error {
 			atproto_refresh_token = ?,
 			atproto_token_expiry = ?,
 			atproto_scope = ?,
+			atproto_sub = ?,
+			atproto_authserver_iss = ?,
 			atproto_token_type = ?,
+			atproto_authserver_nonce = ?,
+			atproto_dpop_private_jwk = ?,
 			updated_at = ?
 		WHERE atproto_did = ?`,
 		tokenResp.AccessToken,
 		tokenResp.RefreshToken,
 		expiryTime,
 		tokenResp.Scope,
+		tokenResp.Sub,
+		authserverIss,
 		tokenResp.TokenType,
+		tokenResp.DpopAuthserverNonce,
+		string(dpopPrivateJWKBytes),
 		now,
 		tokenResp.Sub,
 	)
@@ -146,4 +160,54 @@ func (db *DB) SaveATprotoSession(tokenResp *oauth.TokenResponse) error {
 	}
 
 	return nil
+}
+
+func (db *DB) GetAtprotoSession(did string, ctx context.Context, oauthClient oauth.Client) (*oauth.TokenResponse, error) {
+	var oauthSession oauth.TokenResponse
+	var authserverIss string
+	var jwkBytes string
+
+	err := db.QueryRow(`
+		SELECT atproto_access_token, atproto_refresh_token, atproto_token_expiry, atproto_scope, atproto_sub, atproto_authserver_issuer, atproto_token_type, atproto_authserver_nonce, atproto_dpop_private_jwk
+		FROM users
+		WHERE atproto_did = ?`,
+		did,
+	).Scan(
+		&oauthSession.AccessToken,
+		&oauthSession.RefreshToken,
+		&oauthSession.ExpiresIn,
+		&oauthSession.Scope,
+		&oauthSession.Sub,
+		&authserverIss,
+		&oauthSession.TokenType,
+		&oauthSession.DpopAuthserverNonce,
+		&jwkBytes,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get atproto session for did %s: %w", did, err)
+	}
+
+	privateJwk, err := helpers.ParseJWKFromBytes([]byte(jwkBytes))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse DPoPPrivateJWK: %w", err)
+	}
+
+	// if token is expired, refresh it
+	if int64(oauthSession.ExpiresIn) < time.Now().Unix() {
+
+		resp, err := oauthClient.RefreshTokenRequest(ctx, oauthSession.RefreshToken, authserverIss, oauthSession.DpopAuthserverNonce, privateJwk)
+		if err != nil {
+			return nil, err
+		}
+
+		if err := db.SaveATprotoSession(resp, authserverIss, privateJwk); err != nil {
+			return nil, fmt.Errorf("failed to save refreshed token: %w", err)
+		}
+
+		oauthSession = *resp
+
+	}
+
+	return &oauthSession, nil
 }

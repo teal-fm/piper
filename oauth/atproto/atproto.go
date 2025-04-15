@@ -164,7 +164,7 @@ func (a *ATprotoAuthService) HandleCallback(w http.ResponseWriter, r *http.Reque
 		return 0, fmt.Errorf("failed to find or create user")
 	}
 
-	err = a.DB.SaveATprotoSession(resp)
+	err = a.DB.SaveATprotoSession(resp, data.AuthServerIssuer, data.DPoPPrivateJWK)
 	if err != nil {
 		log.Printf("ATProto Callback Error: Failed to save ATProto tokens for user %d (DID %s): %v", userID.ID, data.DID, err)
 	}
