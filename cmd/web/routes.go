@@ -19,7 +19,8 @@ func (app *application) routes() http.Handler {
 	mux.Handle("/callback", dynamic.ThenFunc(app.oauthService.HandleCallback))
 	mux.Handle("/logout", dynamic.ThenFunc(app.logout))
 
-	//protected := dynamic.Append(app.requireAuthentication)
+	protected := dynamic.Append(app.requireAuthentication)
+  mux.Handle("/playing", protected.ThenFunc(app.playing))
 
 	standard := alice.New(app.recoverPanic, app.logRequest, commonHeaders)
 

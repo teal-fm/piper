@@ -26,7 +26,10 @@ func NewOAuthService(
 			ClientSecret: os.Getenv("CLIENT_SECRET"),
 			Endpoint:     spotify.Endpoint,
 			RedirectURL:  os.Getenv("REDIRECT_URL"),
-			Scopes:       []string{"user-read-private", "user-read-email", "user-library-read"},
+			Scopes:       []string{
+        "user-read-private", "user-read-email", "user-library-read", 
+        "user-read-currently-playing",
+      },
 		},
 		logger:         logger,
 		sessionManager: sessionManager,

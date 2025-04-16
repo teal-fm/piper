@@ -47,3 +47,28 @@ func (app *application) logout(w http.ResponseWriter, r *http.Request) {
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
+
+func (app *application) playing(w http.ResponseWriter, r *http.Request) {
+  data := app.newTemplateData(r)
+
+	if app.sessionManager.Exists(r.Context(), "token") {
+		token := app.sessionManager.GetString(r.Context(), "token")
+		var tok oauth2.Token
+		err := json.Unmarshal([]byte(token), &tok)
+		if err != nil {
+			app.logger.Error(err.Error())
+			return
+		}
+		client := app.oauthService.Cfg.Client(context.Background(), &tok)
+
+		playing, err := spotify.GetCurrentlyPlaying(client, app.logger)
+		if err != nil {
+			http.Error(w, "failed to get user info", http.StatusInternalServerError)
+			app.logger.Error(err.Error())
+			return
+		}
+		app.logger.Info("playing", "name", playing.Item.Name)
+	}
+
+	app.render(w, r, http.StatusOK, "home.tmpl", data)
+}
