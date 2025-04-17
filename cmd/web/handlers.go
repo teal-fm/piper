@@ -67,8 +67,8 @@ func (app *application) playing(w http.ResponseWriter, r *http.Request) {
 			app.logger.Error(err.Error())
 			return
 		}
-		app.logger.Info("playing", "name", playing.Item.Name)
+    data.CurrentlyPlaying = playing
 	}
 
-	app.render(w, r, http.StatusOK, "home.tmpl", data)
+	app.render(w, r, http.StatusOK, "playing.tmpl", data)
 }

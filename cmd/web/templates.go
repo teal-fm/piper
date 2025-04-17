@@ -7,12 +7,14 @@ import (
 	"time"
 
 	"github.com/teal-fm/piper/ui"
+  "github.com/teal-fm/piper/providers/spotify"
 )
 
 type templateData struct {
-	CurrentYear     int
-	Flash           string
-	IsAuthenticated bool
+	CurrentYear       int
+	Flash             string
+	IsAuthenticated   bool
+  CurrentlyPlaying  *spotify.CurrentlyPlaying
 }
 
 func humanDate(t time.Time) string {
