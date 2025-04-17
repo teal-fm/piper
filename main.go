@@ -14,6 +14,7 @@ import (
 	"github.com/teal-fm/piper/oauth"
 	"github.com/teal-fm/piper/oauth/atproto"
 	apikeyService "github.com/teal-fm/piper/service/apikey"
+	"github.com/teal-fm/piper/service/musicbrainz" // Added musicbrainz service
 	"github.com/teal-fm/piper/service/spotify"
 	"github.com/teal-fm/piper/session"
 )
@@ -150,6 +151,35 @@ func apiTrackHistory(spotifyService *spotify.SpotifyService) http.HandlerFunc {
 	}
 }
 
+// apiMusicBrainzSearch handles requests to the MusicBrainz search API.
+func apiMusicBrainzSearch(mbService *musicbrainz.MusicBrainzService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Optional: Add authentication/rate limiting if needed
+
+		params := musicbrainz.SearchParams{
+			Track:   r.URL.Query().Get("track"),
+			Artist:  r.URL.Query().Get("artist"),
+			Release: r.URL.Query().Get("release"),
+		}
+
+		if params.Track == "" && params.Artist == "" && params.Release == "" {
+			jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "At least one query parameter (track, artist, release) is required"})
+			return
+		}
+
+		recordings, err := mbService.SearchMusicBrainz(r.Context(), params)
+		if err != nil {
+			log.Printf("Error searching MusicBrainz: %v", err) // Log the error
+			jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": "Failed to search MusicBrainz"})
+			return
+		}
+
+		// Optionally process recordings (e.g., select best release) before responding
+		// For now, just return the raw results
+		jsonResponse(w, http.StatusOK, recordings)
+	}
+}
+
 func main() {
 	config.Load()
 
@@ -161,21 +191,6 @@ func main() {
 	if err := database.Initialize(); err != nil {
 		log.Fatalf("Error initializing database: %v", err)
 	}
-
-	spotifyService := spotify.NewSpotifyService(database)
-	sessionManager := session.NewSessionManager()
-	oauthManager := oauth.NewOAuthServiceManager()
-
-	spotifyOAuth := oauth.NewOAuth2Service(
-		viper.GetString("spotify.client_id"),
-		viper.GetString("spotify.client_secret"),
-		viper.GetString("callback.spotify"),
-		viper.GetStringSlice("spotify.scopes"),
-		"spotify",
-		spotifyService,
-	)
-	oauthManager.RegisterService("spotify", spotifyOAuth)
-	apiKeyService := apikeyService.NewAPIKeyService(database, sessionManager)
 
 	// init atproto svc
 	jwksBytes, err := os.ReadFile("./jwks.json")
@@ -197,6 +212,22 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error creating ATproto auth service: %v", err)
 	}
+	mbService := musicbrainz.NewMusicBrainzService(database)
+
+	spotifyService := spotify.NewSpotifyService(database, atprotoService, mbService)
+	sessionManager := session.NewSessionManager()
+	oauthManager := oauth.NewOAuthServiceManager()
+
+	spotifyOAuth := oauth.NewOAuth2Service(
+		viper.GetString("spotify.client_id"),
+		viper.GetString("spotify.client_secret"),
+		viper.GetString("callback.spotify"),
+		viper.GetStringSlice("spotify.scopes"),
+		"spotify",
+		spotifyService,
+	)
+	oauthManager.RegisterService("spotify", spotifyOAuth)
+	apiKeyService := apikeyService.NewAPIKeyService(database, sessionManager)
 
 	oauthManager.RegisterService("atproto", atprotoService)
 
@@ -219,6 +250,7 @@ func main() {
 	// API routes
 	http.HandleFunc("/api/v1/current-track", session.WithAPIAuth(apiCurrentTrack(spotifyService), sessionManager))
 	http.HandleFunc("/api/v1/history", session.WithAPIAuth(apiTrackHistory(spotifyService), sessionManager))
+	http.HandleFunc("/api/v1/musicbrainz/search", apiMusicBrainzSearch(mbService)) // Added MusicBrainz search endpoint
 
 	serverUrlRoot := viper.GetString("server.root_url")
 	atpClientId := viper.GetString("atproto.client_id")

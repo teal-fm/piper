@@ -40,10 +40,6 @@ func (db *DB) Initialize() error {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		username TEXT,                      -- Made nullable, might not have username initially
 		email TEXT UNIQUE,                  -- Made nullable
-		spotify_id TEXT UNIQUE,             -- Spotify specific ID
-		access_token TEXT,                  -- Spotify access token
-		refresh_token TEXT,                 -- Spotify refresh token
-		token_expiry TIMESTAMP,             -- Spotify token expiry
 		atproto_did TEXT UNIQUE,            -- Atproto DID (identifier)
 		atproto_authserver_issuer TEXT,
 		atproto_access_token TEXT,          -- Atproto access token
@@ -54,6 +50,11 @@ func (db *DB) Initialize() error {
 		atproto_token_type TEXT,            -- Atproto token type
 		atproto_authserver_nonce TEXT,
 		atproto_dpop_private_jwk TEXT,
+		spotify_id TEXT UNIQUE,             -- Spotify specific ID
+		access_token TEXT,                  -- Spotify access token
+		refresh_token TEXT,                 -- Spotify refresh token
+		token_expiry TIMESTAMP,             -- Spotify token expiry
+		lastfm_username TEXT,                     -- Last.fm username
 		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Use default
 		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP  -- Use default
 	)`)
@@ -66,8 +67,10 @@ func (db *DB) Initialize() error {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		user_id INTEGER NOT NULL,
 		name TEXT NOT NULL,
+		recording_mbid TEXT, -- Added
 		artist TEXT NOT NULL, -- should be JSONB in PostgreSQL if we ever switch
 		album TEXT NOT NULL,
+		release_mbid TEXT, -- Added
 		url TEXT NOT NULL,
 		timestamp TIMESTAMP,
 		duration_ms INTEGER,
@@ -94,6 +97,18 @@ func (db *DB) Initialize() error {
 		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 	)`)
 	if err != nil {
+		return err
+	}
+
+	// Add columns recording_mbid and release_mbid to tracks table if they don't exist
+	_, err = db.Exec(`ALTER TABLE tracks ADD COLUMN recording_mbid TEXT`)
+	if err != nil && err.Error() != "duplicate column name: recording_mbid" {
+		// Handle errors other than 'duplicate column'
+		return err
+	}
+	_, err = db.Exec(`ALTER TABLE tracks ADD COLUMN release_mbid TEXT`)
+	if err != nil && err.Error() != "duplicate column name: release_mbid" {
+		// Handle errors other than 'duplicate column'
 		return err
 	}
 
@@ -206,10 +221,10 @@ func (db *DB) SaveTrack(userID int64, track *models.Track) (int64, error) {
 	var trackID int64
 
 	err := db.QueryRow(`
-	INSERT INTO tracks (user_id, name, artist, album, url, timestamp, duration_ms, progress_ms, service_base_url, isrc, has_stamped)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO tracks (user_id, name, recording_mbid, artist, album, release_mbid, url, timestamp, duration_ms, progress_ms, service_base_url, isrc, has_stamped)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	RETURNING id`,
-		userID, track.Name, artistString, track.Album, track.URL, track.Timestamp,
+		userID, track.Name, track.RecordingMBID, artistString, track.Album, track.ReleaseMBID, track.URL, track.Timestamp,
 		track.DurationMs, track.ProgressMs, track.ServiceBaseUrl, track.ISRC, track.HasStamped).Scan(&trackID)
 
 	return trackID, err
@@ -230,8 +245,10 @@ func (db *DB) UpdateTrack(trackID int64, track *models.Track) error {
 	_, err := db.Exec(`
 	UPDATE tracks
 	SET name = ?,
+	    recording_mbid = ?,
 		artist = ?,
 		album = ?,
+		release_mbid = ?,
 		url = ?,
 		timestamp = ?,
 		duration_ms = ?,
@@ -240,7 +257,7 @@ func (db *DB) UpdateTrack(trackID int64, track *models.Track) error {
 		isrc = ?,
 		has_stamped = ?
 	WHERE id = ?`,
-		track.Name, artistString, track.Album, track.URL, track.Timestamp,
+		track.Name, track.RecordingMBID, artistString, track.Album, track.ReleaseMBID, track.URL, track.Timestamp,
 		track.DurationMs, track.ProgressMs, track.ServiceBaseUrl, track.ISRC, track.HasStamped,
 		trackID)
 
@@ -249,7 +266,7 @@ func (db *DB) UpdateTrack(trackID int64, track *models.Track) error {
 
 func (db *DB) GetRecentTracks(userID int64, limit int) ([]*models.Track, error) {
 	rows, err := db.Query(`
-    SELECT id, name, artist, album, url, timestamp, duration_ms, progress_ms, service_base_url, isrc, has_stamped
+    SELECT id, name, recording_mbid, artist, album, release_mbid, url, timestamp, duration_ms, progress_ms, service_base_url, isrc, has_stamped
     FROM tracks
     WHERE user_id = ?
     ORDER BY timestamp DESC
@@ -268,8 +285,10 @@ func (db *DB) GetRecentTracks(userID int64, limit int) ([]*models.Track, error) 
 		err := rows.Scan(
 			&track.PlayID,
 			&track.Name,
-			&artistString, // scan to be unmarshaled later
+			&track.RecordingMBID, // Scan new field
+			&artistString,        // scan to be unmarshaled later
 			&track.Album,
+			&track.ReleaseMBID, // Scan new field
 			&track.URL,
 			&track.Timestamp,
 			&track.DurationMs,
@@ -346,6 +365,34 @@ func (db *DB) GetAllActiveUsers() ([]*models.User, error) {
 			&user.ID, &user.Username, &user.Email, &user.SpotifyID,
 			&user.AccessToken, &user.RefreshToken, &user.TokenExpiry,
 			&user.CreatedAt, &user.UpdatedAt)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+
+	return users, nil
+}
+
+func (db *DB) GetAllUsersWithLastFM() ([]*models.User, error) {
+	rows, err := db.Query(`
+    SELECT id, username, email, spotify_id, access_token, refresh_token, token_expiry, created_at, updated_at, lastfm_username
+    FROM users
+    ORDER BY id`)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []*models.User
+
+	for rows.Next() {
+		user := &models.User{}
+		err := rows.Scan(
+			&user.ID, &user.Username, &user.Email, &user.SpotifyID,
+			&user.AccessToken, &user.RefreshToken, &user.TokenExpiry,
+			&user.CreatedAt, &user.UpdatedAt, &user.LastFMUsername)
 		if err != nil {
 			return nil, err
 		}

@@ -14,6 +14,9 @@ type User struct {
 	RefreshToken *string
 	TokenExpiry  *time.Time
 
+	// lfm information
+	LastFMUsername *string
+
 	// atp info
 	ATProtoDID          *string
 	ATProtoAccessToken  *string

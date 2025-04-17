@@ -1,33 +1,45 @@
 package spotify
 
 import (
+	"context"
+	"encoding/base64" // Added for Basic Auth
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"strconv"
+	"net/url" // Added for request body
+
+	// "strconv" // Removed unused import
+	"strings" // Added for request body
 	"sync"
 	"time"
 
+	"github.com/spf13/viper" // Added for config access
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
+	"github.com/teal-fm/piper/oauth/atproto"
+	"github.com/teal-fm/piper/service/musicbrainz"
 	"github.com/teal-fm/piper/session"
 )
 
 type SpotifyService struct {
-	DB         *db.DB
-	userTracks map[int64]*models.Track
-	userTokens map[int64]string
-	mu         sync.RWMutex
+	DB             *db.DB
+	atprotoService *atproto.ATprotoAuthService     // Added field
+	mb             *musicbrainz.MusicBrainzService // Added field
+	userTracks     map[int64]*models.Track
+	userTokens     map[int64]string
+	mu             sync.RWMutex
 }
 
-func NewSpotifyService(database *db.DB) *SpotifyService {
+func NewSpotifyService(database *db.DB, atprotoService *atproto.ATprotoAuthService, musicBrainzService *musicbrainz.MusicBrainzService) *SpotifyService {
 	return &SpotifyService{
-		DB:         database,
-		userTracks: make(map[int64]*models.Track),
-		userTokens: make(map[int64]string),
+		DB:             database,
+		atprotoService: atprotoService,
+		mb:             musicBrainzService,
+		userTracks:     make(map[int64]*models.Track),
+		userTokens:     make(map[int64]string),
 	}
 }
 
@@ -119,27 +131,108 @@ func (s *SpotifyService) LoadAllUsers() error {
 	return nil
 }
 
-func (s *SpotifyService) refreshTokenInner(user models.User) error {
-	// implement token refresh logic here using Spotify's token refresh endpoint
-	// this would make a request to Spotify's token endpoint with grant_type=refresh_token
-	return errors.New("Not implemented yet")
-	// if successful, update the database and in-memory cache
+// refreshTokenInner handles the actual Spotify token refresh logic.
+// It returns the new access token or an error.
+func (s *SpotifyService) refreshTokenInner(userID int64) (string, error) {
+	user, err := s.DB.GetUserByID(userID)
+	if err != nil {
+		return "", fmt.Errorf("error loading user %d for refresh: %w", userID, err)
+	}
+
+	if user == nil {
+		return "", fmt.Errorf("user %d not found for refresh", userID)
+	}
+
+	if user.RefreshToken == nil || *user.RefreshToken == "" {
+		// If no refresh token, remove potentially stale access token from cache and return error
+		s.mu.Lock()
+		delete(s.userTokens, userID)
+		s.mu.Unlock()
+		return "", fmt.Errorf("no refresh token available for user %d", userID)
+	}
+
+	clientID := viper.GetString("spotify.client_id")
+	clientSecret := viper.GetString("spotify.client_secret")
+	if clientID == "" || clientSecret == "" {
+		return "", errors.New("spotify client ID or secret not configured")
+	}
+
+	data := url.Values{}
+	data.Set("grant_type", "refresh_token")
+	data.Set("refresh_token", *user.RefreshToken)
+
+	req, err := http.NewRequest("POST", "https://accounts.spotify.com/api/token", strings.NewReader(data.Encode()))
+	if err != nil {
+		return "", fmt.Errorf("failed to create refresh request: %w", err)
+	}
+
+	authHeader := base64.StdEncoding.EncodeToString([]byte(clientID + ":" + clientSecret))
+	req.Header.Set("Authorization", "Basic "+authHeader)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to execute refresh request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return "", fmt.Errorf("failed to read refresh response body: %w", readErr)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		// If refresh fails (e.g., bad refresh token), remove tokens from cache
+		s.mu.Lock()
+		delete(s.userTokens, userID)
+		s.mu.Unlock()
+		// Also clear the bad refresh token from the DB
+		updateErr := s.DB.UpdateUserToken(userID, "", "", time.Now()) // Clear tokens
+		if updateErr != nil {
+			log.Printf("Failed to clear bad refresh token for user %d: %v", userID, updateErr)
+		}
+		return "", fmt.Errorf("spotify token refresh failed (%d): %s", resp.StatusCode, string(body))
+	}
+
+	var tokenResponse struct {
+		AccessToken  string `json:"access_token"`
+		TokenType    string `json:"token_type"`
+		Scope        string `json:"scope"`
+		ExpiresIn    int    `json:"expires_in"`              // Seconds
+		RefreshToken string `json:"refresh_token,omitempty"` // Spotify might issue a new refresh token
+	}
+
+	if err := json.Unmarshal(body, &tokenResponse); err != nil {
+		return "", fmt.Errorf("failed to decode refresh response: %w", err)
+	}
+
+	newExpiry := time.Now().Add(time.Duration(tokenResponse.ExpiresIn) * time.Second)
+	newRefreshToken := *user.RefreshToken // Default to old one
+	if tokenResponse.RefreshToken != "" {
+		newRefreshToken = tokenResponse.RefreshToken // Use new one if provided
+	}
+
+	// Update DB
+	if err := s.DB.UpdateUserToken(userID, tokenResponse.AccessToken, newRefreshToken, newExpiry); err != nil {
+		// Log error but continue, as we have the token in memory
+		log.Printf("Error updating user token in DB for user %d after refresh: %v", userID, err)
+	}
+
+	// Update in-memory cache
+	s.mu.Lock()
+	s.userTokens[userID] = tokenResponse.AccessToken
+	s.mu.Unlock()
+
+	log.Printf("Successfully refreshed token for user %d", userID)
+	return tokenResponse.AccessToken, nil
 }
 
-func (s *SpotifyService) RefreshToken(userID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	user, err := s.DB.GetUserBySpotifyID(userID)
-	if err != nil {
-		return fmt.Errorf("error loading user: %v", err)
-	}
-
-	if user.RefreshToken == nil {
-		return fmt.Errorf("no refresh token for user %s", userID)
-	}
-
-	return s.refreshTokenInner(*user)
+// RefreshToken attempts to refresh the token for a given user ID.
+// It's less commonly needed now refreshTokenInner handles fetching the user.
+func (s *SpotifyService) RefreshToken(userID int64) error {
+	_, err := s.refreshTokenInner(userID)
+	return err
 }
 
 // attempt to refresh expired tokens
@@ -157,7 +250,7 @@ func (s *SpotifyService) RefreshExpiredTokens() {
 			continue
 		}
 
-		err := s.refreshTokenInner(*user)
+		_, err := s.refreshTokenInner(user.ID)
 
 		if err != nil {
 			// just print out errors here for now
@@ -246,38 +339,72 @@ func (s *SpotifyService) FetchCurrentTrack(userID int64) (*models.Track, error) 
 		return nil, fmt.Errorf("no access token for user %d", userID)
 	}
 
-	req, err := http.NewRequest("GET", "https://api.spotify.com/v1/me/player/currently-playing", nil)
-	if err != nil {
-		return nil, err
+	req, rErr := http.NewRequest("GET", "https://api.spotify.com/v1/me/player/currently-playing", nil)
+	if rErr != nil {
+		return nil, rErr
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token)
 	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
+	var resp *http.Response
+	var err error
 
-	// nothing playing
-	if resp.StatusCode == 204 {
-		return nil, nil
-	}
-
-	// oops, token expired
-	if resp.StatusCode == 401 {
-		// attempt to refresh token
-		if err := s.RefreshToken(strconv.FormatInt(userID, 10)); err != nil {
-			s.mu.Lock()
-			delete(s.userTokens, userID)
-			s.mu.Unlock()
-			return nil, fmt.Errorf("spotify token expired for user %d", userID)
+	// Retry logic: try once, if 401, refresh and try again
+	for attempt := 0; attempt < 2; attempt++ {
+		// We need to be able to re-read the body if the request is retried,
+		// but since this is a GET request with no body, we don't need to worry about it.
+		resp, err = client.Do(req) // Use = instead of := inside loop
+		if err != nil {
+			// Network or other client error, don't retry
+			return nil, fmt.Errorf("failed to execute spotify request on attempt %d: %w", attempt+1, err)
 		}
+		// Defer close inside the loop IF we continue, otherwise close after the loop
+		// Simplified: Always defer close, it's idempotent for nil resp.Body
+		// defer resp.Body.Close() // Moved defer outside loop to avoid potential issues
+
+		// oops, token expired or other client error
+		if resp.StatusCode == 401 && attempt == 0 { // Only refresh on 401 on the first attempt
+			log.Printf("Spotify token potentially expired for user %d, attempting refresh...", userID)
+			newAccessToken, refreshErr := s.refreshTokenInner(userID)
+			if refreshErr != nil {
+				log.Printf("Token refresh failed for user %d: %v", userID, refreshErr)
+				// No point retrying if refresh failed
+				return nil, fmt.Errorf("spotify token expired or invalid for user %d and refresh failed: %w", userID, refreshErr)
+			}
+			log.Printf("Token refreshed for user %d, retrying request...", userID)
+			token = newAccessToken                           // Update token for the next attempt
+			req.Header.Set("Authorization", "Bearer "+token) // Update header for retry
+			continue                                         // Go to next attempt in the loop
+		}
+
+		// If it's not 200 or 204, or if it's 401 on the second attempt, break and return error
+		if resp.StatusCode != 200 && resp.StatusCode != 204 {
+			body, _ := io.ReadAll(resp.Body)
+			return nil, fmt.Errorf("spotify API error (%d) for user %d after %d attempts: %s", resp.StatusCode, userID, attempt+1, string(body))
+		}
+
+		// If status is 200 or 204, break the loop, we have a valid response (or no content)
+		break
+	} // End of retry loop
+
+	// Ensure body is closed regardless of loop outcome
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
 	}
 
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("spotify API error: %s", body)
+	// Handle final response after loop
+	if resp == nil {
+		// This should ideally not happen if client.Do succeeded but we check defensively
+		return nil, fmt.Errorf("spotify request failed with no response after retries")
+	}
+	if resp.StatusCode == 204 {
+		return nil, nil // Nothing playing
+	}
+
+	// Read body now that we know it's a successful 200
+	bodyBytes, err := io.ReadAll(resp.Body) // Read the already fetched successful response body
+	if err != nil {
+		return nil, fmt.Errorf("failed to read successful spotify response body: %w", err)
 	}
 
 	var response struct {
@@ -301,9 +428,14 @@ func (s *SpotifyService) FetchCurrentTrack(userID int64) (*models.Track, error) 
 		ProgressMS int `json:"progress_ms"`
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	err = json.Unmarshal(bodyBytes, &response) // Use bodyBytes here
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal spotify response: %w", err)
+	}
+
+	body, ioErr := io.ReadAll(resp.Body)
+	if ioErr != nil {
+		return nil, ioErr
 	}
 
 	err = json.Unmarshal(body, &response)
@@ -429,4 +561,65 @@ func (s *SpotifyService) StartListeningTracker(interval time.Duration) {
 			}
 		}
 	}
+}
+
+// Take a track, with any IDs and hydrate it with MusicBrainz data
+func (s *SpotifyService) hydrateTrack(track *models.Track) (*models.Track, error) {
+	ctx := context.Background()
+	// array of strings
+	artistArray := make([]string, len(track.Artist)) // Assuming Name is string type
+	for i, a := range track.Artist {
+		artistArray[i] = a.Name
+	}
+
+	params := musicbrainz.SearchParams{
+		Track:   track.Name,
+		Artist:  strings.Join(artistArray, ", "),
+		Release: track.Album,
+	}
+	res, err := s.mb.SearchMusicBrainz(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(res) == 0 {
+		return nil, errors.New("no results found")
+	}
+
+	firstResult := res[0]
+	firstResultAlbum := musicbrainz.GetBestRelease(firstResult.Releases, firstResult.Title)
+
+	bestISRC := firstResult.ISRCs[0]
+
+	if len(firstResult.ISRCs) == 0 {
+		bestISRC = track.ISRC
+	}
+
+	artists := make([]models.Artist, len(firstResult.ArtistCredit))
+
+	for i, a := range firstResult.ArtistCredit {
+		artists[i] = models.Artist{
+			Name: a.Name,
+			ID:   a.Artist.ID,
+			MBID: a.Artist.ID,
+		}
+	}
+
+	resTrack := models.Track{
+		HasStamped:     track.HasStamped,
+		PlayID:         track.PlayID,
+		Name:           track.Name,
+		URL:            track.URL,
+		ServiceBaseUrl: track.ServiceBaseUrl,
+		RecordingMBID:  firstResult.ID,
+		Album:          firstResultAlbum.Title,
+		ReleaseMBID:    firstResultAlbum.ID,
+		ISRC:           bestISRC,
+		Timestamp:      track.Timestamp,
+		ProgressMs:     track.ProgressMs,
+		DurationMs:     int64(firstResult.Length),
+		Artist:         artists,
+	}
+
+	return &resTrack, nil
 }
