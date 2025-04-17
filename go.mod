@@ -98,5 +98,3 @@ require (
 )
 
 tool github.com/air-verse/air
-
-replace github.com/haileyok/atproto-oauth-golang => /Users/natalie/code/atproto-oauth-golang
