@@ -374,6 +374,15 @@ func (db *DB) GetAllActiveUsers() ([]*models.User, error) {
 	return users, nil
 }
 
+func (db *DB) AddLastFMUsername(userID int64, lastfmUsername string) error {
+	_, err := db.Exec(`
+    UPDATE users
+    SET lastfm_username = ?
+    WHERE user_id = ?`, lastfmUsername, userID)
+
+	return err
+}
+
 func (db *DB) GetAllUsersWithLastFM() ([]*models.User, error) {
 	rows, err := db.Query(`
     SELECT id, username, email, spotify_id, access_token, refresh_token, token_expiry, created_at, updated_at, lastfm_username
