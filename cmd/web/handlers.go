@@ -63,7 +63,7 @@ func (app *application) playing(w http.ResponseWriter, r *http.Request) {
 
 		playing, err := spotify.GetCurrentlyPlaying(client, app.logger)
 		if err != nil {
-			http.Error(w, "failed to get user info", http.StatusInternalServerError)
+			app.serverError(w, r, err)
 			app.logger.Error(err.Error())
 			return
 		}

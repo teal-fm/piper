@@ -35,13 +35,15 @@ func GetUserInfo(client *http.Client, logger *slog.Logger) (*User, error) {
 func GetCurrentlyPlaying(client *http.Client, logger *slog.Logger) (*CurrentlyPlaying, error) {
 	resp, err := client.Get("https://api.spotify.com/v1/me/player/currently-playing")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user info: %w", err)
+		return nil, fmt.Errorf("failed to get currently playing: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode == http.StatusNoContent {
+    return &CurrentlyPlaying{}, nil
+  } else	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("error response from Spotify: %s", resp.Status)
-	}
+  }
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		logger.Error("failed to read resp.Body")
