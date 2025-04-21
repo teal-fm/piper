@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -31,17 +33,9 @@ type SessionManager struct {
 	mu        sync.RWMutex
 }
 
-func NewSessionManager() *SessionManager {
-	database, err := db.New("./data/piper.db")
-	if err != nil {
-		log.Printf("Error connecting to database for sessions, falling back to in memory only: %v", err)
-		// back up to in memory only
-		return &SessionManager{
-			sessions: make(map[string]*Session),
-		}
-	}
+func NewSessionManager(database *db.DB) *SessionManager {
 
-	_, err = database.Exec(`
+	_, err := database.Exec(`
 	CREATE TABLE IF NOT EXISTS sessions (
 		id TEXT PRIMARY KEY,
 		user_id INTEGER NOT NULL,
@@ -305,6 +299,29 @@ func WithAPIAuth(handler http.HandlerFunc, sm *SessionManager) http.HandlerFunc 
 
 		handler(w, r)
 	}
+}
+
+func (sm *SessionManager) HandleDebug(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID, ok := GetUserID(ctx)
+	if !ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error": "User ID not found in context"}`))
+		return
+	}
+
+	res, err := sm.db.DebugViewUserInformation(userID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(fmt.Sprintf(`{"error": "Failed to retrieve user information: %v"}`, err)))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(res)
 }
 
 type contextKey int

@@ -5,7 +5,7 @@ import "time"
 // an end user of piper
 type User struct {
 	ID       int64
-	Username string
+	Username *string
 	Email    *string
 
 	// spotify information

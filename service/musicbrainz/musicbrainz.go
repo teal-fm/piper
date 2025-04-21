@@ -3,6 +3,7 @@ package musicbrainz
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/teal-fm/piper/db"
+	"github.com/teal-fm/piper/models"
 	"golang.org/x/time/rate"
 )
 
@@ -252,4 +254,64 @@ func GetBestRelease(releases []MusicBrainzRelease, trackTitle string) *MusicBrai
 	log.Printf("Could not find a suitable release for '%s', picking oldest: '%s' (%s)", trackTitle, releases[0].Title, releases[0].ID)
 	r := releases[0]
 	return &r
+}
+
+func HydrateTrack(mb *MusicBrainzService, track models.Track) (*models.Track, error) {
+	ctx := context.Background()
+	// array of strings
+	artistArray := make([]string, len(track.Artist)) // Assuming Name is string type
+	for i, a := range track.Artist {
+		artistArray[i] = a.Name
+	}
+
+	params := SearchParams{
+		Track:   track.Name,
+		Artist:  strings.Join(artistArray, ", "),
+		Release: track.Album,
+	}
+	res, err := mb.SearchMusicBrainz(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(res) == 0 {
+		return nil, errors.New("no results found")
+	}
+
+	firstResult := res[0]
+	firstResultAlbum := GetBestRelease(firstResult.Releases, firstResult.Title)
+
+	bestISRC := firstResult.ISRCs[0]
+
+	if len(firstResult.ISRCs) == 0 {
+		bestISRC = track.ISRC
+	}
+
+	artists := make([]models.Artist, len(firstResult.ArtistCredit))
+
+	for i, a := range firstResult.ArtistCredit {
+		artists[i] = models.Artist{
+			Name: a.Name,
+			ID:   a.Artist.ID,
+			MBID: a.Artist.ID,
+		}
+	}
+
+	resTrack := models.Track{
+		HasStamped:     track.HasStamped,
+		PlayID:         track.PlayID,
+		Name:           track.Name,
+		URL:            track.URL,
+		ServiceBaseUrl: track.ServiceBaseUrl,
+		RecordingMBID:  firstResult.ID,
+		Album:          firstResultAlbum.Title,
+		ReleaseMBID:    firstResultAlbum.ID,
+		ISRC:           bestISRC,
+		Timestamp:      track.Timestamp,
+		ProgressMs:     track.ProgressMs,
+		DurationMs:     int64(firstResult.Length),
+		Artist:         artists,
+	}
+
+	return &resTrack, nil
 }

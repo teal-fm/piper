@@ -17,10 +17,10 @@ type OAuthServiceManager struct {
 	mu             sync.RWMutex
 }
 
-func NewOAuthServiceManager() *OAuthServiceManager {
+func NewOAuthServiceManager(sessionManager *session.SessionManager) *OAuthServiceManager {
 	return &OAuthServiceManager{
 		services:       make(map[string]AuthService),
-		sessionManager: session.NewSessionManager(),
+		sessionManager: sessionManager,
 	}
 }
 

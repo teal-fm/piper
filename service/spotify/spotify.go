@@ -1,22 +1,19 @@
 package spotify
 
 import (
-	"context"
-	"encoding/base64" // Added for Basic Auth
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"net/url" // Added for request body
-
-	// "strconv" // Removed unused import
-	"strings" // Added for request body
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/spf13/viper" // Added for config access
+	"github.com/spf13/viper"
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
 	"github.com/teal-fm/piper/oauth/atproto"
@@ -89,7 +86,7 @@ func (s *SpotifyService) identifyAndStoreUser(token string, userId int64, hasSes
 			// for now log and continue
 			log.Printf("Error updating user token for user ID %d: %v", user.ID, err)
 		} else {
-			log.Printf("Updated token for existing user: %s (ID: %d)", user.Username, user.ID)
+			log.Printf("Updated token for existing user: %s (ID: %d)", *user.Username, user.ID)
 		}
 	}
 	user.AccessToken = &token
@@ -99,7 +96,7 @@ func (s *SpotifyService) identifyAndStoreUser(token string, userId int64, hasSes
 	s.userTokens[user.ID] = token
 	s.mu.Unlock()
 
-	log.Printf("User authenticated via Spotify: %s (ID: %d)", user.Username, user.ID)
+	log.Printf("User authenticated via Spotify: %s (ID: %d)", *user.Username, user.ID)
 	return user.ID, nil
 }
 
@@ -552,7 +549,6 @@ func (s *SpotifyService) StartListeningTracker(interval time.Duration) {
 
 				track.PlayID = id
 
-				// Update in memory
 				s.mu.Lock()
 				s.userTracks[userID] = track
 				s.mu.Unlock()
@@ -561,65 +557,4 @@ func (s *SpotifyService) StartListeningTracker(interval time.Duration) {
 			}
 		}
 	}
-}
-
-// Take a track, with any IDs and hydrate it with MusicBrainz data
-func (s *SpotifyService) hydrateTrack(track *models.Track) (*models.Track, error) {
-	ctx := context.Background()
-	// array of strings
-	artistArray := make([]string, len(track.Artist)) // Assuming Name is string type
-	for i, a := range track.Artist {
-		artistArray[i] = a.Name
-	}
-
-	params := musicbrainz.SearchParams{
-		Track:   track.Name,
-		Artist:  strings.Join(artistArray, ", "),
-		Release: track.Album,
-	}
-	res, err := s.mb.SearchMusicBrainz(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(res) == 0 {
-		return nil, errors.New("no results found")
-	}
-
-	firstResult := res[0]
-	firstResultAlbum := musicbrainz.GetBestRelease(firstResult.Releases, firstResult.Title)
-
-	bestISRC := firstResult.ISRCs[0]
-
-	if len(firstResult.ISRCs) == 0 {
-		bestISRC = track.ISRC
-	}
-
-	artists := make([]models.Artist, len(firstResult.ArtistCredit))
-
-	for i, a := range firstResult.ArtistCredit {
-		artists[i] = models.Artist{
-			Name: a.Name,
-			ID:   a.Artist.ID,
-			MBID: a.Artist.ID,
-		}
-	}
-
-	resTrack := models.Track{
-		HasStamped:     track.HasStamped,
-		PlayID:         track.PlayID,
-		Name:           track.Name,
-		URL:            track.URL,
-		ServiceBaseUrl: track.ServiceBaseUrl,
-		RecordingMBID:  firstResult.ID,
-		Album:          firstResultAlbum.Title,
-		ReleaseMBID:    firstResultAlbum.ID,
-		ISRC:           bestISRC,
-		Timestamp:      track.Timestamp,
-		ProgressMs:     track.ProgressMs,
-		DurationMs:     int64(firstResult.Length),
-		Artist:         artists,
-	}
-
-	return &resTrack, nil
 }

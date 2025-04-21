@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -374,39 +375,85 @@ func (db *DB) GetAllActiveUsers() ([]*models.User, error) {
 	return users, nil
 }
 
-func (db *DB) AddLastFMUsername(userID int64, lastfmUsername string) error {
-	_, err := db.Exec(`
-    UPDATE users
-    SET lastfm_username = ?
-    WHERE user_id = ?`, lastfmUsername, userID)
-
-	return err
-}
-
-func (db *DB) GetAllUsersWithLastFM() ([]*models.User, error) {
+// debug to view current user's information
+// put everything in an 'any' type
+func (db *DB) DebugViewUserInformation(userID int64) (map[string]any, error) {
+	// Use Query instead of QueryRow to get access to column names and ensure only one row is processed
 	rows, err := db.Query(`
-    SELECT id, username, email, spotify_id, access_token, refresh_token, token_expiry, created_at, updated_at, lastfm_username
-    FROM users
-    ORDER BY id`)
-
+				SELECT *
+				FROM users
+				WHERE id = ? LIMIT 1`, userID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query failed: %w", err)
 	}
 	defer rows.Close()
 
-	var users []*models.User
-
-	for rows.Next() {
-		user := &models.User{}
-		err := rows.Scan(
-			&user.ID, &user.Username, &user.Email, &user.SpotifyID,
-			&user.AccessToken, &user.RefreshToken, &user.TokenExpiry,
-			&user.CreatedAt, &user.UpdatedAt, &user.LastFMUsername)
-		if err != nil {
-			return nil, err
-		}
-		users = append(users, user)
+	// Get column names
+	cols, err := rows.Columns()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get columns: %w", err)
 	}
 
-	return users, nil
+	// Check if there's a row to process
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			// Error during rows.Next() or preparing the result set
+			return nil, fmt.Errorf("error checking for row: %w", err)
+		}
+		// No rows found, which is a valid outcome but might be considered an error in some contexts.
+		// Returning sql.ErrNoRows is conventional.
+		return nil, sql.ErrNoRows
+	}
+
+	// Prepare scan arguments: pointers to interface{} slices
+	values := make([]any, len(cols))
+	scanArgs := make([]any, len(cols))
+	for i := range values {
+		scanArgs[i] = &values[i]
+	}
+
+	// Scan the row values
+	err = rows.Scan(scanArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan row: %w", err)
+	}
+
+	// Check for errors that might have occurred during iteration (after Scan)
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error after scanning row: %w", err)
+	}
+
+	// Create the result map
+	resultMap := make(map[string]any, len(cols))
+	for i, colName := range cols {
+		val := values[i]
+		// SQLite often returns []byte for TEXT columns, convert to string for usability.
+		// Also handle potential nil values appropriately.
+		if b, ok := val.([]byte); ok {
+			resultMap[colName] = string(b)
+		} else {
+			resultMap[colName] = val // Keep nil as nil, numbers as numbers, etc.
+		}
+	}
+
+	return resultMap, nil
+}
+
+func (db *DB) GetLastScrobbleTimestamp(userID int64) (*time.Time, error) {
+	var lastTimestamp time.Time
+	err := db.QueryRow(`
+		SELECT timestamp
+		FROM tracks
+		WHERE user_id = ?
+		ORDER BY timestamp DESC
+		LIMIT 1`, userID).Scan(&lastTimestamp)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to query last scrobble timestamp for user %d: %w", userID, err)
+	}
+
+	return &lastTimestamp, nil
 }

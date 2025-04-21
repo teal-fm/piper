@@ -126,7 +126,7 @@ func (db *DB) SaveATprotoSession(tokenResp *oauth.TokenResponse, authserverIss s
 			atproto_token_expiry = ?,
 			atproto_scope = ?,
 			atproto_sub = ?,
-			atproto_authserver_iss = ?,
+			atproto_authserver_issuer = ?,
 			atproto_token_type = ?,
 			atproto_authserver_nonce = ?,
 			atproto_dpop_private_jwk = ?,

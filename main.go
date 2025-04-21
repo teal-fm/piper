@@ -146,7 +146,30 @@ func home(database *db.DB) http.HandlerFunc {
 
 func handleLinkLastfmForm(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		userID, _ := session.GetUserID(r.Context()) // Auth middleware ensures this exists
+		userID, _ := session.GetUserID(r.Context())
+		if r.Method == http.MethodPost {
+			if err := r.ParseForm(); err != nil {
+				http.Error(w, "Failed to parse form", http.StatusBadRequest)
+				return
+			}
+
+			lastfmUsername := r.FormValue("lastfm_username")
+			if lastfmUsername == "" {
+				http.Error(w, "Last.fm username cannot be empty", http.StatusBadRequest)
+				return
+			}
+
+			err := database.AddLastFMUsername(userID, lastfmUsername)
+			if err != nil {
+				log.Printf("Error saving Last.fm username for user %d: %v", userID, err)
+				http.Error(w, "Failed to save Last.fm username", http.StatusInternalServerError)
+				return
+			}
+
+			log.Printf("Successfully linked Last.fm username '%s' for user ID %d", lastfmUsername, userID)
+
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+		}
 
 		currentUser, err := database.GetUserByID(userID)
 		currentUsername := ""
@@ -337,10 +360,10 @@ func main() {
 
 	mbService := musicbrainz.NewMusicBrainzService(database)
 	spotifyService := spotify.NewSpotifyService(database, atprotoService, mbService)
-	lastfmService := lastfm.NewLastFMService(database, viper.GetString("lastfm.api_key"))
+	lastfmService := lastfm.NewLastFMService(database, viper.GetString("lastfm.api_key"), mbService)
 
-	sessionManager := session.NewSessionManager()
-	oauthManager := oauth.NewOAuthServiceManager()
+	sessionManager := session.NewSessionManager(database)
+	oauthManager := oauth.NewOAuthServiceManager(sessionManager)
 
 	spotifyOAuth := oauth.NewOAuth2Service(
 		viper.GetString("spotify.client_id"),
@@ -369,7 +392,8 @@ func main() {
 	http.HandleFunc("/api-keys", session.WithAuth(apiKeyService.HandleAPIKeyManagement, sessionManager))
 	http.HandleFunc("/link-lastfm", session.WithAuth(handleLinkLastfmForm(database), sessionManager))          // GET form
 	http.HandleFunc("/link-lastfm/submit", session.WithAuth(handleLinkLastfmSubmit(database), sessionManager)) // POST submit - Changed route slightly
-	http.HandleFunc("/logout", sessionManager.HandleLogout)                                                    // Logout doesn't strictly need auth middleware, but handles session deletion
+	http.HandleFunc("/logout", sessionManager.HandleLogout)
+	http.HandleFunc("/debug/", session.WithAuth(sessionManager.HandleDebug, sessionManager))
 
 	http.HandleFunc("/api/v1/current-track", session.WithAPIAuth(apiCurrentTrack(spotifyService), sessionManager)) // Spotify Current
 	http.HandleFunc("/api/v1/history", session.WithAPIAuth(apiTrackHistory(spotifyService), sessionManager))       // Spotify History
