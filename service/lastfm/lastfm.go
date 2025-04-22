@@ -42,7 +42,7 @@ type Track struct {
 	Name       string     `json:"name"`
 	URL        string     `json:"url"`
 	Date       *TrackDate `json:"date,omitempty"` // Use pointer for optional fields
-	NowPlaying *struct {  // Custom handling for @attr.nowplaying
+	Attr       *struct {  // Custom handling for @attr.nowplaying
 		NowPlaying string `json:"nowplaying"` // Field name corrected to match struct tag
 	} `json:"@attr,omitempty"` // This captures the @attr object within the track
 }
@@ -82,9 +82,8 @@ type LastFMService struct {
 	apiKey             string
 	Usernames          []string
 	musicBrainzService *musicbrainz.MusicBrainzService
-	// Removed in-memory map, assuming DB handles last seen state
-	// lastSeenTrackDate map[string]time.Time
-	// mu sync.Mutex // Keep mutex if other shared state is added later
+	lastSeenNowPlaying map[string]Track
+	mu                 sync.Mutex
 }
 
 func NewLastFMService(db *db.DB, apiKey string, musicBrainzService *musicbrainz.MusicBrainzService) *LastFMService {
@@ -99,6 +98,8 @@ func NewLastFMService(db *db.DB, apiKey string, musicBrainzService *musicbrainz.
 		Usernames: make([]string, 0),
 		// lastSeenTrackDate: make(map[string]time.Time), // Removed
 		musicBrainzService: musicBrainzService,
+		lastSeenNowPlaying: make(map[string]Track),
+		mu:                 sync.Mutex{},
 	}
 }
 
@@ -302,94 +303,123 @@ func (l *LastFMService) fetchAllUserTracks(ctx context.Context) {
 	}
 }
 
-// processTracks processes the fetched tracks for a user, adding new scrobbles to the DB.
 func (l *LastFMService) processTracks(username string, tracks []Track) error {
 	if l.db == nil {
 		return fmt.Errorf("database connection is nil")
 	}
 
-	// get uid
 	user, err := l.db.GetUserByLastFM(username)
 	if err != nil {
 		return fmt.Errorf("failed to get user ID for %s: %w", username, err)
 	}
 
-	lastKnownTimestamp, err := l.db.GetLastScrobbleTimestamp(user.ID) // Hypothetical DB call
+	lastKnownTimestamp, err := l.db.GetLastScrobbleTimestamp(user.ID)
 	if err != nil {
 		return fmt.Errorf("failed to get last scrobble timestamp for %s: %w", username, err)
 	}
 
 	found := lastKnownTimestamp == nil
 	if found {
-		log.Printf("No previous scrobble timestamp found for user %s. Processing latest track.", username)
+		log.Printf("no previous scrobble timestamp found for user %s. processing latest track.", username)
 	} else {
-		log.Printf("Last known scrobble for %s was at %s", username, lastKnownTimestamp.Format(time.RFC3339))
+		log.Printf("last known scrobble for %s was at %s", username, lastKnownTimestamp.Format(time.RFC3339))
 	}
 
-	processedCount := 0
-	var latestProcessedTime time.Time
+	var (
+		processedCount      int
+		latestProcessedTime time.Time
+	)
 
+	// handle now playing track separately
+	if len(tracks) > 0 && tracks[0].Attr != nil && tracks[0].Attr.NowPlaying == "true" {
+		nowPlayingTrack := tracks[0]
+		log.Printf("now playing track for %s: %s - %s", username, nowPlayingTrack.Artist.Text, nowPlayingTrack.Name)
+		l.mu.Lock()
+		lastSeen, existed := l.lastSeenNowPlaying[username]
+		// if our current track matches with last seen
+		// just compare artist/album/name for now
+		if existed && lastSeen.Album == nowPlayingTrack.Album && lastSeen.Name == nowPlayingTrack.Name && lastSeen.Artist == nowPlayingTrack.Artist {
+			log.Printf("current track matches last seen track for %s", username)
+		} else {
+			log.Printf("current track does not match last seen track for %s", username)
+			// aha! we record this!
+			l.lastSeenNowPlaying[username] = nowPlayingTrack
+		}
+		l.mu.Unlock()
+	}
+
+	// find last non-now-playing track
+	var lastNonNowPlaying *Track
 	for i := len(tracks) - 1; i >= 0; i-- {
-		track := tracks[i]
+		if tracks[i].Attr == nil || tracks[i].Attr.NowPlaying != "true" {
+			lastNonNowPlaying = &tracks[i]
+			break
+		}
+	}
 
-		// skip now playing
-		if track.NowPlaying != nil && track.NowPlaying.NowPlaying == "true" {
-			log.Printf("Skipping 'now playing' track for %s: %s - %s", username, track.Artist.Text, track.Name)
-			continue
+	if lastNonNowPlaying == nil {
+		log.Printf("no non-now-playing tracks found for user %s.", username)
+		return nil
+	}
+
+	uts, err := strconv.ParseInt(lastNonNowPlaying.Date.UTS, 10, 64)
+	if err != nil {
+		log.Printf("error parsing timestamp '%s' for track %s - %s: %v",
+			lastNonNowPlaying.Date.UTS, lastNonNowPlaying.Artist.Text, lastNonNowPlaying.Name, err)
+	}
+	latestTrackTime := time.Unix(uts, 0)
+
+	if found && lastKnownTimestamp.Equal(latestTrackTime) {
+		log.Printf("no new tracks to process for user %s.", username)
+		return nil
+	}
+
+	for _, track := range tracks {
+		if track.Attr != nil && track.Attr.NowPlaying == "true" {
+			continue // already handled separately
 		}
 
-		// skip tracks w/out valid date (should be none, but just in case)
 		if track.Date == nil || track.Date.UTS == "" {
-			log.Printf("Skipping track without timestamp for %s: %s - %s", username, track.Artist.Text, track.Name)
+			log.Printf("skipping track without timestamp for %s: %s - %s", username, track.Artist.Text, track.Name)
 			continue
 		}
 
-		// parse uts (unix timestamp string)
 		uts, err := strconv.ParseInt(track.Date.UTS, 10, 64)
 		if err != nil {
-			log.Printf("Error parsing timestamp '%s' for track %s - %s: %v", track.Date.UTS, track.Artist.Text, track.Name, err)
+			log.Printf("error parsing timestamp '%s' for track %s - %s: %v", track.Date.UTS, track.Artist.Text, track.Name, err)
 			continue
 		}
 		trackTime := time.Unix(uts, 0)
 
-		if lastKnownTimestamp != nil && !trackTime.After(*lastKnownTimestamp) {
+		if lastKnownTimestamp != nil && trackTime.Before(*lastKnownTimestamp) {
 			if processedCount == 0 {
-				log.Printf("Reached already known scrobbles for user %s (Track time: %s, Last known: %s).",
-					username,
-					trackTime.Format(time.RFC3339),
-					lastKnownTimestamp.UTC().Format(time.RFC3339))
+				log.Printf("reached already known scrobbles for user %s (track time: %s, last known: %s).",
+					username, trackTime.Format(time.RFC3339), lastKnownTimestamp.Format(time.RFC3339))
 			}
 			break
 		}
 
-		unhydratedArtist := []models.Artist{
-			{
-				Name: track.Artist.Text,
-				MBID: track.Artist.MBID,
-			},
-		}
-
-		mTrack := models.Track{
+		baseTrack := models.Track{
 			Name:           track.Name,
 			URL:            track.URL,
 			ServiceBaseUrl: "last.fm",
 			Album:          track.Album.Text,
-			Timestamp:      time.Unix(uts, 0),
-			Artist:         unhydratedArtist,
+			Timestamp:      trackTime,
+			Artist: []models.Artist{
+				{
+					Name: track.Artist.Text,
+					MBID: track.Artist.MBID,
+				},
+			},
 		}
 
-		// Fix based on diagnostic: Assume HydrateTrack returns (*models.Track, error)
-		hydratedTrackPtr, err := musicbrainz.HydrateTrack(l.musicBrainzService, mTrack)
+		hydratedTrack, err := musicbrainz.HydrateTrack(l.musicBrainzService, baseTrack)
 		if err != nil {
-			// Log hydration error specifically
-			log.Printf("Error hydrating track details for user %s, track %s - %s: %v", username, track.Artist.Text, track.Name, err)
-			// fallback to original track if hydration fails
-			hydratedTrackPtr = &mTrack
+			log.Printf("error hydrating track for user %s: %s - %s: %v", username, track.Artist.Text, track.Name, err)
 			continue
 		}
 
-		l.db.SaveTrack(user.ID, hydratedTrackPtr)
-
+		l.db.SaveTrack(user.ID, hydratedTrack)
 		processedCount++
 
 		if trackTime.After(latestProcessedTime) {
@@ -402,7 +432,7 @@ func (l *LastFMService) processTracks(username string, tracks []Track) error {
 	}
 
 	if processedCount > 0 {
-		log.Printf("Successfully processed %d new track(s) for user %s. Latest timestamp in batch: %s",
+		log.Printf("processed %d new track(s) for user %s. latest timestamp: %s",
 			processedCount, username, latestProcessedTime.Format(time.RFC3339))
 	}
 
