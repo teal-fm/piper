@@ -375,10 +375,6 @@ func (l *LastFMService) processTracks(username string, tracks []Track) error {
 	}
 
 	for _, track := range tracks {
-		if track.Attr != nil && track.Attr.NowPlaying == "true" {
-			continue // already handled separately
-		}
-
 		if track.Date == nil || track.Date.UTS == "" {
 			log.Printf("skipping track without timestamp for %s: %s - %s", username, track.Artist.Text, track.Name)
 			continue

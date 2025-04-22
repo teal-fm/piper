@@ -281,10 +281,10 @@ func HydrateTrack(mb *MusicBrainzService, track models.Track) (*models.Track, er
 	firstResult := res[0]
 	firstResultAlbum := GetBestRelease(firstResult.Releases, firstResult.Title)
 
-	bestISRC := firstResult.ISRCs[0]
-
-	if len(firstResult.ISRCs) == 0 {
-		bestISRC = track.ISRC
+	// woof. we Might not have any ISRCs!
+	var bestISRC string
+	if len(firstResult.ISRCs) >= 1 {
+		bestISRC = firstResult.ISRCs[0]
 	}
 
 	artists := make([]models.Artist, len(firstResult.ArtistCredit))
