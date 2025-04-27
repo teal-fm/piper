@@ -32,6 +32,7 @@ func home(database *db.DB) http.HandlerFunc {
 
 		if isLoggedIn {
 			user, err := database.GetUserByID(userID)
+			fmt.Printf("User: %+v\n", user)
 			if err == nil && user != nil && user.LastFMUsername != nil {
 				lastfmUsername = *user.LastFMUsername
 			} else if err != nil {
@@ -360,7 +361,7 @@ func main() {
 
 	mbService := musicbrainz.NewMusicBrainzService(database)
 	spotifyService := spotify.NewSpotifyService(database, atprotoService, mbService)
-	lastfmService := lastfm.NewLastFMService(database, viper.GetString("lastfm.api_key"), mbService)
+	lastfmService := lastfm.NewLastFMService(database, viper.GetString("lastfm.api_key"), mbService, atprotoService)
 
 	sessionManager := session.NewSessionManager(database)
 	oauthManager := oauth.NewOAuthServiceManager(sessionManager)
@@ -409,7 +410,7 @@ func main() {
 	trackerInterval := time.Duration(viper.GetInt("tracker.interval")) * time.Second
 	lastfmInterval := time.Duration(viper.GetInt("lastfm.interval_seconds")) * time.Second // Add config for Last.fm interval
 	if lastfmInterval <= 0 {
-		lastfmInterval = 1 * time.Minute
+		lastfmInterval = 30 * time.Second
 	}
 
 	if err := spotifyService.LoadAllUsers(); err != nil {

@@ -12,14 +12,15 @@ import (
 	"github.com/lestrrat-go/jwx/v2/jwk"
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
-	// woof
 )
 
 type ATprotoAuthService struct {
-	client   *oauth.Client
-	jwks     jwk.Key
-	DB       *db.DB
-	clientId string
+	client      *oauth.Client
+	jwks        jwk.Key
+	DB          *db.DB
+	clientId    string
+	callbackUrl string
+	xrpc        *oauth.XrpcClient
 }
 
 func NewATprotoAuthService(db *db.DB, jwks jwk.Key, clientId string, callbackUrl string) (*ATprotoAuthService, error) {
@@ -32,12 +33,35 @@ func NewATprotoAuthService(db *db.DB, jwks jwk.Key, clientId string, callbackUrl
 	if err != nil {
 		return nil, fmt.Errorf("failed to create atproto oauth client: %w", err)
 	}
-	return &ATprotoAuthService{
-		client:   cli,
-		jwks:     jwks,
-		DB:       db,
-		clientId: clientId,
-	}, nil
+	svc := &ATprotoAuthService{
+		client:      cli,
+		jwks:        jwks,
+		callbackUrl: callbackUrl,
+		DB:          db,
+		clientId:    clientId,
+	}
+	svc.NewXrpcClient()
+	return svc, nil
+}
+
+func (a *ATprotoAuthService) GetATProtoClient() (*oauth.Client, error) {
+	if a.client != nil {
+		return a.client, nil
+	}
+
+	if a.client == nil {
+		cli, err := oauth.NewClient(oauth.ClientArgs{
+			ClientJwk:   a.jwks,
+			ClientId:    a.clientId,
+			RedirectUri: a.callbackUrl,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create atproto oauth client: %w", err)
+		}
+		a.client = cli
+	}
+
+	return a.client, nil
 }
 
 func LoadJwks(jwksBytes []byte) (jwk.Key, error) {
@@ -68,12 +92,14 @@ func (a *ATprotoAuthService) HandleLogin(w http.ResponseWriter, r *http.Request)
 }
 
 func (a *ATprotoAuthService) getLoginUrlAndSaveState(ctx context.Context, handle string) (*url.URL, error) {
-	scope := "atproto"
+	scope := "atproto transition:generic"
 	// resolve
 	ui, err := a.getUserInformation(ctx, handle)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user information for %s: %w", handle, err)
 	}
+
+	fmt.Println("user info: ", ui.AuthServer, ui.AuthService)
 
 	// create a dpop jwk for this session
 	k, err := helpers.GenerateKey(nil) // Generate ephemeral DPoP key for this flow
@@ -91,7 +117,7 @@ func (a *ATprotoAuthService) getLoginUrlAndSaveState(ctx context.Context, handle
 	data := &models.ATprotoAuthData{
 		State:               parResp.State,
 		DID:                 ui.DID,
-		PDSUrl:              ui.AuthServer,
+		PDSUrl:              ui.AuthService,
 		AuthServerIssuer:    ui.AuthMeta.Issuer,
 		PKCEVerifier:        parResp.PkceVerifier,
 		DPoPAuthServerNonce: parResp.DpopAuthserverNonce,
@@ -123,7 +149,7 @@ func (a *ATprotoAuthService) getLoginUrlAndSaveState(ctx context.Context, handle
 func (a *ATprotoAuthService) HandleCallback(w http.ResponseWriter, r *http.Request) (int64, error) {
 	state := r.URL.Query().Get("state")
 	code := r.URL.Query().Get("code")
-	issuer := r.URL.Query().Get("iss") // Issuer (PDS URL) is needed for token request
+	issuer := r.URL.Query().Get("iss") // Issuer (auth base URL) is needed for token request
 
 	if state == "" || code == "" || issuer == "" {
 		errMsg := r.URL.Query().Get("error")
@@ -164,7 +190,7 @@ func (a *ATprotoAuthService) HandleCallback(w http.ResponseWriter, r *http.Reque
 		return 0, fmt.Errorf("failed to find or create user")
 	}
 
-	err = a.DB.SaveATprotoSession(resp, data.AuthServerIssuer, data.DPoPPrivateJWK)
+	err = a.DB.SaveATprotoSession(resp, data.AuthServerIssuer, data.DPoPPrivateJWK, data.PDSUrl)
 	if err != nil {
 		log.Printf("ATProto Callback Error: Failed to save ATProto tokens for user %d (DID %s): %v", userID.ID, data.DID, err)
 	}

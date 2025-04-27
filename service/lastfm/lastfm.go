@@ -3,6 +3,7 @@ package lastfm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -12,8 +13,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bluesky-social/indigo/api/atproto"
+	lexutil "github.com/bluesky-social/indigo/lex/util"
+	"github.com/bluesky-social/indigo/xrpc"
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
+	atprotoauth "github.com/teal-fm/piper/oauth/atproto"
+	"github.com/teal-fm/piper/pkg/lex/teal"
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"golang.org/x/time/rate"
 )
@@ -23,58 +29,6 @@ const (
 	defaultLimit     = 1 // Default number of tracks to fetch per user
 )
 
-// Structs to represent the Last.fm API response for user.getrecenttracks
-type RecentTracksResponse struct {
-	RecentTracks RecentTracks `json:"recenttracks"`
-}
-
-type RecentTracks struct {
-	Tracks []Track      `json:"track"`
-	Attr   TrackXMLAttr `json:"@attr"`
-}
-
-type Track struct {
-	Artist     Artist     `json:"artist"`
-	Streamable string     `json:"streamable"` // Typically "0" or "1"
-	Image      []Image    `json:"image"`
-	MBID       string     `json:"mbid"` // MusicBrainz ID for the track
-	Album      Album      `json:"album"`
-	Name       string     `json:"name"`
-	URL        string     `json:"url"`
-	Date       *TrackDate `json:"date,omitempty"` // Use pointer for optional fields
-	Attr       *struct {  // Custom handling for @attr.nowplaying
-		NowPlaying string `json:"nowplaying"` // Field name corrected to match struct tag
-	} `json:"@attr,omitempty"` // This captures the @attr object within the track
-}
-
-type Artist struct {
-	MBID string `json:"mbid"` // MusicBrainz ID for the artist
-	Text string `json:"#text"`
-}
-
-type Image struct {
-	Size string `json:"size"`  // "small", "medium", "large", "extralarge"
-	Text string `json:"#text"` // URL of the image
-}
-
-type Album struct {
-	MBID string `json:"mbid"`  // MusicBrainz ID for the album
-	Text string `json:"#text"` // Album name
-}
-
-type TrackDate struct {
-	UTS  string `json:"uts"`   // Unix timestamp string
-	Text string `json:"#text"` // Human-readable date string
-}
-
-type TrackXMLAttr struct {
-	User       string `json:"user"`
-	TotalPages string `json:"totalPages"`
-	Page       string `json:"page"`
-	PerPage    string `json:"perPage"`
-	Total      string `json:"total"`
-}
-
 type LastFMService struct {
 	db                 *db.DB
 	httpClient         *http.Client
@@ -82,21 +36,22 @@ type LastFMService struct {
 	apiKey             string
 	Usernames          []string
 	musicBrainzService *musicbrainz.MusicBrainzService
+	atprotoService     *atprotoauth.ATprotoAuthService
 	lastSeenNowPlaying map[string]Track
 	mu                 sync.Mutex
 }
 
-func NewLastFMService(db *db.DB, apiKey string, musicBrainzService *musicbrainz.MusicBrainzService) *LastFMService {
+func NewLastFMService(db *db.DB, apiKey string, musicBrainzService *musicbrainz.MusicBrainzService, atprotoService *atprotoauth.ATprotoAuthService) *LastFMService {
 	return &LastFMService{
 		db: db,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
 		// Last.fm unofficial rate limit is ~5 requests per second
-		limiter:   rate.NewLimiter(rate.Every(200*time.Millisecond), 1),
-		apiKey:    apiKey,
-		Usernames: make([]string, 0),
-		// lastSeenTrackDate: make(map[string]time.Time), // Removed
+		limiter:            rate.NewLimiter(rate.Every(200*time.Millisecond), 1),
+		apiKey:             apiKey,
+		Usernames:          make([]string, 0),
+		atprotoService:     atprotoService,
 		musicBrainzService: musicBrainzService,
 		lastSeenNowPlaying: make(map[string]Track),
 		mu:                 sync.Mutex{},
@@ -111,16 +66,15 @@ func (l *LastFMService) loadUsernames() error {
 	}
 	usernames := make([]string, len(u))
 	for i, user := range u {
-		// Assuming the User struct has a LastFMUsername field
+		// print out user stuff
 		if user.LastFMUsername != nil { // Check if the username is set
 			usernames[i] = *user.LastFMUsername
 		} else {
 			log.Printf("User ID %d has Last.fm enabled but no username set", user.ID)
-			// Handle this case - maybe skip the user or log differently
 		}
 	}
 
-	// Filter out empty usernames if any were added due to missing data
+	// filter empty usernames (shouldn't happen?)
 	filteredUsernames := make([]string, 0, len(usernames))
 	for _, name := range usernames {
 		if name != "" {
@@ -279,7 +233,7 @@ func (l *LastFMService) fetchAllUserTracks(ctx context.Context) {
 			}
 
 			// Process the fetched tracks
-			if err := l.processTracks(uname, recentTracks.RecentTracks.Tracks); err != nil {
+			if err := l.processTracks(ctx, uname, recentTracks.RecentTracks.Tracks); err != nil {
 				log.Printf("Error processing tracks for %s: %v", uname, err)
 				fetchErrors <- fmt.Errorf("process failed for %s: %w", uname, err) // Report error
 			}
@@ -303,7 +257,7 @@ func (l *LastFMService) fetchAllUserTracks(ctx context.Context) {
 	}
 }
 
-func (l *LastFMService) processTracks(username string, tracks []Track) error {
+func (l *LastFMService) processTracks(ctx context.Context, username string, tracks []Track) error {
 	if l.db == nil {
 		return fmt.Errorf("database connection is nil")
 	}
@@ -313,13 +267,12 @@ func (l *LastFMService) processTracks(username string, tracks []Track) error {
 		return fmt.Errorf("failed to get user ID for %s: %w", username, err)
 	}
 
-	lastKnownTimestamp, err := l.db.GetLastScrobbleTimestamp(user.ID)
+	lastKnownTimestamp, err := l.db.GetLastKnownTimestamp(user.ID)
 	if err != nil {
 		return fmt.Errorf("failed to get last scrobble timestamp for %s: %w", username, err)
 	}
 
-	found := lastKnownTimestamp == nil
-	if found {
+	if lastKnownTimestamp == nil {
 		log.Printf("no previous scrobble timestamp found for user %s. processing latest track.", username)
 	} else {
 		log.Printf("last known scrobble for %s was at %s", username, lastKnownTimestamp.Format(time.RFC3339))
@@ -369,7 +322,11 @@ func (l *LastFMService) processTracks(username string, tracks []Track) error {
 	}
 	latestTrackTime := time.Unix(uts, 0)
 
-	if found && lastKnownTimestamp.Equal(latestTrackTime) {
+	// print both
+	fmt.Printf("latestTrackTime: %s\n", latestTrackTime)
+	fmt.Printf("lastKnownTimestamp: %s\n", lastKnownTimestamp)
+
+	if lastKnownTimestamp != nil && lastKnownTimestamp.Equal(latestTrackTime) {
 		log.Printf("no new tracks to process for user %s.", username)
 		return nil
 	}
@@ -387,7 +344,8 @@ func (l *LastFMService) processTracks(username string, tracks []Track) error {
 		}
 		trackTime := time.Unix(uts, 0)
 
-		if lastKnownTimestamp != nil && trackTime.Before(*lastKnownTimestamp) {
+		// before or at last known
+		if lastKnownTimestamp != nil && (trackTime.Before(*lastKnownTimestamp) || trackTime.Equal(*lastKnownTimestamp)) {
 			if processedCount == 0 {
 				log.Printf("reached already known scrobbles for user %s (track time: %s, last known: %s).",
 					username, trackTime.Format(time.RFC3339), lastKnownTimestamp.Format(time.RFC3339))
@@ -404,25 +362,31 @@ func (l *LastFMService) processTracks(username string, tracks []Track) error {
 			Artist: []models.Artist{
 				{
 					Name: track.Artist.Text,
-					MBID: track.Artist.MBID,
 				},
 			},
+			// this is submitted after the track has been scrobbled on LFM
+			HasStamped: true,
 		}
 
 		hydratedTrack, err := musicbrainz.HydrateTrack(l.musicBrainzService, baseTrack)
 		if err != nil {
 			log.Printf("error hydrating track for user %s: %s - %s: %v", username, track.Artist.Text, track.Name, err)
-			continue
+			// we can use the track without MBIDs, it's still valid
+			hydratedTrack = &baseTrack
 		}
-
 		l.db.SaveTrack(user.ID, hydratedTrack)
+		log.Printf("Submitting track")
+		err = l.SubmitTrackToPDS(*user.ATProtoDID, hydratedTrack, ctx)
+		if err != nil {
+			log.Printf("error submitting track for user %s: %s - %s: %v", username, track.Artist.Text, track.Name, err)
+		}
 		processedCount++
 
 		if trackTime.After(latestProcessedTime) {
 			latestProcessedTime = trackTime
 		}
 
-		if found {
+		if lastKnownTimestamp != nil {
 			break
 		}
 	}
@@ -431,6 +395,78 @@ func (l *LastFMService) processTracks(username string, tracks []Track) error {
 		log.Printf("processed %d new track(s) for user %s. latest timestamp: %s",
 			processedCount, username, latestProcessedTime.Format(time.RFC3339))
 	}
+
+	return nil
+}
+
+func (l *LastFMService) SubmitTrackToPDS(did string, track *models.Track, ctx context.Context) error {
+	client, err := l.atprotoService.GetATProtoClient()
+	if err != nil || client == nil {
+		return err
+	}
+
+	xrpcClient := l.atprotoService.GetXrpcClient()
+	if xrpcClient == nil {
+		return errors.New("xrpc client is kil")
+	}
+
+	// we check for client above
+	sess, err := l.db.GetAtprotoSession(did, ctx, *client)
+	if err != nil {
+		return fmt.Errorf("Couldn't get Atproto session: %s", err)
+	}
+
+	// printout the session details
+	fmt.Printf("Session details: %+v\n", sess)
+
+	// horrible no good very bad for now
+	artistArr := []string{}
+	artistMbIdArr := []string{}
+	for _, a := range track.Artist {
+		artistArr = append(artistArr, a.Name)
+		artistMbIdArr = append(artistMbIdArr, a.MBID)
+	}
+
+	var durationPtr *int64
+	if track.DurationMs > 0 {
+		durationSeconds := track.DurationMs / 1000
+		durationPtr = &durationSeconds
+	}
+
+	playedTimeStr := track.Timestamp.Format(time.RFC3339)
+	submissionAgent := "piper/v0.0.1" // TODO: get this from the environment on compilation
+
+	// track -> tealfm track
+	tfmTrack := teal.AlphaFeedPlay{
+		LexiconTypeID: "fm.teal.alpha.feed.play", // Assuming this is the correct Lexicon ID
+		// tfm specifies duration in seconds
+		Duration:  durationPtr, // Pointer required
+		TrackName: track.Name,
+		// should be unix timestamp
+		PlayedTime:            &playedTimeStr,       // Pointer required
+		ArtistNames:           artistArr,            // Slice of strings is correct
+		ArtistMbIds:           artistMbIdArr,        // Slice of strings is correct
+		ReleaseMbId:           &track.ReleaseMBID,   // Pointer required
+		ReleaseName:           &track.Album,         // Pointer required
+		RecordingMbId:         &track.RecordingMBID, // Pointer required
+		SubmissionClientAgent: &submissionAgent,     // Pointer required
+	}
+
+	input := atproto.RepoCreateRecord_Input{
+		Collection: "fm.teal.alpha.feed.play",
+		Repo:       sess.DID,
+		Record:     &lexutil.LexiconTypeDecoder{Val: &tfmTrack},
+	}
+
+	authArgs := db.AtpSessionToAuthArgs(sess)
+	fmt.Println(authArgs)
+
+	var out atproto.RepoCreateRecord_Output
+	if err := xrpcClient.Do(ctx, authArgs, xrpc.Procedure, "application/json", "com.atproto.repo.createRecord", nil, input, &out); err != nil {
+		return err
+	}
+
+	// submit track to PDS
 
 	return nil
 }

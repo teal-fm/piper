@@ -175,7 +175,7 @@ func (s *MusicBrainzService) SearchMusicBrainz(ctx context.Context, params Searc
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		// TODO: Consider reading body for detailed error message from MusicBrainz
+		// TODO: read body for detailed error message
 		return nil, fmt.Errorf("MusicBrainz API request to %s returned status %d", endpoint, resp.StatusCode)
 	}
 

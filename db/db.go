@@ -42,6 +42,7 @@ func (db *DB) Initialize() error {
 		username TEXT,                      -- Made nullable, might not have username initially
 		email TEXT UNIQUE,                  -- Made nullable
 		atproto_did TEXT UNIQUE,            -- Atproto DID (identifier)
+		atproto_pds_url TEXT,
 		atproto_authserver_issuer TEXT,
 		atproto_access_token TEXT,          -- Atproto access token
 		atproto_refresh_token TEXT,         -- Atproto refresh token
@@ -50,6 +51,7 @@ func (db *DB) Initialize() error {
 		atproto_scope TEXT,                 -- Atproto token scope
 		atproto_token_type TEXT,            -- Atproto token type
 		atproto_authserver_nonce TEXT,
+		atproto_pds_nonce TEXT,
 		atproto_dpop_private_jwk TEXT,
 		spotify_id TEXT UNIQUE,             -- Spotify specific ID
 		access_token TEXT,                  -- Spotify access token
@@ -157,10 +159,11 @@ func (db *DB) GetUserByID(ID int64) (*models.User, error) {
 	user := &models.User{}
 
 	err := db.QueryRow(`
-	SELECT id, username, email, spotify_id, access_token, refresh_token, token_expiry, created_at, updated_at
+	SELECT id, username, email, spotify_id, access_token, refresh_token, token_expiry, lastfm_username, created_at, updated_at
 	FROM users WHERE id = ?`, ID).Scan(
 		&user.ID, &user.Username, &user.Email, &user.SpotifyID,
 		&user.AccessToken, &user.RefreshToken, &user.TokenExpiry,
+		&user.LastFMUsername,
 		&user.CreatedAt, &user.UpdatedAt)
 
 	if err == sql.ErrNoRows {
@@ -178,10 +181,11 @@ func (db *DB) GetUserBySpotifyID(spotifyID string) (*models.User, error) {
 	user := &models.User{}
 
 	err := db.QueryRow(`
-	SELECT id, username, email, spotify_id, access_token, refresh_token, token_expiry, created_at, updated_at
+	SELECT id, username, email, spotify_id, access_token, refresh_token, token_expiry, lastfm_username, created_at, updated_at
 	FROM users WHERE spotify_id = ?`, spotifyID).Scan(
 		&user.ID, &user.Username, &user.Email, &user.SpotifyID,
 		&user.AccessToken, &user.RefreshToken, &user.TokenExpiry,
+		&user.LastFMUsername,
 		&user.CreatedAt, &user.UpdatedAt)
 
 	if err == sql.ErrNoRows {
@@ -439,7 +443,7 @@ func (db *DB) DebugViewUserInformation(userID int64) (map[string]any, error) {
 	return resultMap, nil
 }
 
-func (db *DB) GetLastScrobbleTimestamp(userID int64) (*time.Time, error) {
+func (db *DB) GetLastKnownTimestamp(userID int64) (*time.Time, error) {
 	var lastTimestamp time.Time
 	err := db.QueryRow(`
 		SELECT timestamp
