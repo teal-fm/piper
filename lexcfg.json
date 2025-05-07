@@ -2,31 +2,31 @@
   {
     "package": "bsky",
     "prefix": "app.bsky",
-    "outdir": "pkg/lex/bsky",
+    "outdir": "api/bsky",
     "import": "github.com/bluesky-social/indigo/api/bsky"
   },
   {
     "package": "atproto",
     "prefix": "com.atproto",
-    "outdir": "pkg/lex/atproto",
+    "outdir": "api/atproto",
     "import": "github.com/bluesky-social/indigo/api/atproto"
   },
   {
     "package": "chat",
     "prefix": "chat.bsky",
-    "outdir": "pkg/lex/chat",
+    "outdir": "api/chat",
     "import": "github.com/bluesky-social/indigo/api/chat"
   },
   {
     "package": "ozone",
     "prefix": "tools.ozone",
-    "outdir": "pkg/lex/ozone",
+    "outdir": "api/ozone",
     "import": "github.com/bluesky-social/indigo/api/ozone"
   },
   {
     "package": "teal",
     "prefix": "fm.teal",
-    "outdir": "pkg/lex/teal",
+    "outdir": "api/teal",
     "import": "github.com/teal-fm/piper/lexicons/api"
   }
 ]
