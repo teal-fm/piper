@@ -2,5 +2,5 @@
 lexgen-types:
 	go run github.com/bluesky-social/indigo/cmd/lexgen \
 		--build-file ./lexcfg.json \
-		../atproto/lexicons \
+		./atproto/lexicons \
 		./lexicons/teal
