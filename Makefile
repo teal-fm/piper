@@ -1,8 +1,11 @@
+.PHONY: dev-setup
+dev-setup:
+	rm -rf ../atproto \
+	&& git clone git@github.com:bluesky-social/atproto ../atproto \
+
 .PHONY: go-lexicons
 go-lexicons:
-	rm -rf ../atproto \
-	&& rm -rf ./api/cbor/cbor_gen.go \
-	&& git clone git@github.com:bluesky-social/atproto ../atproto \
+	rm -rf ./api/cbor/cbor_gen.go \
 	&& rm -rf ./api/teal \
 	&& mkdir -p ./api/teal \
 	&& $(MAKE) lexgen \
