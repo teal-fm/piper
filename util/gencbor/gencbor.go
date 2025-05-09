@@ -24,6 +24,10 @@ func main() {
 		genCfg.WriteMapEncodersToFile("api/teal/cbor_gen.go",
 			"teal",
 			teal.AlphaFeedPlay{},
+      teal.AlphaActorProfile{},
+      teal.AlphaActorStatus{},
+      teal.AlphaActorProfile_FeaturedItem{},
+      teal.AlphaFeedDefs_PlayView{},
 		); err != nil {
 		panic(err)
 	}
