@@ -16,10 +16,10 @@ import (
 	"github.com/bluesky-social/indigo/api/atproto"
 	lexutil "github.com/bluesky-social/indigo/lex/util"
 	"github.com/bluesky-social/indigo/xrpc"
+	"github.com/teal-fm/piper/api/teal"
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
 	atprotoauth "github.com/teal-fm/piper/oauth/atproto"
-	"github.com/teal-fm/piper/pkg/lex/teal"
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"golang.org/x/time/rate"
 )

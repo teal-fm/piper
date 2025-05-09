@@ -24,9 +24,9 @@ type ApiKey struct {
 
 // ApiKeyManager manages API keys
 type ApiKeyManager struct {
-	db     *db.DB
+	db      *db.DB
 	apiKeys map[string]*ApiKey
-	mu     sync.RWMutex
+	mu      sync.RWMutex
 }
 
 // NewApiKeyManager creates a new API key manager
@@ -47,7 +47,7 @@ func NewApiKeyManager(database *db.DB) *ApiKeyManager {
 	}
 
 	return &ApiKeyManager{
-		db:     database,
+		db:      database,
 		apiKeys: make(map[string]*ApiKey),
 	}
 }
