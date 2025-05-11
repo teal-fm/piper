@@ -13,24 +13,30 @@ import (
 	"sync"
 	"time"
 
+	"context" // Added for context.Context
+
+	"github.com/bluesky-social/indigo/api/atproto"      // Added for atproto.RepoCreateRecord_Input
+	lexutil "github.com/bluesky-social/indigo/lex/util" // Added for lexutil.LexiconTypeDecoder
+	"github.com/bluesky-social/indigo/xrpc"             // Added for xrpc.Client
 	"github.com/spf13/viper"
+	"github.com/teal-fm/piper/api/teal" // Added for teal.AlphaFeedPlay
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
-	"github.com/teal-fm/piper/oauth/atproto"
+	atprotoauth "github.com/teal-fm/piper/oauth/atproto"
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"github.com/teal-fm/piper/session"
 )
 
 type SpotifyService struct {
 	DB             *db.DB
-	atprotoService *atproto.ATprotoAuthService     // Added field
+	atprotoService *atprotoauth.ATprotoAuthService // Added field
 	mb             *musicbrainz.MusicBrainzService // Added field
 	userTracks     map[int64]*models.Track
 	userTokens     map[int64]string
 	mu             sync.RWMutex
 }
 
-func NewSpotifyService(database *db.DB, atprotoService *atproto.ATprotoAuthService, musicBrainzService *musicbrainz.MusicBrainzService) *SpotifyService {
+func NewSpotifyService(database *db.DB, atprotoService *atprotoauth.ATprotoAuthService, musicBrainzService *musicbrainz.MusicBrainzService) *SpotifyService {
 	return &SpotifyService{
 		DB:             database,
 		atprotoService: atprotoService,
@@ -38,6 +44,77 @@ func NewSpotifyService(database *db.DB, atprotoService *atproto.ATprotoAuthServi
 		userTracks:     make(map[int64]*models.Track),
 		userTokens:     make(map[int64]string),
 	}
+}
+
+func (s *SpotifyService) SubmitTrackToPDS(did string, track *models.Track, ctx context.Context) error {
+	client, err := s.atprotoService.GetATProtoClient()
+	if err != nil || client == nil {
+		log.Printf("Error getting ATProto client: %v", err)
+		return fmt.Errorf("failed to get ATProto client: %w", err)
+	}
+
+	xrpcClient := s.atprotoService.GetXrpcClient()
+	if xrpcClient == nil {
+		return errors.New("xrpc client is not available")
+	}
+
+	sess, err := s.DB.GetAtprotoSession(did, ctx, *client)
+	if err != nil {
+		return fmt.Errorf("couldn't get Atproto session for DID %s: %w", did, err)
+	}
+
+	artistArr := make([]string, 0, len(track.Artist))
+	artistMbIdArr := make([]string, 0, len(track.Artist))
+	for _, a := range track.Artist {
+		artistArr = append(artistArr, a.Name)
+		artistMbIdArr = append(artistMbIdArr, a.MBID)
+	}
+
+	var durationPtr *int64
+	if track.DurationMs > 0 {
+		durationSeconds := track.DurationMs / 1000
+		durationPtr = &durationSeconds
+	}
+
+	playedTimeStr := track.Timestamp.Format(time.RFC3339)
+	submissionAgent := viper.GetString("app.submission_agent")
+	if submissionAgent == "" {
+		submissionAgent = "piper/v0.0.1" // Default if not configured
+	}
+
+	tfmTrack := teal.AlphaFeedPlay{
+		LexiconTypeID: "fm.teal.alpha.feed.play",
+		Duration:      durationPtr,
+		TrackName:     track.Name,
+		PlayedTime:    &playedTimeStr,
+		ArtistNames:   artistArr,
+		ArtistMbIds:   artistMbIdArr,
+		ReleaseMbId:   &track.ReleaseMBID,
+		ReleaseName:   &track.Album,
+		RecordingMbId: &track.RecordingMBID,
+		// Optional: Spotify specific data if your lexicon supports it
+		// SpotifyTrackID: &track.ServiceID,
+		// SpotifyAlbumID: &track.ServiceAlbumID,
+		// SpotifyArtistIDs: track.ServiceArtistIDs, // Assuming this is a []string
+		SubmissionClientAgent: &submissionAgent,
+	}
+
+	input := atproto.RepoCreateRecord_Input{
+		Collection: "fm.teal.alpha.feed.play", // Ensure this collection is correct
+		Repo:       sess.DID,
+		Record:     &lexutil.LexiconTypeDecoder{Val: &tfmTrack},
+	}
+
+	authArgs := db.AtpSessionToAuthArgs(sess)
+
+	var out atproto.RepoCreateRecord_Output
+	if err := xrpcClient.Do(ctx, authArgs, xrpc.Procedure, "application/json", "com.atproto.repo.createRecord", nil, input, &out); err != nil {
+		log.Printf("Error creating record for DID %s: %v. Input: %+v", did, err, input)
+		return fmt.Errorf("failed to create record on PDS for DID %s: %w", did, err)
+	}
+
+	log.Printf("Successfully submitted track '%s' to PDS for DID %s. Record URI: %s", track.Name, did, out.Uri)
+	return nil
 }
 
 func (s *SpotifyService) SetAccessToken(token string, userId int64, hasSession bool) (int64, error) {
@@ -347,7 +424,7 @@ func (s *SpotifyService) FetchCurrentTrack(userID int64) (*models.Track, error) 
 	var err error
 
 	// Retry logic: try once, if 401, refresh and try again
-	for attempt := 0; attempt < 2; attempt++ {
+	for attempt := range 2 {
 		// We need to be able to re-read the body if the request is retried,
 		// but since this is a GET request with no body, we don't need to worry about it.
 		resp, err = client.Do(req) // Use = instead of := inside loop
@@ -552,6 +629,47 @@ func (s *SpotifyService) StartListeningTracker(interval time.Duration) {
 				s.mu.Lock()
 				s.userTracks[userID] = track
 				s.mu.Unlock()
+
+				// Submit to ATProto PDS
+				// The 'track' variable is *models.Track and has been saved to DB, PlayID is populated.
+				dbUser, errUser := s.DB.GetUserByID(userID) // Fetch user by their internal ID
+				if errUser != nil {
+					log.Printf("User %d: Error fetching user details for PDS submission: %v", userID, errUser)
+				} else if dbUser == nil {
+					log.Printf("User %d: User not found in DB. Skipping PDS submission.", userID)
+				} else if dbUser.ATProtoDID == nil || *dbUser.ATProtoDID == "" {
+					log.Printf("User %d (%d): ATProto DID not set. Skipping PDS submission for track '%s'.", userID, dbUser.ATProtoDID, track.Name)
+				} else {
+					// User has a DID, proceed with hydration and submission
+					var trackToSubmitToPDS *models.Track = track // Default to the original track (already *models.Track)
+					if s.mb != nil {                             // Check if MusicBrainz service is available
+						// musicbrainz.HydrateTrack expects models.Track as second argument, so we pass *track
+						// and it returns *models.Track
+						hydratedTrack, errHydrate := musicbrainz.HydrateTrack(s.mb, *track)
+						if errHydrate != nil {
+							log.Printf("User %d (%d): Error hydrating track '%s' with MusicBrainz: %v. Proceeding with original track data for PDS.", userID, dbUser.ATProtoDID, track.Name, errHydrate)
+						} else {
+							log.Printf("User %d (%d): Successfully hydrated track '%s' with MusicBrainz.", userID, dbUser.ATProtoDID, track.Name)
+							trackToSubmitToPDS = hydratedTrack // hydratedTrack is *models.Track
+						}
+					} else {
+						log.Printf("User %d (%d): MusicBrainz service not configured. Proceeding with original track data for PDS.", userID, dbUser.ATProtoDID)
+					}
+
+					artistName := "Unknown Artist"
+					if len(trackToSubmitToPDS.Artist) > 0 {
+						artistName = trackToSubmitToPDS.Artist[0].Name
+					}
+
+					log.Printf("User %d (%d): Attempting to submit track '%s' by %s to PDS (DID: %s)", userID, dbUser.ATProtoDID, trackToSubmitToPDS.Name, artistName, *dbUser.ATProtoDID)
+					// Use context.Background() for now, or pass down a context if available
+					if errPDS := s.SubmitTrackToPDS(*dbUser.ATProtoDID, trackToSubmitToPDS, context.Background()); errPDS != nil {
+						log.Printf("User %d (%d): Error submitting track '%s' to PDS: %v", userID, dbUser.ATProtoDID, trackToSubmitToPDS.Name, errPDS)
+					} else {
+						log.Printf("User %d (%d): Successfully submitted track '%s' to PDS.", userID, dbUser.ATProtoDID, trackToSubmitToPDS.Name)
+					}
+				}
+				// End of PDS submission block
 
 				log.Printf("User %d is listening to: %s by %s", userID, track.Name, track.Artist)
 			}

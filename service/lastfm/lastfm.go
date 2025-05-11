@@ -16,6 +16,7 @@ import (
 	"github.com/bluesky-social/indigo/api/atproto"
 	lexutil "github.com/bluesky-social/indigo/lex/util"
 	"github.com/bluesky-social/indigo/xrpc"
+	"github.com/spf13/viper"
 	"github.com/teal-fm/piper/api/teal"
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
@@ -434,7 +435,10 @@ func (l *LastFMService) SubmitTrackToPDS(did string, track *models.Track, ctx co
 	}
 
 	playedTimeStr := track.Timestamp.Format(time.RFC3339)
-	submissionAgent := "piper/v0.0.1" // TODO: get this from the environment on compilation
+	submissionAgent := viper.GetString("app.submission_agent")
+	if submissionAgent == "" {
+		submissionAgent = "piper/v0.0.1" // Default if not configured
+	}
 
 	// track -> tealfm track
 	tfmTrack := teal.AlphaFeedPlay{
