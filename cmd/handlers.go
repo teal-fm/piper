@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -306,5 +307,112 @@ func apiMusicBrainzSearch(mbService *musicbrainz.MusicBrainzService) http.Handle
 		}
 
 		jsonResponse(w, http.StatusOK, recordings)
+	}
+}
+
+func apiMeHandler(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, authenticated := session.GetUserID(r.Context())
+		if !authenticated {
+			jsonResponse(w, http.StatusUnauthorized, map[string]any{"authenticated": false, "error": "Unauthorized"})
+			return
+		}
+
+		user, err := database.GetUserByID(userID)
+		if err != nil {
+			log.Printf("apiMeHandler: Error fetching user %d: %v", userID, err)
+			jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve user information"})
+			return
+		}
+		if user == nil {
+			jsonResponse(w, http.StatusNotFound, map[string]string{"error": "User not found"})
+			return
+		}
+
+		lastfmUsername := ""
+		if user.LastFMUsername != nil {
+			lastfmUsername = *user.LastFMUsername
+		}
+
+		spotifyConnected := user.SpotifyID != nil
+
+		response := map[string]any{
+			"authenticated":     true,
+			"user_id":           user.ID,
+			"did":               user.ATProtoDID,
+			"lastfm_username":   lastfmUsername,
+			"spotify_connected": spotifyConnected,
+		}
+		if user.LastFMUsername == nil {
+			response["lastfm_username"] = nil
+		}
+
+		jsonResponse(w, http.StatusOK, response)
+	}
+}
+
+func apiGetLastfmUserHandler(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, _ := session.GetUserID(r.Context()) // Auth middleware ensures user is present
+		user, err := database.GetUserByID(userID)
+		if err != nil {
+			log.Printf("apiGetLastfmUserHandler: Error fetching user %d: %v", userID, err)
+			jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve user information"})
+			return
+		}
+		if user == nil {
+			jsonResponse(w, http.StatusNotFound, map[string]string{"error": "User not found"})
+			return
+		}
+
+		var lastfmUsername *string
+		if user.LastFMUsername != nil {
+			lastfmUsername = user.LastFMUsername
+		}
+		jsonResponse(w, http.StatusOK, map[string]*string{"lastfm_username": lastfmUsername})
+	}
+}
+
+func apiLinkLastfmHandler(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, _ := session.GetUserID(r.Context())
+
+		var reqBody struct {
+			LastFMUsername string `json:"lastfm_username"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body: " + err.Error()})
+			return
+		}
+
+		if reqBody.LastFMUsername == "" {
+			jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "Last.fm username cannot be empty"})
+			return
+		}
+
+		err := database.AddLastFMUsername(userID, reqBody.LastFMUsername)
+		if err != nil {
+			log.Printf("apiLinkLastfmHandler: Error saving Last.fm username for user %d: %v", userID, err)
+			jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": "Failed to save Last.fm username"})
+			return
+		}
+		log.Printf("API: Successfully linked Last.fm username '%s' for user ID %d", reqBody.LastFMUsername, userID)
+		jsonResponse(w, http.StatusOK, map[string]string{"message": "Last.fm username updated successfully"})
+	}
+}
+
+func apiUnlinkLastfmHandler(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, _ := session.GetUserID(r.Context())
+
+		// TODO: add a clear username for user id fn
+		err := database.AddLastFMUsername(userID, "")
+		if err != nil {
+			log.Printf("apiUnlinkLastfmHandler: Error unlinking Last.fm username for user %d: %v", userID, err)
+			jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": "Failed to unlink Last.fm username"})
+			return
+		}
+		log.Printf("API: Successfully unlinked Last.fm username for user ID %d", userID)
+		jsonResponse(w, http.StatusOK, map[string]string{"message": "Last.fm username unlinked successfully"})
 	}
 }

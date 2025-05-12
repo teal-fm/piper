@@ -26,7 +26,7 @@ func NewAPIKeyService(database *db.DB, sessionManager *session.SessionManager) *
 }
 
 // jsonResponse is a helper to send JSON responses
-func jsonResponse(w http.ResponseWriter, statusCode int, data interface{}) {
+func jsonResponse(w http.ResponseWriter, statusCode int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	if data != nil {
@@ -67,7 +67,7 @@ func (s *Service) HandleAPIKeyManagement(w http.ResponseWriter, r *http.Request)
 			// Ensure keys are safe for listing (e.g., no raw key string)
 			// GetUserApiKeys should return a slice of db_apikey.ApiKey or similar struct
 			// that includes ID, Name, KeyPrefix, CreatedAt, ExpiresAt.
-			jsonResponse(w, http.StatusOK, map[string]interface{}{"api_keys": keys})
+			jsonResponse(w, http.StatusOK, map[string]any{"api_keys": keys})
 
 		case http.MethodPost:
 			var reqBody struct {
@@ -135,7 +135,7 @@ func (s *Service) HandleAPIKeyManagement(w http.ResponseWriter, r *http.Request)
 		if keyName == "" {
 			keyName = fmt.Sprintf("API Key - %s", time.Now().Format(time.RFC3339))
 		}
-		validityDays := 30 // Default for HTML form creation
+		validityDays := 1024
 
 		// Uses the existing CreateAPIKey, which likely doesn't return the raw key.
 		// The HTML flow currently redirects and shows the key ID.
@@ -171,7 +171,7 @@ func (s *Service) HandleAPIKeyManagement(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		// AJAX client expects JSON
-		jsonResponse(w, http.StatusOK, map[string]interface{}{"success": true})
+		jsonResponse(w, http.StatusOK, map[string]any{"success": true})
 		return
 	}
 
