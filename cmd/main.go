@@ -99,7 +99,7 @@ func main() {
 		mbService:      mbService,
 		spotifyService: spotifyService,
 		atprotoService: atprotoService,
-	} // MusicBrainz (public?)
+	}
 
 	trackerInterval := time.Duration(viper.GetInt("tracker.interval")) * time.Second
 	lastfmInterval := time.Duration(viper.GetInt("lastfm.interval_seconds")) * time.Second // Add config for Last.fm interval
@@ -117,7 +117,7 @@ func main() {
 	serverAddr := fmt.Sprintf("%s:%s", viper.GetString("server.host"), viper.GetString("server.port"))
 	server := &http.Server{
 		Addr:         serverAddr,
-		Handler:      routes(app),
+		Handler:      app.routes(),
 		IdleTimeout:  time.Minute,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,

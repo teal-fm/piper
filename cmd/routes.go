@@ -3,11 +3,12 @@ package main
 import (
 	"net/http"
 
+	"github.com/justinas/alice"
 	"github.com/spf13/viper"
 	"github.com/teal-fm/piper/session"
 )
 
-func routes(app *application) http.Handler {
+func (app *application) routes() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/", session.WithPossibleAuth(home(app.database), app.sessionManager))
@@ -29,15 +30,16 @@ func routes(app *application) http.Handler {
 
 	mux.HandleFunc("/api/v1/current-track", session.WithAPIAuth(apiCurrentTrack(app.spotifyService), app.sessionManager)) // Spotify Current
 	mux.HandleFunc("/api/v1/history", session.WithAPIAuth(apiTrackHistory(app.spotifyService), app.sessionManager))       // Spotify History
-	mux.HandleFunc("/api/v1/musicbrainz/search", apiMusicBrainzSearch(app.mbService))
+	mux.HandleFunc("/api/v1/musicbrainz/search", apiMusicBrainzSearch(app.mbService))                                     // MusicBrainz (public?)
 
 	serverUrlRoot := viper.GetString("server.root_url")
 	atpClientId := viper.GetString("atproto.client_id")
 	atpCallbackUrl := viper.GetString("atproto.callback_url")
-	http.HandleFunc("/.well-known/client-metadata.json", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/.well-known/client-metadata.json", func(w http.ResponseWriter, r *http.Request) {
 		app.atprotoService.HandleClientMetadata(w, r, serverUrlRoot, atpClientId, atpCallbackUrl)
 	})
 	mux.HandleFunc("/oauth/jwks.json", app.atprotoService.HandleJwks)
 
-	return mux
+	standard := alice.New()
+	return standard.Then(mux)
 }
