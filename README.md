@@ -1,6 +1,5 @@
 # piper
 
-
 #### what is piper?
 
 piper is a teal-fm tool that will be used to scrape user data from variety of
@@ -14,12 +13,22 @@ well its just a work in progress... we build in the open!
 
 assuming you have go installed and set up properly:
 
+run some make scripts:
+
+```
+make jwtgen
+
+make dev-setup
+```
+
 install air:
+
 ```
 go install github.com/air-verse/air@latest
 ```
 
 run air:
+
 ```
 air
 ```
