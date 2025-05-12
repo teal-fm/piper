@@ -14,7 +14,7 @@ RUN go mod download
 # step 2. build the actual app
 WORKDIR /app
 COPY . .
-RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o main ./cmd/main.go
+RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o main ./cmd
 ARG TARGETOS=${TARGETPLATFORM%%/*}
 ARG TARGETARCH=${TARGETPLATFORM##*/}
 
