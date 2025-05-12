@@ -18,7 +18,6 @@ import (
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"github.com/teal-fm/piper/service/spotify"
 	"github.com/teal-fm/piper/session"
-	"github.com/teal-fm/piper/util/jwtgen"
 )
 
 type application struct {
@@ -56,15 +55,8 @@ func main() {
 	// --- Service Initializations ---
 	jwksBytes, err := os.ReadFile("./jwks.json")
 	if err != nil {
-		// fuck Makefiles
-		if err := jwtgen.WriteJwksToDisk(""); err != nil {
-			log.Fatalf("Error reading JWK file: %v", err)
-		}
-		// works for now
-		jwksBytes, err = os.ReadFile("./jwks.json")
-		if err != nil {
-			log.Fatalf("Error reading JWK file: %v", err)
-		}
+		// run `make jwtgen`
+		log.Fatalf("Error reading JWK file: %v", err)
 	}
 	jwks, err := atproto.LoadJwks(jwksBytes)
 	if err != nil {

@@ -13,7 +13,7 @@ go-lexicons:
 	&& go run golang.org/x/tools/cmd/goimports@latest -w $$(find ./api/teal -type f) \
 	&& go run ./util/gencbor/gencbor.go \
 	&& $(MAKE) lexgen \
-	&& find . | grep bak$$ | xargs rm 
+	&& find . | grep bak$$ | xargs rm
 
 .PHONY: lexgen
 lexgen:
@@ -24,4 +24,8 @@ lexgen-types:
 	go run github.com/bluesky-social/indigo/cmd/lexgen \
 		--build-file ./lexcfg.json \
 		../atproto/lexicons \
-		./lexicons/teal \
+		./lexicons/teal
+
+.PHONY: jwtgen
+jwtgen:
+	go run github.com/haileyok/atproto-oauth-golang/cmd/helper generate-jwks
