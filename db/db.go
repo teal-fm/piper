@@ -159,9 +159,9 @@ func (db *DB) GetUserByID(ID int64) (*models.User, error) {
 	user := &models.User{}
 
 	err := db.QueryRow(`
-	SELECT id, username, email, spotify_id, access_token, refresh_token, token_expiry, lastfm_username, created_at, updated_at
+	SELECT id, username, email, atproto_did, spotify_id, access_token, refresh_token, token_expiry, lastfm_username, created_at, updated_at
 	FROM users WHERE id = ?`, ID).Scan(
-		&user.ID, &user.Username, &user.Email, &user.SpotifyID,
+		&user.ID, &user.Username, &user.Email, &user.ATProtoDID, &user.SpotifyID,
 		&user.AccessToken, &user.RefreshToken, &user.TokenExpiry,
 		&user.LastFMUsername,
 		&user.CreatedAt, &user.UpdatedAt)
