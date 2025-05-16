@@ -526,7 +526,7 @@ func (s *SpotifyService) FetchCurrentTrack(userID int64) (*models.Track, error) 
 		ServiceBaseUrl: "open.spotify.com",
 		ISRC:           response.Item.ExternalIDs.ISRC,
 		HasStamped:     false,
-		Timestamp:      time.Now(),
+		Timestamp:      time.Now().UTC(),
 	}
 
 	return track, nil
