@@ -507,16 +507,6 @@ func (s *SpotifyService) FetchCurrentTrack(userID int64) (*models.Track, error) 
 		return nil, fmt.Errorf("failed to unmarshal spotify response: %w", err)
 	}
 
-	body, ioErr := io.ReadAll(resp.Body)
-	if ioErr != nil {
-		return nil, ioErr
-	}
-
-	err = json.Unmarshal(body, &response)
-	if err != nil {
-		return nil, err
-	}
-
 	var artists []models.Artist
 	for _, artist := range response.Item.Artists {
 		artists = append(artists, models.Artist{
@@ -536,7 +526,7 @@ func (s *SpotifyService) FetchCurrentTrack(userID int64) (*models.Track, error) 
 		ServiceBaseUrl: "open.spotify.com",
 		ISRC:           response.Item.ExternalIDs.ISRC,
 		HasStamped:     false,
-		Timestamp:      time.Now(),
+		Timestamp:      time.Now().UTC(),
 	}
 
 	return track, nil
