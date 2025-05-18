@@ -316,35 +316,24 @@ func (l *LastFMService) processTracks(ctx context.Context, username string, trac
 		return nil
 	}
 
-	uts, err := strconv.ParseInt(lastNonNowPlaying.Date.UTS, 10, 64)
-	if err != nil {
-		log.Printf("error parsing timestamp '%s' for track %s - %s: %v",
-			lastNonNowPlaying.Date.UTS, lastNonNowPlaying.Artist.Text, lastNonNowPlaying.Name, err)
-	}
-	latestTrackTime := time.Unix(uts, 0)
+	latestTrackTime := lastNonNowPlaying.Date
 
 	// print both
 	fmt.Printf("latestTrackTime: %s\n", latestTrackTime)
 	fmt.Printf("lastKnownTimestamp: %s\n", lastKnownTimestamp)
 
-	if lastKnownTimestamp != nil && lastKnownTimestamp.Equal(latestTrackTime) {
+	if lastKnownTimestamp != nil && lastKnownTimestamp.Equal(latestTrackTime.Time) {
 		log.Printf("no new tracks to process for user %s.", username)
 		return nil
 	}
 
 	for _, track := range tracks {
-		if track.Date == nil || track.Date.UTS == "" {
+		if track.Date == nil {
 			log.Printf("skipping track without timestamp for %s: %s - %s", username, track.Artist.Text, track.Name)
 			continue
 		}
 
-		uts, err := strconv.ParseInt(track.Date.UTS, 10, 64)
-		if err != nil {
-			log.Printf("error parsing timestamp '%s' for track %s - %s: %v", track.Date.UTS, track.Artist.Text, track.Name, err)
-			continue
-		}
-		trackTime := time.Unix(uts, 0)
-
+		trackTime := track.Date.Time
 		// before or at last known
 		if lastKnownTimestamp != nil && (trackTime.Before(*lastKnownTimestamp) || trackTime.Equal(*lastKnownTimestamp)) {
 			if processedCount == 0 {

@@ -1,5 +1,11 @@
 package lastfm
 
+import (
+	"encoding/json"
+	"strconv"
+	"time"
+)
+
 // Structs to represent the Last.fm API response for user.getrecenttracks
 type RecentTracksResponse struct {
 	RecentTracks RecentTracks `json:"recenttracks"`
@@ -19,7 +25,7 @@ type Track struct {
 	Name       string     `json:"name"`
 	URL        string     `json:"url"`
 	Date       *TrackDate `json:"date,omitempty"` // Use pointer for optional fields
-	Attr       *struct {  // Custom handling for @attr.nowplaying
+	Attr       *struct { // Custom handling for @attr.nowplaying
 		NowPlaying string `json:"nowplaying"` // Field name corrected to match struct tag
 	} `json:"@attr,omitempty"` // This captures the @attr object within the track
 }
@@ -39,9 +45,37 @@ type Album struct {
 	Text string `json:"#text"` // Album name
 }
 
-type TrackDate struct {
+// ApiTrackDate This is the real structure returned from lastFM.
+// Represents a date associated with a track, including both a Unix timestamp and a human-readable string.
+// UTS is a Unix timestamp stored as a string.
+// Text contains the human-readable date string.
+type ApiTrackDate struct {
 	UTS  string `json:"uts"`   // Unix timestamp string
 	Text string `json:"#text"` // Human-readable date string
+}
+
+// TrackDate This is the struct we use to represent a date associated with a track.
+// It is a wrapper around time.Time that implements json.Unmarshaler.
+type TrackDate struct {
+	time.Time
+}
+
+// UnmarshalJSON Implements json.Unmarshaler.
+// Parses the UTS field from the API response and converts it to a time.Time.
+// The time.Time is stored in the Time field.
+// The Text field is ignored since it can be parsed from the Time field if needed.
+func (t *TrackDate) UnmarshalJSON(b []byte) (err error) {
+	var apiTrackDate ApiTrackDate
+	if err := json.Unmarshal(b, &apiTrackDate); err != nil {
+		return err
+	}
+	uts, err := strconv.ParseInt(apiTrackDate.UTS, 10, 64)
+	if err != nil {
+		return err
+	}
+	date := time.Unix(uts, 0).UTC()
+	t.Time = date
+	return
 }
 
 type TrackXMLAttr struct {
