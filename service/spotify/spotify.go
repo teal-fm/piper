@@ -142,7 +142,7 @@ func (s *SpotifyService) identifyAndStoreUser(token string, refreshToken string,
 		return 0, err
 	}
 
-	tokenExpiryTime := time.Now().Add(1 * time.Hour) // Spotify tokens last ~1 hour
+	tokenExpiryTime := time.Now().UTC().Add(1 * time.Hour) // Spotify tokens last ~1 hour
 
 	// We don't intend users to log in via spotify!
 	if user == nil {
@@ -195,7 +195,7 @@ func (s *SpotifyService) LoadAllUsers() error {
 	count := 0
 	for _, user := range users {
 		// load users with valid tokens
-		if user.AccessToken != nil && user.TokenExpiry.After(time.Now()) {
+		if user.AccessToken != nil && user.TokenExpiry.After(time.Now().UTC()) {
 			s.userTokens[user.ID] = *user.AccessToken
 			count++
 		}
@@ -262,7 +262,7 @@ func (s *SpotifyService) refreshTokenInner(userID int64) (string, error) {
 		delete(s.userTokens, userID)
 		s.mu.Unlock()
 		// Also clear the bad refresh token from the DB
-		updateErr := s.DB.UpdateUserToken(userID, "", "", time.Now()) // Clear tokens
+		updateErr := s.DB.UpdateUserToken(userID, "", "", time.Now().UTC()) // Clear tokens
 		if updateErr != nil {
 			log.Printf("Failed to clear bad refresh token for user %d: %v", userID, updateErr)
 		}
@@ -281,7 +281,7 @@ func (s *SpotifyService) refreshTokenInner(userID int64) (string, error) {
 		return "", fmt.Errorf("failed to decode refresh response: %w", err)
 	}
 
-	newExpiry := time.Now().Add(time.Duration(tokenResponse.ExpiresIn) * time.Second)
+	newExpiry := time.Now().UTC().Add(time.Duration(tokenResponse.ExpiresIn) * time.Second)
 	newRefreshToken := *user.RefreshToken // Default to old one
 	if tokenResponse.RefreshToken != "" {
 		newRefreshToken = tokenResponse.RefreshToken // Use new one if provided

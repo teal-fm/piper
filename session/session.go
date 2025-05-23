@@ -67,7 +67,7 @@ func (sm *SessionManager) CreateSession(userID int64) *Session {
 	rand.Read(b)
 	sessionID := base64.URLEncoding.EncodeToString(b)
 
-	now := time.Now()
+	now := time.Now().UTC()
 	expiresAt := now.Add(24 * time.Hour) // 24-hour session
 
 	session := &Session{
@@ -104,7 +104,7 @@ func (sm *SessionManager) GetSession(sessionID string) (*Session, bool) {
 
 	if exists {
 		// Check if session is expired
-		if time.Now().After(session.ExpiresAt) {
+		if time.Now().UTC().After(session.ExpiresAt) {
 			sm.DeleteSession(sessionID)
 			return nil, false
 		}
@@ -124,7 +124,7 @@ func (sm *SessionManager) GetSession(sessionID string) (*Session, bool) {
 			return nil, false
 		}
 
-		if time.Now().After(session.ExpiresAt) {
+		if time.Now().UTC().After(session.ExpiresAt) {
 			sm.DeleteSession(sessionID)
 			return nil, false
 		}
