@@ -117,8 +117,8 @@ func (s *SpotifyService) SubmitTrackToPDS(did string, track *models.Track, ctx c
 	return nil
 }
 
-func (s *SpotifyService) SetAccessToken(token string, userId int64, hasSession bool) (int64, error) {
-	userID, err := s.identifyAndStoreUser(token, userId, hasSession)
+func (s *SpotifyService) SetAccessToken(token string, refreshToken string, userId int64, hasSession bool) (int64, error) {
+	userID, err := s.identifyAndStoreUser(token, refreshToken, userId, hasSession)
 	if err != nil {
 		log.Printf("Error identifying and storing user: %v", err)
 		return 0, err
@@ -126,7 +126,7 @@ func (s *SpotifyService) SetAccessToken(token string, userId int64, hasSession b
 	return userID, nil
 }
 
-func (s *SpotifyService) identifyAndStoreUser(token string, userId int64, hasSession bool) (int64, error) {
+func (s *SpotifyService) identifyAndStoreUser(token string, refreshToken string, userId int64, hasSession bool) (int64, error) {
 	userProfile, err := s.fetchSpotifyProfile(token)
 	if err != nil {
 		log.Printf("Error fetching Spotify profile: %v", err)
@@ -151,14 +151,14 @@ func (s *SpotifyService) identifyAndStoreUser(token string, userId int64, hasSes
 			return 0, fmt.Errorf("user does not seem to exist")
 		} else {
 			// overwrite prev user
-			user, err = s.DB.AddSpotifySession(userId, userProfile.DisplayName, userProfile.Email, userProfile.ID, token, "", tokenExpiryTime)
+			user, err = s.DB.AddSpotifySession(userId, userProfile.DisplayName, userProfile.Email, userProfile.ID, token, refreshToken, tokenExpiryTime)
 			if err != nil {
 				log.Printf("Error adding Spotify session for user ID %d: %v", userId, err)
 				return 0, err
 			}
 		}
 	} else {
-		err = s.DB.UpdateUserToken(user.ID, token, "", tokenExpiryTime)
+		err = s.DB.UpdateUserToken(user.ID, token, refreshToken, tokenExpiryTime)
 		if err != nil {
 			// for now log and continue
 			log.Printf("Error updating user token for user ID %d: %v", user.ID, err)

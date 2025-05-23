@@ -172,10 +172,20 @@ func (db *DB) GetAtprotoSession(did string, ctx context.Context, oauthClient oau
 	var authserverIss string
 	var jwkBytes string
 
-	err := db.QueryRow(`
-		SELECT id, atproto_did, atproto_pds_url, atproto_authserver_issuer, atproto_access_token, atproto_refresh_token, atproto_pds_nonce, atproto_authserver_nonce, atproto_dpop_private_jwk, atproto_token_expiry
+	err := db.QueryRow(
+		`
+		SELECT id, 
+		       atproto_did,
+		       atproto_pds_url,
+		       atproto_authserver_issuer,
+		       atproto_access_token,
+		       atproto_refresh_token,
+		       atproto_pds_nonce,
+		       atproto_authserver_nonce,
+		       atproto_dpop_private_jwk,
+		       atproto_token_expiry
 		FROM users
-		WHERE atproto_did = ? OR id`,
+		WHERE atproto_did = ?`,
 		did,
 	).Scan(
 		&oauthSession.ID,
