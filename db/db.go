@@ -120,7 +120,7 @@ func (db *DB) Initialize() error {
 
 // create user without spotify id
 func (db *DB) CreateUser(user *models.User) (int64, error) {
-	now := time.Now()
+	now := time.Now().UTC()
 
 	result, err := db.Exec(`
 	INSERT INTO users (username, email, created_at, updated_at)
@@ -136,7 +136,7 @@ func (db *DB) CreateUser(user *models.User) (int64, error) {
 
 // add spotify session to user, returning the updated user
 func (db *DB) AddSpotifySession(userID int64, username, email, spotifyId, accessToken, refreshToken string, tokenExpiry time.Time) (*models.User, error) {
-	now := time.Now()
+	now := time.Now().UTC()
 
 	_, err := db.Exec(`
 	UPDATE users SET username = ?, email = ?, spotify_id = ?, access_token = ?, refresh_token = ?, token_expiry = ?, created_at = ?, updated_at = ?
@@ -200,7 +200,7 @@ func (db *DB) GetUserBySpotifyID(spotifyID string) (*models.User, error) {
 }
 
 func (db *DB) UpdateUserToken(userID int64, accessToken, refreshToken string, expiry time.Time) error {
-	now := time.Now()
+	now := time.Now().UTC()
 
 	_, err := db.Exec(`
 	UPDATE users
@@ -326,7 +326,7 @@ func (db *DB) GetUsersWithExpiredTokens() ([]*models.User, error) {
     SELECT id, username, email, spotify_id, access_token, refresh_token, token_expiry, created_at, updated_at
     FROM users
     WHERE refresh_token IS NOT NULL AND token_expiry < ?
-    ORDER BY id`, time.Now())
+    ORDER BY id`, time.Now().UTC())
 
 	if err != nil {
 		return nil, err
@@ -355,7 +355,7 @@ func (db *DB) GetAllActiveUsers() ([]*models.User, error) {
     SELECT id, username, email, spotify_id, access_token, refresh_token, token_expiry, created_at, updated_at
     FROM users
     WHERE access_token IS NOT NULL AND token_expiry > ?
-    ORDER BY id`, time.Now())
+    ORDER BY id`, time.Now().UTC())
 
 	if err != nil {
 		return nil, err

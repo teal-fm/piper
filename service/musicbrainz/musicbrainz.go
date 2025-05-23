@@ -119,7 +119,7 @@ func (s *MusicBrainzService) SearchMusicBrainz(ctx context.Context, params Searc
 	params.Artist, _ = s.cleaner.CleanArtist(params.Artist)
 
 	cacheKey := generateCacheKey(params)
-	now := time.Now()
+	now := time.Now().UTC()
 
 	// --- Check Cache (Read Lock) ---
 	s.cacheMutex.RLock()
@@ -188,7 +188,7 @@ func (s *MusicBrainzService) SearchMusicBrainz(ctx context.Context, params Searc
 	s.cacheMutex.Lock()
 	s.searchCache[cacheKey] = cacheEntry{
 		recordings: result.Recordings,
-		expiresAt:  time.Now().Add(s.cacheTTL),
+		expiresAt:  time.Now().UTC().Add(s.cacheTTL),
 	}
 	s.cacheMutex.Unlock()
 	log.Printf("Cached MusicBrainz search result for key=%s, TTL=%s", cacheKey, s.cacheTTL)
