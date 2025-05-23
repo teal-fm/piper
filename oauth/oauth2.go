@@ -123,9 +123,8 @@ func (o *OAuth2Service) HandleCallback(w http.ResponseWriter, r *http.Request) (
 	}
 
 	userId, hasSession := session.GetUserID(r.Context())
-
 	// store token and get uid
-	userID, err := o.tokenReceiver.SetAccessToken(token.AccessToken, userId, hasSession)
+	userID, err := o.tokenReceiver.SetAccessToken(token.AccessToken, token.RefreshToken, userId, hasSession)
 	if err != nil {
 		log.Printf("OAuth2 Callback Info: TokenReceiver did not return a valid user ID for token: %s...", token.AccessToken[:min(10, len(token.AccessToken))])
 	}
