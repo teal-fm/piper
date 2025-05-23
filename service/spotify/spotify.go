@@ -198,10 +198,25 @@ func (s *SpotifyService) LoadAllUsers() error {
 		if user.AccessToken != nil && user.TokenExpiry.After(time.Now().UTC()) {
 			s.userTokens[user.ID] = *user.AccessToken
 			count++
+		} else {
+			token, err := s.refreshTokenInner(user.ID)
+			if err != nil {
+				//Probably should remove the access token and refresh in long run?
+				log.Printf("Error refreshing token for user %d: %v", user.ID, err)
+				continue
+			}
+			s.userTokens[user.ID] = token
 		}
 	}
 
 	log.Printf("Loaded %d active users with valid tokens", count)
+	return nil
+}
+
+func (s *SpotifyService) UnloadAllUsers() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.userTokens = make(map[int64]string)
 	return nil
 }
 
@@ -537,6 +552,11 @@ func (s *SpotifyService) StartListeningTracker(interval time.Duration) {
 	defer ticker.Stop()
 
 	for range ticker.C {
+		err := s.LoadAllUsers()
+		if err != nil {
+			log.Printf("Error loading spotify users: %v", err)
+			continue
+		}
 		// copy userIDs to avoid holding the lock too long
 		s.mu.RLock()
 		userIDs := make([]int64, 0, len(s.userTokens))
@@ -663,6 +683,12 @@ func (s *SpotifyService) StartListeningTracker(interval time.Duration) {
 
 				log.Printf("User %d is listening to: %s by %s", userID, track.Name, track.Artist)
 			}
+		}
+
+		//unloading users to save memory and make sure we get new signups
+		err = s.LoadAllUsers()
+		if err != nil {
+			log.Printf("Error loading spotify users: %v", err)
 		}
 	}
 }

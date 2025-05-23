@@ -321,17 +321,8 @@ func (db *DB) GetRecentTracks(userID int64, limit int) ([]*models.Track, error) 
 	return tracks, nil
 }
 
-func (db *DB) GetUsersWithExpiredTokens() ([]*models.User, error) {
-	rows, err := db.Query(`
-    SELECT id, username, email, spotify_id, access_token, refresh_token, token_expiry, created_at, updated_at
-    FROM users
-    WHERE refresh_token IS NOT NULL AND token_expiry < ?
-    ORDER BY id`, time.Now().UTC())
-
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+// SpotifyQueryMapping maps Spotify sql query results to user structs
+func SpotifyQueryMapping(rows *sql.Rows) ([]*models.User, error) {
 
 	var users []*models.User
 
@@ -350,7 +341,38 @@ func (db *DB) GetUsersWithExpiredTokens() ([]*models.User, error) {
 	return users, nil
 }
 
+func (db *DB) GetUsersWithExpiredTokens() ([]*models.User, error) {
+	rows, err := db.Query(`
+    SELECT id, username, email, spotify_id, access_token, refresh_token, token_expiry, created_at, updated_at
+    FROM users
+    WHERE refresh_token IS NOT NULL AND token_expiry < ?
+    ORDER BY id`, time.Now().UTC())
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return SpotifyQueryMapping(rows)
+
+}
+
 func (db *DB) GetAllActiveUsers() ([]*models.User, error) {
+	rows, err := db.Query(`
+    SELECT id, username, email, spotify_id, access_token, refresh_token, token_expiry, created_at, updated_at
+    FROM users
+    WHERE access_token IS NOT NULL
+    ORDER BY id`)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return SpotifyQueryMapping(rows)
+}
+
+func (db *DB) GetAllActiveUsersWithUnExpiredTokens() ([]*models.User, error) {
 	rows, err := db.Query(`
     SELECT id, username, email, spotify_id, access_token, refresh_token, token_expiry, created_at, updated_at
     FROM users
@@ -362,21 +384,7 @@ func (db *DB) GetAllActiveUsers() ([]*models.User, error) {
 	}
 	defer rows.Close()
 
-	var users []*models.User
-
-	for rows.Next() {
-		user := &models.User{}
-		err := rows.Scan(
-			&user.ID, &user.Username, &user.Email, &user.SpotifyID,
-			&user.AccessToken, &user.RefreshToken, &user.TokenExpiry,
-			&user.CreatedAt, &user.UpdatedAt)
-		if err != nil {
-			return nil, err
-		}
-		users = append(users, user)
-	}
-
-	return users, nil
+	return SpotifyQueryMapping(rows)
 }
 
 // debug to view current user's information

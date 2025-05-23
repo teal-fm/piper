@@ -246,7 +246,8 @@ func (db *DB) GetAtprotoSession(did string, ctx context.Context, oauthClient oau
 }
 
 func AtpSessionToAuthArgs(sess *models.ATprotoAuthSession) *oauth.XrpcAuthedRequestArgs {
-	fmt.Printf("DID: %s\nPDS URL: %s\nISS: %s\nAccess Token: %s\nNonce: %s\nPrivate JWK: %s\n", sess.DID, sess.PDSUrl, sess.AuthServerIssuer, sess.AccessToken, sess.DpopPdsNonce, sess.DpopPrivateJWK)
+	//Commenting out so jwts and tokens are not in logs
+	//fmt.Printf("DID: %s\nPDS URL: %s\nISS: %s\nAccess Token: %s\nNonce: %s\nPrivate JWK: %s\n", sess.DID, sess.PDSUrl, sess.AuthServerIssuer, sess.AccessToken, sess.DpopPdsNonce, sess.DpopPrivateJWK)
 	return &oauth.XrpcAuthedRequestArgs{
 		Did:            sess.DID,
 		PdsUrl:         sess.PDSUrl,
