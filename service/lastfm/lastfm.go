@@ -407,7 +407,7 @@ func (l *LastFMService) SubmitTrackToPDS(did string, track *models.Track, ctx co
 	}
 
 	// printout the session details
-	fmt.Printf("Session details: %+v\n", sess)
+	fmt.Printf("Submitting track for the did: %+v\n", sess.DID)
 
 	// horrible no good very bad for now
 	artistArr := []string{}

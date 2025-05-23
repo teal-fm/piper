@@ -64,7 +64,7 @@ func (am *ApiKeyManager) CreateApiKey(userID int64, name string, validityDays in
 	}
 	apiKeyID := base64.URLEncoding.EncodeToString(b)
 
-	now := time.Now()
+	now := time.Now().UTC()
 	expiresAt := now.AddDate(0, 0, validityDays) // Default to validityDays days validity
 
 	apiKey := &ApiKey{
@@ -100,7 +100,7 @@ func (am *ApiKeyManager) GetApiKey(apiKeyID string) (*ApiKey, bool) {
 
 	if exists {
 		// Check if API key is expired
-		if time.Now().After(apiKey.ExpiresAt) {
+		if time.Now().UTC().After(apiKey.ExpiresAt) {
 			am.DeleteApiKey(apiKeyID)
 			return nil, false
 		}
@@ -118,7 +118,7 @@ func (am *ApiKeyManager) GetApiKey(apiKeyID string) (*ApiKey, bool) {
 		return nil, false
 	}
 
-	if time.Now().After(apiKey.ExpiresAt) {
+	if time.Now().UTC().After(apiKey.ExpiresAt) {
 		am.DeleteApiKey(apiKeyID)
 		return nil, false
 	}

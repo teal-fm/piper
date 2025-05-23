@@ -117,8 +117,8 @@ func (s *SpotifyService) SubmitTrackToPDS(did string, track *models.Track, ctx c
 	return nil
 }
 
-func (s *SpotifyService) SetAccessToken(token string, userId int64, hasSession bool) (int64, error) {
-	userID, err := s.identifyAndStoreUser(token, userId, hasSession)
+func (s *SpotifyService) SetAccessToken(token string, refreshToken string, userId int64, hasSession bool) (int64, error) {
+	userID, err := s.identifyAndStoreUser(token, refreshToken, userId, hasSession)
 	if err != nil {
 		log.Printf("Error identifying and storing user: %v", err)
 		return 0, err
@@ -126,7 +126,7 @@ func (s *SpotifyService) SetAccessToken(token string, userId int64, hasSession b
 	return userID, nil
 }
 
-func (s *SpotifyService) identifyAndStoreUser(token string, userId int64, hasSession bool) (int64, error) {
+func (s *SpotifyService) identifyAndStoreUser(token string, refreshToken string, userId int64, hasSession bool) (int64, error) {
 	userProfile, err := s.fetchSpotifyProfile(token)
 	if err != nil {
 		log.Printf("Error fetching Spotify profile: %v", err)
@@ -142,7 +142,7 @@ func (s *SpotifyService) identifyAndStoreUser(token string, userId int64, hasSes
 		return 0, err
 	}
 
-	tokenExpiryTime := time.Now().Add(1 * time.Hour) // Spotify tokens last ~1 hour
+	tokenExpiryTime := time.Now().UTC().Add(1 * time.Hour) // Spotify tokens last ~1 hour
 
 	// We don't intend users to log in via spotify!
 	if user == nil {
@@ -151,14 +151,14 @@ func (s *SpotifyService) identifyAndStoreUser(token string, userId int64, hasSes
 			return 0, fmt.Errorf("user does not seem to exist")
 		} else {
 			// overwrite prev user
-			user, err = s.DB.AddSpotifySession(userId, userProfile.DisplayName, userProfile.Email, userProfile.ID, token, "", tokenExpiryTime)
+			user, err = s.DB.AddSpotifySession(userId, userProfile.DisplayName, userProfile.Email, userProfile.ID, token, refreshToken, tokenExpiryTime)
 			if err != nil {
 				log.Printf("Error adding Spotify session for user ID %d: %v", userId, err)
 				return 0, err
 			}
 		}
 	} else {
-		err = s.DB.UpdateUserToken(user.ID, token, "", tokenExpiryTime)
+		err = s.DB.UpdateUserToken(user.ID, token, refreshToken, tokenExpiryTime)
 		if err != nil {
 			// for now log and continue
 			log.Printf("Error updating user token for user ID %d: %v", user.ID, err)
@@ -195,13 +195,28 @@ func (s *SpotifyService) LoadAllUsers() error {
 	count := 0
 	for _, user := range users {
 		// load users with valid tokens
-		if user.AccessToken != nil && user.TokenExpiry.After(time.Now()) {
+		if user.AccessToken != nil && user.TokenExpiry.After(time.Now().UTC()) {
 			s.userTokens[user.ID] = *user.AccessToken
 			count++
+		} else {
+			token, err := s.refreshTokenInner(user.ID)
+			if err != nil {
+				//Probably should remove the access token and refresh in long run?
+				log.Printf("Error refreshing token for user %d: %v", user.ID, err)
+				continue
+			}
+			s.userTokens[user.ID] = token
 		}
 	}
 
 	log.Printf("Loaded %d active users with valid tokens", count)
+	return nil
+}
+
+func (s *SpotifyService) UnloadAllUsers() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.userTokens = make(map[int64]string)
 	return nil
 }
 
@@ -262,7 +277,7 @@ func (s *SpotifyService) refreshTokenInner(userID int64) (string, error) {
 		delete(s.userTokens, userID)
 		s.mu.Unlock()
 		// Also clear the bad refresh token from the DB
-		updateErr := s.DB.UpdateUserToken(userID, "", "", time.Now()) // Clear tokens
+		updateErr := s.DB.UpdateUserToken(userID, "", "", time.Now().UTC()) // Clear tokens
 		if updateErr != nil {
 			log.Printf("Failed to clear bad refresh token for user %d: %v", userID, updateErr)
 		}
@@ -281,7 +296,7 @@ func (s *SpotifyService) refreshTokenInner(userID int64) (string, error) {
 		return "", fmt.Errorf("failed to decode refresh response: %w", err)
 	}
 
-	newExpiry := time.Now().Add(time.Duration(tokenResponse.ExpiresIn) * time.Second)
+	newExpiry := time.Now().UTC().Add(time.Duration(tokenResponse.ExpiresIn) * time.Second)
 	newRefreshToken := *user.RefreshToken // Default to old one
 	if tokenResponse.RefreshToken != "" {
 		newRefreshToken = tokenResponse.RefreshToken // Use new one if provided
@@ -537,6 +552,11 @@ func (s *SpotifyService) StartListeningTracker(interval time.Duration) {
 	defer ticker.Stop()
 
 	for range ticker.C {
+		err := s.LoadAllUsers()
+		if err != nil {
+			log.Printf("Error loading spotify users: %v", err)
+			continue
+		}
 		// copy userIDs to avoid holding the lock too long
 		s.mu.RLock()
 		userIDs := make([]int64, 0, len(s.userTokens))
@@ -663,6 +683,12 @@ func (s *SpotifyService) StartListeningTracker(interval time.Duration) {
 
 				log.Printf("User %d is listening to: %s by %s", userID, track.Name, track.Artist)
 			}
+		}
+
+		//unloading users to save memory and make sure we get new signups
+		err = s.LoadAllUsers()
+		if err != nil {
+			log.Printf("Error loading spotify users: %v", err)
 		}
 	}
 }
