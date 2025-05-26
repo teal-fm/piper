@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 	"sync" // Added for mutex
@@ -75,6 +76,7 @@ type MusicBrainzService struct {
 	cacheMutex  sync.RWMutex          // Mutex to protect the cache
 	cacheTTL    time.Duration         // Time-to-live for cache entries
 	cleaner     MetadataCleaner       // Cleaner for cleaning up expired cache entries
+	logger      *log.Logger           // Logger for logging
 }
 
 // NewMusicBrainzService creates a new service instance with rate limiting and caching.
@@ -83,7 +85,7 @@ func NewMusicBrainzService(db *db.DB) *MusicBrainzService {
 	limiter := rate.NewLimiter(rate.Every(time.Second), 1)
 	// Set a default cache TTL (e.g., 1 hour)
 	defaultCacheTTL := 1 * time.Hour
-
+	logger := log.New(os.Stdout, "musicbrainz: ", log.LstdFlags|log.Lmsgprefix)
 	return &MusicBrainzService{
 		db: db,
 		httpClient: &http.Client{
@@ -94,6 +96,7 @@ func NewMusicBrainzService(db *db.DB) *MusicBrainzService {
 		cacheTTL:    defaultCacheTTL,              // Set the cache TTL
 		cleaner:     *NewMetadataCleaner("Latin"), // Initialize the cleaner
 		// cacheMutex is zero-value ready
+		logger: logger,
 	}
 }
 
@@ -127,15 +130,15 @@ func (s *MusicBrainzService) SearchMusicBrainz(ctx context.Context, params Searc
 	s.cacheMutex.RUnlock()
 
 	if found && now.Before(entry.expiresAt) {
-		log.Printf("Cache hit for MusicBrainz search: key=%s", cacheKey)
+		s.logger.Printf("Cache hit for MusicBrainz search: key=%s", cacheKey)
 		// Return the cached data directly. Consider if a deep copy is needed if callers modify results.
 		return entry.recordings, nil
 	}
 	// --- Cache Miss or Expired ---
 	if found {
-		log.Printf("Cache expired for MusicBrainz search: key=%s", cacheKey)
+		s.logger.Printf("Cache expired for MusicBrainz search: key=%s", cacheKey)
 	} else {
-		log.Printf("Cache miss for MusicBrainz search: key=%s", cacheKey)
+		s.logger.Printf("Cache miss for MusicBrainz search: key=%s", cacheKey)
 	}
 
 	// --- Proceed with API call ---
@@ -191,14 +194,14 @@ func (s *MusicBrainzService) SearchMusicBrainz(ctx context.Context, params Searc
 		expiresAt:  time.Now().UTC().Add(s.cacheTTL),
 	}
 	s.cacheMutex.Unlock()
-	log.Printf("Cached MusicBrainz search result for key=%s, TTL=%s", cacheKey, s.cacheTTL)
+	s.logger.Printf("Cached MusicBrainz search result for key=%s, TTL=%s", cacheKey, s.cacheTTL)
 
 	// Return the newly fetched results
 	return result.Recordings, nil
 }
 
 // GetBestRelease selects the 'best' release from a list based on specific criteria.
-func GetBestRelease(releases []MusicBrainzRelease, trackTitle string) *MusicBrainzRelease {
+func (s *MusicBrainzService) GetBestRelease(releases []MusicBrainzRelease, trackTitle string) *MusicBrainzRelease {
 	if len(releases) == 0 {
 		return nil
 	}
@@ -251,7 +254,7 @@ func GetBestRelease(releases []MusicBrainzRelease, trackTitle string) *MusicBrai
 	}
 
 	// 3. If none found, return the oldest release overall (which is the first one after sorting)
-	log.Printf("Could not find a suitable release for '%s', picking oldest: '%s' (%s)", trackTitle, releases[0].Title, releases[0].ID)
+	s.logger.Printf("Could not find a suitable release for '%s', picking oldest: '%s' (%s)", trackTitle, releases[0].Title, releases[0].ID)
 	r := releases[0]
 	return &r
 }
@@ -279,7 +282,7 @@ func HydrateTrack(mb *MusicBrainzService, track models.Track) (*models.Track, er
 	}
 
 	firstResult := res[0]
-	firstResultAlbum := GetBestRelease(firstResult.Releases, firstResult.Title)
+	firstResultAlbum := mb.GetBestRelease(firstResult.Releases, firstResult.Title)
 
 	// woof. we Might not have any ISRCs!
 	var bestISRC string

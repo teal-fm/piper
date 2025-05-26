@@ -108,9 +108,9 @@ func main() {
 		lastfmInterval = 30 * time.Second
 	}
 
-	if err := spotifyService.LoadAllUsers(); err != nil {
-		log.Printf("Warning: Failed to preload Spotify users: %v", err)
-	}
+	//if err := spotifyService.LoadAllUsers(); err != nil {
+	//	log.Printf("Warning: Failed to preload Spotify users: %v", err)
+	//}
 	go spotifyService.StartListeningTracker(trackerInterval)
 
 	go lastfmService.StartListeningTracker(lastfmInterval)
