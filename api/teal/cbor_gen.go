@@ -27,9 +27,17 @@ func (t *AlphaFeedPlay) MarshalCBOR(w io.Writer) error {
 	}
 
 	cw := cbg.NewCborWriter(w)
-	fieldCount := 14
+	fieldCount := 15
 
 	if t.ArtistMbIds == nil {
+		fieldCount--
+	}
+
+	if t.ArtistNames == nil {
+		fieldCount--
+	}
+
+	if t.Artists == nil {
 		fieldCount--
 	}
 
@@ -126,6 +134,35 @@ func (t *AlphaFeedPlay) MarshalCBOR(w io.Writer) error {
 	}
 	if _, err := cw.WriteString(string("fm.teal.alpha.feed.play")); err != nil {
 		return err
+	}
+
+	// t.Artists ([]*teal.AlphaFeedDefs_Artist) (slice)
+	if t.Artists != nil {
+
+		if len("artists") > 1000000 {
+			return xerrors.Errorf("Value in field \"artists\" was too long")
+		}
+
+		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("artists"))); err != nil {
+			return err
+		}
+		if _, err := cw.WriteString(string("artists")); err != nil {
+			return err
+		}
+
+		if len(t.Artists) > 8192 {
+			return xerrors.Errorf("Slice value in field t.Artists was too long")
+		}
+
+		if err := cw.WriteMajorTypeHeader(cbg.MajArray, uint64(len(t.Artists))); err != nil {
+			return err
+		}
+		for _, v := range t.Artists {
+			if err := v.MarshalCBOR(cw); err != nil {
+				return err
+			}
+
+		}
 	}
 
 	// t.Duration (int64) (int64)
@@ -316,36 +353,39 @@ func (t *AlphaFeedPlay) MarshalCBOR(w io.Writer) error {
 	}
 
 	// t.ArtistNames ([]string) (slice)
-	if len("artistNames") > 1000000 {
-		return xerrors.Errorf("Value in field \"artistNames\" was too long")
-	}
+	if t.ArtistNames != nil {
 
-	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("artistNames"))); err != nil {
-		return err
-	}
-	if _, err := cw.WriteString(string("artistNames")); err != nil {
-		return err
-	}
-
-	if len(t.ArtistNames) > 8192 {
-		return xerrors.Errorf("Slice value in field t.ArtistNames was too long")
-	}
-
-	if err := cw.WriteMajorTypeHeader(cbg.MajArray, uint64(len(t.ArtistNames))); err != nil {
-		return err
-	}
-	for _, v := range t.ArtistNames {
-		if len(v) > 1000000 {
-			return xerrors.Errorf("Value in field v was too long")
+		if len("artistNames") > 1000000 {
+			return xerrors.Errorf("Value in field \"artistNames\" was too long")
 		}
 
-		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(v))); err != nil {
+		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("artistNames"))); err != nil {
 			return err
 		}
-		if _, err := cw.WriteString(string(v)); err != nil {
+		if _, err := cw.WriteString(string("artistNames")); err != nil {
 			return err
 		}
 
+		if len(t.ArtistNames) > 8192 {
+			return xerrors.Errorf("Slice value in field t.ArtistNames was too long")
+		}
+
+		if err := cw.WriteMajorTypeHeader(cbg.MajArray, uint64(len(t.ArtistNames))); err != nil {
+			return err
+		}
+		for _, v := range t.ArtistNames {
+			if len(v) > 1000000 {
+				return xerrors.Errorf("Value in field v was too long")
+			}
+
+			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(v))); err != nil {
+				return err
+			}
+			if _, err := cw.WriteString(string(v)); err != nil {
+				return err
+			}
+
+		}
 	}
 
 	// t.ReleaseMbId (string) (string)
@@ -582,6 +622,55 @@ func (t *AlphaFeedPlay) UnmarshalCBOR(r io.Reader) (err error) {
 				}
 
 				t.LexiconTypeID = string(sval)
+			}
+			// t.Artists ([]*teal.AlphaFeedDefs_Artist) (slice)
+		case "artists":
+
+			maj, extra, err = cr.ReadHeader()
+			if err != nil {
+				return err
+			}
+
+			if extra > 8192 {
+				return fmt.Errorf("t.Artists: array too large (%d)", extra)
+			}
+
+			if maj != cbg.MajArray {
+				return fmt.Errorf("expected cbor array")
+			}
+
+			if extra > 0 {
+				t.Artists = make([]*AlphaFeedDefs_Artist, extra)
+			}
+
+			for i := 0; i < int(extra); i++ {
+				{
+					var maj byte
+					var extra uint64
+					var err error
+					_ = maj
+					_ = extra
+					_ = err
+
+					{
+
+						b, err := cr.ReadByte()
+						if err != nil {
+							return err
+						}
+						if b != cbg.CborNull[0] {
+							if err := cr.UnreadByte(); err != nil {
+								return err
+							}
+							t.Artists[i] = new(AlphaFeedDefs_Artist)
+							if err := t.Artists[i].UnmarshalCBOR(cr); err != nil {
+								return xerrors.Errorf("unmarshaling t.Artists[i] pointer: %w", err)
+							}
+						}
+
+					}
+
+				}
 			}
 			// t.Duration (int64) (int64)
 		case "duration":
@@ -1733,11 +1822,7 @@ func (t *AlphaFeedDefs_PlayView) MarshalCBOR(w io.Writer) error {
 	}
 
 	cw := cbg.NewCborWriter(w)
-	fieldCount := 13
-
-	if t.ArtistMbIds == nil {
-		fieldCount--
-	}
+	fieldCount := 12
 
 	if t.Duration == nil {
 		fieldCount--
@@ -1813,6 +1898,32 @@ func (t *AlphaFeedDefs_PlayView) MarshalCBOR(w io.Writer) error {
 				return err
 			}
 		}
+	}
+
+	// t.Artists ([]*teal.AlphaFeedDefs_Artist) (slice)
+	if len("artists") > 1000000 {
+		return xerrors.Errorf("Value in field \"artists\" was too long")
+	}
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("artists"))); err != nil {
+		return err
+	}
+	if _, err := cw.WriteString(string("artists")); err != nil {
+		return err
+	}
+
+	if len(t.Artists) > 8192 {
+		return xerrors.Errorf("Slice value in field t.Artists was too long")
+	}
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajArray, uint64(len(t.Artists))); err != nil {
+		return err
+	}
+	for _, v := range t.Artists {
+		if err := v.MarshalCBOR(cw); err != nil {
+			return err
+		}
+
 	}
 
 	// t.Duration (int64) (int64)
@@ -1964,75 +2075,6 @@ func (t *AlphaFeedDefs_PlayView) MarshalCBOR(w io.Writer) error {
 				return err
 			}
 		}
-	}
-
-	// t.ArtistMbIds ([]string) (slice)
-	if t.ArtistMbIds != nil {
-
-		if len("artistMbIds") > 1000000 {
-			return xerrors.Errorf("Value in field \"artistMbIds\" was too long")
-		}
-
-		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("artistMbIds"))); err != nil {
-			return err
-		}
-		if _, err := cw.WriteString(string("artistMbIds")); err != nil {
-			return err
-		}
-
-		if len(t.ArtistMbIds) > 8192 {
-			return xerrors.Errorf("Slice value in field t.ArtistMbIds was too long")
-		}
-
-		if err := cw.WriteMajorTypeHeader(cbg.MajArray, uint64(len(t.ArtistMbIds))); err != nil {
-			return err
-		}
-		for _, v := range t.ArtistMbIds {
-			if len(v) > 1000000 {
-				return xerrors.Errorf("Value in field v was too long")
-			}
-
-			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(v))); err != nil {
-				return err
-			}
-			if _, err := cw.WriteString(string(v)); err != nil {
-				return err
-			}
-
-		}
-	}
-
-	// t.ArtistNames ([]string) (slice)
-	if len("artistNames") > 1000000 {
-		return xerrors.Errorf("Value in field \"artistNames\" was too long")
-	}
-
-	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("artistNames"))); err != nil {
-		return err
-	}
-	if _, err := cw.WriteString(string("artistNames")); err != nil {
-		return err
-	}
-
-	if len(t.ArtistNames) > 8192 {
-		return xerrors.Errorf("Slice value in field t.ArtistNames was too long")
-	}
-
-	if err := cw.WriteMajorTypeHeader(cbg.MajArray, uint64(len(t.ArtistNames))); err != nil {
-		return err
-	}
-	for _, v := range t.ArtistNames {
-		if len(v) > 1000000 {
-			return xerrors.Errorf("Value in field v was too long")
-		}
-
-		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(v))); err != nil {
-			return err
-		}
-		if _, err := cw.WriteString(string(v)); err != nil {
-			return err
-		}
-
 	}
 
 	// t.ReleaseMbId (string) (string)
@@ -2259,6 +2301,55 @@ func (t *AlphaFeedDefs_PlayView) UnmarshalCBOR(r io.Reader) (err error) {
 					t.Isrc = (*string)(&sval)
 				}
 			}
+			// t.Artists ([]*teal.AlphaFeedDefs_Artist) (slice)
+		case "artists":
+
+			maj, extra, err = cr.ReadHeader()
+			if err != nil {
+				return err
+			}
+
+			if extra > 8192 {
+				return fmt.Errorf("t.Artists: array too large (%d)", extra)
+			}
+
+			if maj != cbg.MajArray {
+				return fmt.Errorf("expected cbor array")
+			}
+
+			if extra > 0 {
+				t.Artists = make([]*AlphaFeedDefs_Artist, extra)
+			}
+
+			for i := 0; i < int(extra); i++ {
+				{
+					var maj byte
+					var extra uint64
+					var err error
+					_ = maj
+					_ = extra
+					_ = err
+
+					{
+
+						b, err := cr.ReadByte()
+						if err != nil {
+							return err
+						}
+						if b != cbg.CborNull[0] {
+							if err := cr.UnreadByte(); err != nil {
+								return err
+							}
+							t.Artists[i] = new(AlphaFeedDefs_Artist)
+							if err := t.Artists[i].UnmarshalCBOR(cr); err != nil {
+								return xerrors.Errorf("unmarshaling t.Artists[i] pointer: %w", err)
+							}
+						}
+
+					}
+
+				}
+			}
 			// t.Duration (int64) (int64)
 		case "duration":
 			{
@@ -2369,86 +2460,6 @@ func (t *AlphaFeedDefs_PlayView) UnmarshalCBOR(r io.Reader) (err error) {
 					t.PlayedTime = (*string)(&sval)
 				}
 			}
-			// t.ArtistMbIds ([]string) (slice)
-		case "artistMbIds":
-
-			maj, extra, err = cr.ReadHeader()
-			if err != nil {
-				return err
-			}
-
-			if extra > 8192 {
-				return fmt.Errorf("t.ArtistMbIds: array too large (%d)", extra)
-			}
-
-			if maj != cbg.MajArray {
-				return fmt.Errorf("expected cbor array")
-			}
-
-			if extra > 0 {
-				t.ArtistMbIds = make([]string, extra)
-			}
-
-			for i := 0; i < int(extra); i++ {
-				{
-					var maj byte
-					var extra uint64
-					var err error
-					_ = maj
-					_ = extra
-					_ = err
-
-					{
-						sval, err := cbg.ReadStringWithMax(cr, 1000000)
-						if err != nil {
-							return err
-						}
-
-						t.ArtistMbIds[i] = string(sval)
-					}
-
-				}
-			}
-			// t.ArtistNames ([]string) (slice)
-		case "artistNames":
-
-			maj, extra, err = cr.ReadHeader()
-			if err != nil {
-				return err
-			}
-
-			if extra > 8192 {
-				return fmt.Errorf("t.ArtistNames: array too large (%d)", extra)
-			}
-
-			if maj != cbg.MajArray {
-				return fmt.Errorf("expected cbor array")
-			}
-
-			if extra > 0 {
-				t.ArtistNames = make([]string, extra)
-			}
-
-			for i := 0; i < int(extra); i++ {
-				{
-					var maj byte
-					var extra uint64
-					var err error
-					_ = maj
-					_ = extra
-					_ = err
-
-					{
-						sval, err := cbg.ReadStringWithMax(cr, 1000000)
-						if err != nil {
-							return err
-						}
-
-						t.ArtistNames[i] = string(sval)
-					}
-
-				}
-			}
 			// t.ReleaseMbId (string) (string)
 		case "releaseMbId":
 
@@ -2553,6 +2564,164 @@ func (t *AlphaFeedDefs_PlayView) UnmarshalCBOR(r io.Reader) (err error) {
 
 					t.MusicServiceBaseDomain = (*string)(&sval)
 				}
+			}
+
+		default:
+			// Field doesn't exist on this type, so ignore it
+			if err := cbg.ScanForLinks(r, func(cid.Cid) {}); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+func (t *AlphaFeedDefs_Artist) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+
+	cw := cbg.NewCborWriter(w)
+	fieldCount := 2
+
+	if t.ArtistMbId == nil {
+		fieldCount--
+	}
+
+	if _, err := cw.Write(cbg.CborEncodeMajorType(cbg.MajMap, uint64(fieldCount))); err != nil {
+		return err
+	}
+
+	// t.ArtistMbId (string) (string)
+	if t.ArtistMbId != nil {
+
+		if len("artistMbId") > 1000000 {
+			return xerrors.Errorf("Value in field \"artistMbId\" was too long")
+		}
+
+		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("artistMbId"))); err != nil {
+			return err
+		}
+		if _, err := cw.WriteString(string("artistMbId")); err != nil {
+			return err
+		}
+
+		if t.ArtistMbId == nil {
+			if _, err := cw.Write(cbg.CborNull); err != nil {
+				return err
+			}
+		} else {
+			if len(*t.ArtistMbId) > 1000000 {
+				return xerrors.Errorf("Value in field t.ArtistMbId was too long")
+			}
+
+			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(*t.ArtistMbId))); err != nil {
+				return err
+			}
+			if _, err := cw.WriteString(string(*t.ArtistMbId)); err != nil {
+				return err
+			}
+		}
+	}
+
+	// t.ArtistName (string) (string)
+	if len("artistName") > 1000000 {
+		return xerrors.Errorf("Value in field \"artistName\" was too long")
+	}
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("artistName"))); err != nil {
+		return err
+	}
+	if _, err := cw.WriteString(string("artistName")); err != nil {
+		return err
+	}
+
+	if len(t.ArtistName) > 1000000 {
+		return xerrors.Errorf("Value in field t.ArtistName was too long")
+	}
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(t.ArtistName))); err != nil {
+		return err
+	}
+	if _, err := cw.WriteString(string(t.ArtistName)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *AlphaFeedDefs_Artist) UnmarshalCBOR(r io.Reader) (err error) {
+	*t = AlphaFeedDefs_Artist{}
+
+	cr := cbg.NewCborReader(r)
+
+	maj, extra, err := cr.ReadHeader()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err == io.EOF {
+			err = io.ErrUnexpectedEOF
+		}
+	}()
+
+	if maj != cbg.MajMap {
+		return fmt.Errorf("cbor input should be of type map")
+	}
+
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("AlphaFeedDefs_Artist: map struct too large (%d)", extra)
+	}
+
+	n := extra
+
+	nameBuf := make([]byte, 10)
+	for i := uint64(0); i < n; i++ {
+		nameLen, ok, err := cbg.ReadFullStringIntoBuf(cr, nameBuf, 1000000)
+		if err != nil {
+			return err
+		}
+
+		if !ok {
+			// Field doesn't exist on this type, so ignore it
+			if err := cbg.ScanForLinks(cr, func(cid.Cid) {}); err != nil {
+				return err
+			}
+			continue
+		}
+
+		switch string(nameBuf[:nameLen]) {
+		// t.ArtistMbId (string) (string)
+		case "artistMbId":
+
+			{
+				b, err := cr.ReadByte()
+				if err != nil {
+					return err
+				}
+				if b != cbg.CborNull[0] {
+					if err := cr.UnreadByte(); err != nil {
+						return err
+					}
+
+					sval, err := cbg.ReadStringWithMax(cr, 1000000)
+					if err != nil {
+						return err
+					}
+
+					t.ArtistMbId = (*string)(&sval)
+				}
+			}
+			// t.ArtistName (string) (string)
+		case "artistName":
+
+			{
+				sval, err := cbg.ReadStringWithMax(cr, 1000000)
+				if err != nil {
+					return err
+				}
+
+				t.ArtistName = string(sval)
 			}
 
 		default:
