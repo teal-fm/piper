@@ -72,6 +72,12 @@ air
 
 air should automatically build and run piper, and watch for changes on relevant files.
 
+#### Lexicon changes
+1. Copy the new or changed json schema files to the [lexicon folders](./lexicons)
+2. run `make go-lexicons`
+
+Go types should be updated and should have the changes to the schemas 
+
 #### docker
 We also provide a docker compose file to use to run piper locally. There are a few edits to the [.env](.env) to make it run smoother in a container
 `SERVER_HOST`- `0.0.0.0`
