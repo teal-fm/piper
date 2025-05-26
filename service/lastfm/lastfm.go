@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -40,9 +41,12 @@ type LastFMService struct {
 	atprotoService     *atprotoauth.ATprotoAuthService
 	lastSeenNowPlaying map[string]Track
 	mu                 sync.Mutex
+	logger             *log.Logger
 }
 
 func NewLastFMService(db *db.DB, apiKey string, musicBrainzService *musicbrainz.MusicBrainzService, atprotoService *atprotoauth.ATprotoAuthService) *LastFMService {
+	logger := log.New(os.Stdout, "lastfm: ", log.LstdFlags|log.Lmsgprefix)
+
 	return &LastFMService{
 		db: db,
 		httpClient: &http.Client{
@@ -56,13 +60,14 @@ func NewLastFMService(db *db.DB, apiKey string, musicBrainzService *musicbrainz.
 		musicBrainzService: musicBrainzService,
 		lastSeenNowPlaying: make(map[string]Track),
 		mu:                 sync.Mutex{},
+		logger:             logger,
 	}
 }
 
 func (l *LastFMService) loadUsernames() error {
 	u, err := l.db.GetAllUsersWithLastFM()
 	if err != nil {
-		log.Printf("Error loading users with Last.fm from DB: %v", err)
+		l.logger.Printf("Error loading users with Last.fm from DB: %v", err)
 		return fmt.Errorf("failed to load users from database: %w", err)
 	}
 	usernames := make([]string, len(u))
@@ -71,7 +76,7 @@ func (l *LastFMService) loadUsernames() error {
 		if user.LastFMUsername != nil { // Check if the username is set
 			usernames[i] = *user.LastFMUsername
 		} else {
-			log.Printf("User ID %d has Last.fm enabled but no username set", user.ID)
+			l.logger.Printf("User ID %d has Last.fm enabled but no username set", user.ID)
 		}
 	}
 
@@ -84,7 +89,7 @@ func (l *LastFMService) loadUsernames() error {
 	}
 
 	l.Usernames = filteredUsernames
-	log.Printf("Loaded %d Last.fm usernames", len(l.Usernames))
+	l.logger.Printf("Loaded %d Last.fm usernames", len(l.Usernames))
 
 	return nil
 }
@@ -113,7 +118,7 @@ func (l *LastFMService) getRecentTracks(ctx context.Context, username string, li
 		return nil, fmt.Errorf("failed to create request for %s: %w", username, err)
 	}
 
-	log.Printf("Fetching recent tracks for user: %s", username)
+	l.logger.Printf("Fetching recent tracks for user: %s", username)
 	resp, err := l.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch recent tracks for %s: %w", username, err)
@@ -134,18 +139,18 @@ func (l *LastFMService) getRecentTracks(ctx context.Context, username string, li
 	}
 	if err := json.Unmarshal(bodyBytes, &recentTracksResp); err != nil {
 		// Log the body content that failed to decode
-		log.Printf("Failed to decode response body for %s: %s", username, string(bodyBytes))
+		l.logger.Printf("Failed to decode response body for %s: %s", username, string(bodyBytes))
 		return nil, fmt.Errorf("failed to decode response for %s: %w", username, err)
 	}
 
 	if len(recentTracksResp.RecentTracks.Tracks) > 0 {
-		log.Printf("Fetched %d tracks for %s. Most recent: %s - %s",
+		l.logger.Printf("Fetched %d tracks for %s. Most recent: %s - %s",
 			len(recentTracksResp.RecentTracks.Tracks),
 			username,
 			recentTracksResp.RecentTracks.Tracks[0].Artist.Text,
 			recentTracksResp.RecentTracks.Tracks[0].Name)
 	} else {
-		log.Printf("No recent tracks found for %s", username)
+		l.logger.Printf("No recent tracks found for %s", username)
 	}
 
 	return &recentTracksResp, nil
@@ -153,14 +158,14 @@ func (l *LastFMService) getRecentTracks(ctx context.Context, username string, li
 
 func (l *LastFMService) StartListeningTracker(interval time.Duration) {
 	if err := l.loadUsernames(); err != nil {
-		log.Printf("Failed to perform initial username load: %v", err)
+		l.logger.Printf("Failed to perform initial username load: %v", err)
 		// Decide if we should proceed without initial load or return error
 	}
 
 	if len(l.Usernames) == 0 {
-		log.Println("No Last.fm users configured. Tracker will run but fetch cycles will be skipped until users are added.")
+		l.logger.Println("No Last.fm users configured. Tracker will run but fetch cycles will be skipped until users are added.")
 	} else {
-		log.Printf("Found %d Last.fm users.", len(l.Usernames))
+		l.logger.Printf("Found %d Last.fm users.", len(l.Usernames))
 	}
 
 	ticker := time.NewTicker(interval)
@@ -169,7 +174,7 @@ func (l *LastFMService) StartListeningTracker(interval time.Duration) {
 		if len(l.Usernames) > 0 {
 			l.fetchAllUserTracks(context.Background())
 		} else {
-			log.Println("Skipping initial fetch cycle as no users are configured.")
+			l.logger.Println("Skipping initial fetch cycle as no users are configured.")
 		}
 
 		for {
@@ -177,36 +182,36 @@ func (l *LastFMService) StartListeningTracker(interval time.Duration) {
 			case <-ticker.C:
 				// refresh usernames periodically from db
 				if err := l.loadUsernames(); err != nil {
-					log.Printf("Error reloading usernames in ticker: %v", err)
+					l.logger.Printf("Error reloading usernames in ticker: %v", err)
 					// Continue ticker loop even if reload fails? Or log and potentially stop?
 					continue // Continue for now
 				}
 				if len(l.Usernames) > 0 {
 					l.fetchAllUserTracks(context.Background())
 				} else {
-					log.Println("No Last.fm users configured. Skipping fetch cycle.")
+					l.logger.Println("No Last.fm users configured. Skipping fetch cycle.")
 				}
 				// TODO: Implement graceful shutdown using context cancellation
 				// case <-ctx.Done():
-				//  log.Println("Stopping Last.fm listening tracker.")
+				//  l.logger.Println("Stopping Last.fm listening tracker.")
 				//	ticker.Stop()
 				//  return
 			}
 		}
 	}()
 
-	log.Printf("Last.fm Listening Tracker started with interval %v", interval)
+	l.logger.Printf("Last.fm Listening Tracker started with interval %v", interval)
 }
 
 // fetchAllUserTracks iterates through users and fetches their tracks.
 func (l *LastFMService) fetchAllUserTracks(ctx context.Context) {
-	log.Printf("Starting fetch cycle for %d users...", len(l.Usernames))
+	l.logger.Printf("Starting fetch cycle for %d users...", len(l.Usernames))
 	var wg sync.WaitGroup                             // Use WaitGroup to fetch concurrently (optional)
 	fetchErrors := make(chan error, len(l.Usernames)) // Channel for errors
 
 	for _, username := range l.Usernames {
 		if ctx.Err() != nil {
-			log.Printf("Context cancelled before starting fetch for user %s.", username)
+			l.logger.Printf("Context cancelled before starting fetch for user %s.", username)
 			break // Exit loop if context is cancelled
 		}
 
@@ -214,7 +219,7 @@ func (l *LastFMService) fetchAllUserTracks(ctx context.Context) {
 		go func(uname string) { // Launch fetch and process in a goroutine per user
 			defer wg.Done()
 			if ctx.Err() != nil {
-				log.Printf("Context cancelled during fetch cycle for user %s.", uname)
+				l.logger.Printf("Context cancelled during fetch cycle for user %s.", uname)
 				return // Exit goroutine if context is cancelled
 			}
 
@@ -223,19 +228,19 @@ func (l *LastFMService) fetchAllUserTracks(ctx context.Context) {
 			const fetchLimit = 5
 			recentTracks, err := l.getRecentTracks(ctx, uname, fetchLimit)
 			if err != nil {
-				log.Printf("Error fetching tracks for %s: %v", uname, err)
+				l.logger.Printf("Error fetching tracks for %s: %v", uname, err)
 				fetchErrors <- fmt.Errorf("fetch failed for %s: %w", uname, err) // Report error
 				return
 			}
 
 			if recentTracks == nil || len(recentTracks.RecentTracks.Tracks) == 0 {
-				log.Printf("No tracks returned for user %s", uname)
+				l.logger.Printf("No tracks returned for user %s", uname)
 				return
 			}
 
 			// Process the fetched tracks
 			if err := l.processTracks(ctx, uname, recentTracks.RecentTracks.Tracks); err != nil {
-				log.Printf("Error processing tracks for %s: %v", uname, err)
+				l.logger.Printf("Error processing tracks for %s: %v", uname, err)
 				fetchErrors <- fmt.Errorf("process failed for %s: %w", uname, err) // Report error
 			}
 		}(username)
@@ -247,14 +252,14 @@ func (l *LastFMService) fetchAllUserTracks(ctx context.Context) {
 	// Log any errors that occurred during the fetch cycle
 	errorCount := 0
 	for err := range fetchErrors {
-		log.Printf("Fetch cycle error: %v", err)
+		l.logger.Printf("Fetch cycle error: %v", err)
 		errorCount++
 	}
 
 	if errorCount > 0 {
-		log.Printf("Finished fetch cycle with %d errors.", errorCount)
+		l.logger.Printf("Finished fetch cycle with %d errors.", errorCount)
 	} else {
-		log.Println("Finished fetch cycle successfully.")
+		l.logger.Println("Finished fetch cycle successfully.")
 	}
 }
 
@@ -274,9 +279,9 @@ func (l *LastFMService) processTracks(ctx context.Context, username string, trac
 	}
 
 	if lastKnownTimestamp == nil {
-		log.Printf("no previous scrobble timestamp found for user %s. processing latest track.", username)
+		l.logger.Printf("no previous scrobble timestamp found for user %s. processing latest track.", username)
 	} else {
-		log.Printf("last known scrobble for %s was at %s", username, lastKnownTimestamp.Format(time.RFC3339))
+		l.logger.Printf("last known scrobble for %s was at %s", username, lastKnownTimestamp.Format(time.RFC3339))
 	}
 
 	var (
@@ -287,15 +292,15 @@ func (l *LastFMService) processTracks(ctx context.Context, username string, trac
 	// handle now playing track separately
 	if len(tracks) > 0 && tracks[0].Attr != nil && tracks[0].Attr.NowPlaying == "true" {
 		nowPlayingTrack := tracks[0]
-		log.Printf("now playing track for %s: %s - %s", username, nowPlayingTrack.Artist.Text, nowPlayingTrack.Name)
+		l.logger.Printf("now playing track for %s: %s - %s", username, nowPlayingTrack.Artist.Text, nowPlayingTrack.Name)
 		l.mu.Lock()
 		lastSeen, existed := l.lastSeenNowPlaying[username]
 		// if our current track matches with last seen
 		// just compare artist/album/name for now
 		if existed && lastSeen.Album == nowPlayingTrack.Album && lastSeen.Name == nowPlayingTrack.Name && lastSeen.Artist == nowPlayingTrack.Artist {
-			log.Printf("current track matches last seen track for %s", username)
+			l.logger.Printf("current track matches last seen track for %s", username)
 		} else {
-			log.Printf("current track does not match last seen track for %s", username)
+			l.logger.Printf("current track does not match last seen track for %s", username)
 			// aha! we record this!
 			l.lastSeenNowPlaying[username] = nowPlayingTrack
 		}
@@ -312,24 +317,24 @@ func (l *LastFMService) processTracks(ctx context.Context, username string, trac
 	}
 
 	if lastNonNowPlaying == nil {
-		log.Printf("no non-now-playing tracks found for user %s.", username)
+		l.logger.Printf("no non-now-playing tracks found for user %s.", username)
 		return nil
 	}
 
 	latestTrackTime := lastNonNowPlaying.Date
 
 	// print both
-	fmt.Printf("latestTrackTime: %s\n", latestTrackTime)
-	fmt.Printf("lastKnownTimestamp: %s\n", lastKnownTimestamp)
+	l.logger.Printf("latestTrackTime: %s\n", latestTrackTime)
+	l.logger.Printf("lastKnownTimestamp: %s\n", lastKnownTimestamp)
 
 	if lastKnownTimestamp != nil && lastKnownTimestamp.Equal(latestTrackTime.Time) {
-		log.Printf("no new tracks to process for user %s.", username)
+		l.logger.Printf("no new tracks to process for user %s.", username)
 		return nil
 	}
 
 	for _, track := range tracks {
 		if track.Date == nil {
-			log.Printf("skipping track without timestamp for %s: %s - %s", username, track.Artist.Text, track.Name)
+			l.logger.Printf("skipping track without timestamp for %s: %s - %s", username, track.Artist.Text, track.Name)
 			continue
 		}
 
@@ -337,7 +342,7 @@ func (l *LastFMService) processTracks(ctx context.Context, username string, trac
 		// before or at last known
 		if lastKnownTimestamp != nil && (trackTime.Before(*lastKnownTimestamp) || trackTime.Equal(*lastKnownTimestamp)) {
 			if processedCount == 0 {
-				log.Printf("reached already known scrobbles for user %s (track time: %s, last known: %s).",
+				l.logger.Printf("reached already known scrobbles for user %s (track time: %s, last known: %s).",
 					username, trackTime.Format(time.RFC3339), lastKnownTimestamp.Format(time.RFC3339))
 			}
 			break
@@ -360,15 +365,15 @@ func (l *LastFMService) processTracks(ctx context.Context, username string, trac
 
 		hydratedTrack, err := musicbrainz.HydrateTrack(l.musicBrainzService, baseTrack)
 		if err != nil {
-			log.Printf("error hydrating track for user %s: %s - %s: %v", username, track.Artist.Text, track.Name, err)
+			l.logger.Printf("error hydrating track for user %s: %s - %s: %v", username, track.Artist.Text, track.Name, err)
 			// we can use the track without MBIDs, it's still valid
 			hydratedTrack = &baseTrack
 		}
 		l.db.SaveTrack(user.ID, hydratedTrack)
-		log.Printf("Submitting track")
+		l.logger.Printf("Submitting track")
 		err = l.SubmitTrackToPDS(*user.ATProtoDID, hydratedTrack, ctx)
 		if err != nil {
-			log.Printf("error submitting track for user %s: %s - %s: %v", username, track.Artist.Text, track.Name, err)
+			l.logger.Printf("error submitting track for user %s: %s - %s: %v", username, track.Artist.Text, track.Name, err)
 		}
 		processedCount++
 
@@ -382,7 +387,7 @@ func (l *LastFMService) processTracks(ctx context.Context, username string, trac
 	}
 
 	if processedCount > 0 {
-		log.Printf("processed %d new track(s) for user %s. latest timestamp: %s",
+		l.logger.Printf("processed %d new track(s) for user %s. latest timestamp: %s",
 			processedCount, username, latestProcessedTime.Format(time.RFC3339))
 	}
 
@@ -407,7 +412,7 @@ func (l *LastFMService) SubmitTrackToPDS(did string, track *models.Track, ctx co
 	}
 
 	// printout the session details
-	fmt.Printf("Submitting track for the did: %+v\n", sess.DID)
+	l.logger.Printf("Submitting track for the did: %+v\n", sess.DID)
 
 	artists := make([]*teal.AlphaFeedDefs_Artist, 0, len(track.Artist))
 	for _, a := range track.Artist {
