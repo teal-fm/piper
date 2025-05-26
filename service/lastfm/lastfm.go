@@ -409,12 +409,13 @@ func (l *LastFMService) SubmitTrackToPDS(did string, track *models.Track, ctx co
 	// printout the session details
 	fmt.Printf("Submitting track for the did: %+v\n", sess.DID)
 
-	// horrible no good very bad for now
-	artistArr := []string{}
-	artistMbIdArr := []string{}
+	artists := make([]*teal.AlphaFeedDefs_Artist, 0, len(track.Artist))
 	for _, a := range track.Artist {
-		artistArr = append(artistArr, a.Name)
-		artistMbIdArr = append(artistMbIdArr, a.MBID)
+		artist := &teal.AlphaFeedDefs_Artist{
+			ArtistName: a.Name,
+			ArtistMbId: &a.MBID,
+		}
+		artists = append(artists, artist)
 	}
 
 	var durationPtr *int64
@@ -436,9 +437,8 @@ func (l *LastFMService) SubmitTrackToPDS(did string, track *models.Track, ctx co
 		Duration:  durationPtr, // Pointer required
 		TrackName: track.Name,
 		// should be unix timestamp
-		PlayedTime:            &playedTimeStr,       // Pointer required
-		ArtistNames:           artistArr,            // Slice of strings is correct
-		ArtistMbIds:           artistMbIdArr,        // Slice of strings is correct
+		PlayedTime:            &playedTimeStr, // Pointer required
+		Artists:               artists,
 		ReleaseMbId:           &track.ReleaseMBID,   // Pointer required
 		ReleaseName:           &track.Album,         // Pointer required
 		RecordingMbId:         &track.RecordingMBID, // Pointer required
@@ -452,7 +452,6 @@ func (l *LastFMService) SubmitTrackToPDS(did string, track *models.Track, ctx co
 	}
 
 	authArgs := db.AtpSessionToAuthArgs(sess)
-	fmt.Println(authArgs)
 
 	var out atproto.RepoCreateRecord_Output
 	if err := xrpcClient.Do(ctx, authArgs, xrpc.Procedure, "application/json", "com.atproto.repo.createRecord", nil, input, &out); err != nil {

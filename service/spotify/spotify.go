@@ -63,11 +63,13 @@ func (s *SpotifyService) SubmitTrackToPDS(did string, track *models.Track, ctx c
 		return fmt.Errorf("couldn't get Atproto session for DID %s: %w", did, err)
 	}
 
-	artistArr := make([]string, 0, len(track.Artist))
-	artistMbIdArr := make([]string, 0, len(track.Artist))
+	artists := make([]*teal.AlphaFeedDefs_Artist, 0, len(track.Artist))
 	for _, a := range track.Artist {
-		artistArr = append(artistArr, a.Name)
-		artistMbIdArr = append(artistMbIdArr, a.MBID)
+		artist := &teal.AlphaFeedDefs_Artist{
+			ArtistName: a.Name,
+			ArtistMbId: &a.MBID,
+		}
+		artists = append(artists, artist)
 	}
 
 	var durationPtr *int64
@@ -87,8 +89,7 @@ func (s *SpotifyService) SubmitTrackToPDS(did string, track *models.Track, ctx c
 		Duration:      durationPtr,
 		TrackName:     track.Name,
 		PlayedTime:    &playedTimeStr,
-		ArtistNames:   artistArr,
-		ArtistMbIds:   artistMbIdArr,
+		Artists:       artists,
 		ReleaseMbId:   &track.ReleaseMBID,
 		ReleaseName:   &track.Album,
 		RecordingMbId: &track.RecordingMBID,
