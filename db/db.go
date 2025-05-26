@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -14,6 +15,7 @@ import (
 
 type DB struct {
 	*sql.DB
+	logger *log.Logger
 }
 
 func New(dbPath string) (*DB, error) {
@@ -31,8 +33,9 @@ func New(dbPath string) (*DB, error) {
 	if err = db.Ping(); err != nil {
 		return nil, err
 	}
+	logger := log.New(os.Stdout, "db: ", log.LstdFlags|log.Lmsgprefix)
 
-	return &DB{db}, nil
+	return &DB{db, logger}, nil
 }
 
 func (db *DB) Initialize() error {

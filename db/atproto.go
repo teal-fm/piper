@@ -110,7 +110,7 @@ func (db *DB) FindOrCreateUserByDID(did string) (*models.User, error) {
 
 // create or update the current user's ATproto session data.
 func (db *DB) SaveATprotoSession(tokenResp *oauth.TokenResponse, authserverIss string, dpopPrivateJWK jwk.Key, pdsUrl string) error {
-	fmt.Printf("Saving session with PDS url %s", pdsUrl)
+	db.logger.Printf("Saving session with PDS url %s", pdsUrl)
 	expiryTime := time.Now().UTC().Add(time.Second * time.Duration(tokenResp.ExpiresIn))
 	now := time.Now().UTC()
 
@@ -213,7 +213,7 @@ func (db *DB) GetAtprotoSession(did string, ctx context.Context, oauthClient oau
 	}
 
 	// printout the session details
-	fmt.Printf("Getting session details for the did: %+v\n", oauthSession.DID)
+	db.logger.Printf("Getting session details for the did: %+v\n", oauthSession.DID)
 
 	// if token is expired, refresh it
 	if time.Now().UTC().After(oauthSession.TokenExpiry) {

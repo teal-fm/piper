@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/teal-fm/piper/service/lastfm"
 	"log"
 	"net/http"
 	"os"
@@ -14,7 +15,6 @@ import (
 	"github.com/teal-fm/piper/oauth"
 	"github.com/teal-fm/piper/oauth/atproto"
 	apikeyService "github.com/teal-fm/piper/service/apikey"
-	"github.com/teal-fm/piper/service/lastfm"
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"github.com/teal-fm/piper/service/spotify"
 	"github.com/teal-fm/piper/session"
