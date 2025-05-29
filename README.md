@@ -76,3 +76,5 @@ air should automatically build and run piper, and watch for changes on relevant 
 We also provide a docker compose file to use to run piper locally. There are a few edits to the [.env](.env) to make it run smoother in a container
 `SERVER_HOST`- `0.0.0.0`
 `DB_PATH` = `/db/piper.db` to persist your piper db through container restarts
+
+Make sure you have docker and docker compose installed, then you can run piper with `docker compose up`
