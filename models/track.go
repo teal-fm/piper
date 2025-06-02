@@ -7,11 +7,11 @@ type Track struct {
 	PlayID int64  `json:"playId"`
 	Name   string `json:"name"`
 	// analogous to "track"
-	RecordingMBID string   `json:"trackMBID"`
+	RecordingMBID *string  `json:"trackMBID,omitempty"`
 	Artist        []Artist `json:"artist"`
 	Album         string   `json:"album"`
 	// analogous to "album"
-	ReleaseMBID    string    `json:"releaseMBID"`
+	ReleaseMBID    *string   `json:"releaseMBID,omitempty"`
 	URL            string    `json:"url"`
 	Timestamp      time.Time `json:"timestamp"`
 	DurationMs     int64     `json:"durationMs"`
@@ -22,7 +22,7 @@ type Track struct {
 }
 
 type Artist struct {
-	Name string `json:"name"`
-	ID   string `json:"id"`
-	MBID string `json:"mbid"`
+	Name string  `json:"name"`
+	ID   string  `json:"id"`
+	MBID *string `json:"mbid,omitempty"`
 }
