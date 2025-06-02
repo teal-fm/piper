@@ -72,7 +72,7 @@ func (s *SpotifyService) SubmitTrackToPDS(did string, track *models.Track, ctx c
 	for _, a := range track.Artist {
 		artist := &teal.AlphaFeedDefs_Artist{
 			ArtistName: a.Name,
-			ArtistMbId: &a.MBID,
+			ArtistMbId: a.MBID,
 		}
 		artists = append(artists, artist)
 	}
@@ -101,9 +101,9 @@ func (s *SpotifyService) SubmitTrackToPDS(did string, track *models.Track, ctx c
 		TrackName:     track.Name,
 		PlayedTime:    &playedTimeStr,
 		Artists:       artists,
-		ReleaseMbId:   &track.ReleaseMBID,
+		ReleaseMbId:   track.ReleaseMBID,
 		ReleaseName:   &track.Album,
-		RecordingMbId: &track.RecordingMBID,
+		RecordingMbId: track.RecordingMBID,
 		// Optional: Spotify specific data if your lexicon supports it
 		// SpotifyTrackID: &track.ServiceID,
 		// SpotifyAlbumID: &track.ServiceAlbumID,

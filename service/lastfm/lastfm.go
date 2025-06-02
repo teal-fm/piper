@@ -418,7 +418,7 @@ func (l *LastFMService) SubmitTrackToPDS(did string, track *models.Track, ctx co
 	for _, a := range track.Artist {
 		artist := &teal.AlphaFeedDefs_Artist{
 			ArtistName: a.Name,
-			ArtistMbId: &a.MBID,
+			ArtistMbId: a.MBID,
 		}
 		artists = append(artists, artist)
 	}
@@ -444,10 +444,10 @@ func (l *LastFMService) SubmitTrackToPDS(did string, track *models.Track, ctx co
 		// should be unix timestamp
 		PlayedTime:            &playedTimeStr, // Pointer required
 		Artists:               artists,
-		ReleaseMbId:           &track.ReleaseMBID,   // Pointer required
-		ReleaseName:           &track.Album,         // Pointer required
-		RecordingMbId:         &track.RecordingMBID, // Pointer required
-		SubmissionClientAgent: &submissionAgent,     // Pointer required
+		ReleaseMbId:           track.ReleaseMBID,   // Pointer required
+		ReleaseName:           &track.Album,        // Pointer required
+		RecordingMbId:         track.RecordingMBID, // Pointer required
+		SubmissionClientAgent: &submissionAgent,    // Pointer required
 	}
 
 	input := atproto.RepoCreateRecord_Input{

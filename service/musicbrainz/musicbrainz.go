@@ -296,7 +296,7 @@ func HydrateTrack(mb *MusicBrainzService, track models.Track) (*models.Track, er
 		artists[i] = models.Artist{
 			Name: a.Name,
 			ID:   a.Artist.ID,
-			MBID: a.Artist.ID,
+			MBID: &a.Artist.ID,
 		}
 	}
 
@@ -306,9 +306,9 @@ func HydrateTrack(mb *MusicBrainzService, track models.Track) (*models.Track, er
 		Name:           track.Name,
 		URL:            track.URL,
 		ServiceBaseUrl: track.ServiceBaseUrl,
-		RecordingMBID:  firstResult.ID,
+		RecordingMBID:  &firstResult.ID,
 		Album:          firstResultAlbum.Title,
-		ReleaseMBID:    firstResultAlbum.ID,
+		ReleaseMBID:    &firstResultAlbum.ID,
 		ISRC:           bestISRC,
 		Timestamp:      track.Timestamp,
 		ProgressMs:     track.ProgressMs,
