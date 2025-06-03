@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -34,22 +35,26 @@ type SpotifyService struct {
 	userTracks     map[int64]*models.Track
 	userTokens     map[int64]string
 	mu             sync.RWMutex
+	logger         *log.Logger
 }
 
 func NewSpotifyService(database *db.DB, atprotoService *atprotoauth.ATprotoAuthService, musicBrainzService *musicbrainz.MusicBrainzService) *SpotifyService {
+	logger := log.New(os.Stdout, "spotify: ", log.LstdFlags|log.Lmsgprefix)
+
 	return &SpotifyService{
 		DB:             database,
 		atprotoService: atprotoService,
 		mb:             musicBrainzService,
 		userTracks:     make(map[int64]*models.Track),
 		userTokens:     make(map[int64]string),
+		logger:         logger,
 	}
 }
 
 func (s *SpotifyService) SubmitTrackToPDS(did string, track *models.Track, ctx context.Context) error {
 	client, err := s.atprotoService.GetATProtoClient()
 	if err != nil || client == nil {
-		log.Printf("Error getting ATProto client: %v", err)
+		s.logger.Printf("Error getting ATProto client: %v", err)
 		return fmt.Errorf("failed to get ATProto client: %w", err)
 	}
 
@@ -63,11 +68,13 @@ func (s *SpotifyService) SubmitTrackToPDS(did string, track *models.Track, ctx c
 		return fmt.Errorf("couldn't get Atproto session for DID %s: %w", did, err)
 	}
 
-	artistArr := make([]string, 0, len(track.Artist))
-	artistMbIdArr := make([]string, 0, len(track.Artist))
+	artists := make([]*teal.AlphaFeedDefs_Artist, 0, len(track.Artist))
 	for _, a := range track.Artist {
-		artistArr = append(artistArr, a.Name)
-		artistMbIdArr = append(artistMbIdArr, a.MBID)
+		artist := &teal.AlphaFeedDefs_Artist{
+			ArtistName: a.Name,
+			ArtistMbId: a.MBID,
+		}
+		artists = append(artists, artist)
 	}
 
 	var durationPtr *int64
@@ -82,16 +89,21 @@ func (s *SpotifyService) SubmitTrackToPDS(did string, track *models.Track, ctx c
 		submissionAgent = "piper/v0.0.1" // Default if not configured
 	}
 
+	//Had a empty feed.play get submitted not sure why. Tracking here
+	if track.Name == "" {
+		s.logger.Println("Track name is empty. Skipping submission. Please record the logs before and send to the teal.fm Discord")
+		return nil
+	}
+
 	tfmTrack := teal.AlphaFeedPlay{
 		LexiconTypeID: "fm.teal.alpha.feed.play",
 		Duration:      durationPtr,
 		TrackName:     track.Name,
 		PlayedTime:    &playedTimeStr,
-		ArtistNames:   artistArr,
-		ArtistMbIds:   artistMbIdArr,
-		ReleaseMbId:   &track.ReleaseMBID,
+		Artists:       artists,
+		ReleaseMbId:   track.ReleaseMBID,
 		ReleaseName:   &track.Album,
-		RecordingMbId: &track.RecordingMBID,
+		RecordingMbId: track.RecordingMBID,
 		// Optional: Spotify specific data if your lexicon supports it
 		// SpotifyTrackID: &track.ServiceID,
 		// SpotifyAlbumID: &track.ServiceAlbumID,
@@ -109,61 +121,61 @@ func (s *SpotifyService) SubmitTrackToPDS(did string, track *models.Track, ctx c
 
 	var out atproto.RepoCreateRecord_Output
 	if err := xrpcClient.Do(ctx, authArgs, xrpc.Procedure, "application/json", "com.atproto.repo.createRecord", nil, input, &out); err != nil {
-		log.Printf("Error creating record for DID %s: %v. Input: %+v", did, err, input)
+		s.logger.Printf("Error creating record for DID %s: %v. Input: %+v", did, err, input)
 		return fmt.Errorf("failed to create record on PDS for DID %s: %w", did, err)
 	}
 
-	log.Printf("Successfully submitted track '%s' to PDS for DID %s. Record URI: %s", track.Name, did, out.Uri)
+	s.logger.Printf("Successfully submitted track '%s' to PDS for DID %s. Record URI: %s", track.Name, did, out.Uri)
 	return nil
 }
 
-func (s *SpotifyService) SetAccessToken(token string, userId int64, hasSession bool) (int64, error) {
-	userID, err := s.identifyAndStoreUser(token, userId, hasSession)
+func (s *SpotifyService) SetAccessToken(token string, refreshToken string, userId int64, hasSession bool) (int64, error) {
+	userID, err := s.identifyAndStoreUser(token, refreshToken, userId, hasSession)
 	if err != nil {
-		log.Printf("Error identifying and storing user: %v", err)
+		s.logger.Printf("Error identifying and storing user: %v", err)
 		return 0, err
 	}
 	return userID, nil
 }
 
-func (s *SpotifyService) identifyAndStoreUser(token string, userId int64, hasSession bool) (int64, error) {
+func (s *SpotifyService) identifyAndStoreUser(token string, refreshToken string, userId int64, hasSession bool) (int64, error) {
 	userProfile, err := s.fetchSpotifyProfile(token)
 	if err != nil {
-		log.Printf("Error fetching Spotify profile: %v", err)
+		s.logger.Printf("Error fetching Spotify profile: %v", err)
 		return 0, err
 	}
 
-	fmt.Printf("uid: %d hasSession: %t", userId, hasSession)
+	s.logger.Printf("uid: %d hasSession: %t", userId, hasSession)
 
 	user, err := s.DB.GetUserBySpotifyID(userProfile.ID)
 	if err != nil {
 		// This error might mean DB connection issue, not just user not found.
-		log.Printf("Error checking for user by Spotify ID %s: %v", userProfile.ID, err)
+		s.logger.Printf("Error checking for user by Spotify ID %s: %v", userProfile.ID, err)
 		return 0, err
 	}
 
-	tokenExpiryTime := time.Now().Add(1 * time.Hour) // Spotify tokens last ~1 hour
+	tokenExpiryTime := time.Now().UTC().Add(1 * time.Hour) // Spotify tokens last ~1 hour
 
 	// We don't intend users to log in via spotify!
 	if user == nil {
 		if !hasSession {
-			log.Printf("User does not seem to exist")
+			s.logger.Printf("User does not seem to exist")
 			return 0, fmt.Errorf("user does not seem to exist")
 		} else {
 			// overwrite prev user
-			user, err = s.DB.AddSpotifySession(userId, userProfile.DisplayName, userProfile.Email, userProfile.ID, token, "", tokenExpiryTime)
+			user, err = s.DB.AddSpotifySession(userId, userProfile.DisplayName, userProfile.Email, userProfile.ID, token, refreshToken, tokenExpiryTime)
 			if err != nil {
-				log.Printf("Error adding Spotify session for user ID %d: %v", userId, err)
+				s.logger.Printf("Error adding Spotify session for user ID %d: %v", userId, err)
 				return 0, err
 			}
 		}
 	} else {
-		err = s.DB.UpdateUserToken(user.ID, token, "", tokenExpiryTime)
+		err = s.DB.UpdateUserToken(user.ID, token, refreshToken, tokenExpiryTime)
 		if err != nil {
 			// for now log and continue
-			log.Printf("Error updating user token for user ID %d: %v", user.ID, err)
+			s.logger.Printf("Error updating user token for user ID %d: %v", user.ID, err)
 		} else {
-			log.Printf("Updated token for existing user: %s (ID: %d)", *user.Username, user.ID)
+			s.logger.Printf("Updated token for existing user: %s (ID: %d)", *user.Username, user.ID)
 		}
 	}
 	user.AccessToken = &token
@@ -173,7 +185,7 @@ func (s *SpotifyService) identifyAndStoreUser(token string, userId int64, hasSes
 	s.userTokens[user.ID] = token
 	s.mu.Unlock()
 
-	log.Printf("User authenticated via Spotify: %s (ID: %d)", *user.Username, user.ID)
+	s.logger.Printf("User authenticated via Spotify: %s (ID: %d)", *user.Username, user.ID)
 	return user.ID, nil
 }
 
@@ -195,13 +207,32 @@ func (s *SpotifyService) LoadAllUsers() error {
 	count := 0
 	for _, user := range users {
 		// load users with valid tokens
-		if user.AccessToken != nil && user.TokenExpiry.After(time.Now()) {
+		if user.AccessToken != nil && user.TokenExpiry.After(time.Now().UTC()) {
 			s.userTokens[user.ID] = *user.AccessToken
 			count++
+		} else {
+			// Unlock so the refreshTokenInner method can lock to refresh tokens if needed
+			s.mu.Unlock()
+			//We do not need to use the output of refreshTokenInner since it is added to the list inside the function
+			_, err := s.refreshTokenInner(user.ID)
+			if err != nil {
+				//Probably should remove the access token and refresh in long run?
+				s.logger.Printf("Error refreshing token for user %d: %v", user.ID, err)
+				s.mu.Lock()
+				continue
+			}
+			count++
+			s.mu.Lock()
 		}
 	}
+	s.logger.Printf("Loaded %d active users with valid tokens", count)
+	return nil
+}
 
-	log.Printf("Loaded %d active users with valid tokens", count)
+func (s *SpotifyService) UnloadAllUsers() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.userTokens = make(map[int64]string)
 	return nil
 }
 
@@ -262,9 +293,9 @@ func (s *SpotifyService) refreshTokenInner(userID int64) (string, error) {
 		delete(s.userTokens, userID)
 		s.mu.Unlock()
 		// Also clear the bad refresh token from the DB
-		updateErr := s.DB.UpdateUserToken(userID, "", "", time.Now()) // Clear tokens
+		updateErr := s.DB.UpdateUserToken(userID, "", "", time.Now().UTC()) // Clear tokens
 		if updateErr != nil {
-			log.Printf("Failed to clear bad refresh token for user %d: %v", userID, updateErr)
+			s.logger.Printf("Failed to clear bad refresh token for user %d: %v", userID, updateErr)
 		}
 		return "", fmt.Errorf("spotify token refresh failed (%d): %s", resp.StatusCode, string(body))
 	}
@@ -281,7 +312,7 @@ func (s *SpotifyService) refreshTokenInner(userID int64) (string, error) {
 		return "", fmt.Errorf("failed to decode refresh response: %w", err)
 	}
 
-	newExpiry := time.Now().Add(time.Duration(tokenResponse.ExpiresIn) * time.Second)
+	newExpiry := time.Now().UTC().Add(time.Duration(tokenResponse.ExpiresIn) * time.Second)
 	newRefreshToken := *user.RefreshToken // Default to old one
 	if tokenResponse.RefreshToken != "" {
 		newRefreshToken = tokenResponse.RefreshToken // Use new one if provided
@@ -290,7 +321,7 @@ func (s *SpotifyService) refreshTokenInner(userID int64) (string, error) {
 	// Update DB
 	if err := s.DB.UpdateUserToken(userID, tokenResponse.AccessToken, newRefreshToken, newExpiry); err != nil {
 		// Log error but continue, as we have the token in memory
-		log.Printf("Error updating user token in DB for user %d after refresh: %v", userID, err)
+		s.logger.Printf("Error updating user token in DB for user %d after refresh: %v", userID, err)
 	}
 
 	// Update in-memory cache
@@ -298,7 +329,7 @@ func (s *SpotifyService) refreshTokenInner(userID int64) (string, error) {
 	s.userTokens[userID] = tokenResponse.AccessToken
 	s.mu.Unlock()
 
-	log.Printf("Successfully refreshed token for user %d", userID)
+	s.logger.Printf("Successfully refreshed token for user %d", userID)
 	return tokenResponse.AccessToken, nil
 }
 
@@ -313,7 +344,7 @@ func (s *SpotifyService) RefreshToken(userID int64) error {
 func (s *SpotifyService) RefreshExpiredTokens() {
 	users, err := s.DB.GetUsersWithExpiredTokens()
 	if err != nil {
-		log.Printf("Error fetching users with expired tokens: %v", err)
+		s.logger.Printf("Error fetching users with expired tokens: %v", err)
 		return
 	}
 
@@ -328,14 +359,14 @@ func (s *SpotifyService) RefreshExpiredTokens() {
 
 		if err != nil {
 			// just print out errors here for now
-			log.Printf("Error from service/spotify/spotify.go when refreshing tokens: %s", err.Error())
+			s.logger.Printf("Error from service/spotify/spotify.go when refreshing tokens: %s", err.Error())
 		}
 
 		refreshed++
 	}
 
 	if refreshed > 0 {
-		log.Printf("Refreshed tokens for %d users", refreshed)
+		s.logger.Printf("Refreshed tokens for %d users", refreshed)
 	}
 }
 
@@ -396,7 +427,7 @@ func (s *SpotifyService) HandleTrackHistory(w http.ResponseWriter, r *http.Reque
 	tracks, err := s.DB.GetRecentTracks(userID, 20)
 	if err != nil {
 		http.Error(w, "Error retrieving track history", http.StatusInternalServerError)
-		log.Printf("Error retrieving track history: %v", err)
+		s.logger.Printf("Error retrieving track history: %v", err)
 		return
 	}
 
@@ -438,14 +469,14 @@ func (s *SpotifyService) FetchCurrentTrack(userID int64) (*models.Track, error) 
 
 		// oops, token expired or other client error
 		if resp.StatusCode == 401 && attempt == 0 { // Only refresh on 401 on the first attempt
-			log.Printf("Spotify token potentially expired for user %d, attempting refresh...", userID)
+			s.logger.Printf("Spotify token potentially expired for user %d, attempting refresh...", userID)
 			newAccessToken, refreshErr := s.refreshTokenInner(userID)
 			if refreshErr != nil {
-				log.Printf("Token refresh failed for user %d: %v", userID, refreshErr)
+				s.logger.Printf("Token refresh failed for user %d: %v", userID, refreshErr)
 				// No point retrying if refresh failed
 				return nil, fmt.Errorf("spotify token expired or invalid for user %d and refresh failed: %w", userID, refreshErr)
 			}
-			log.Printf("Token refreshed for user %d, retrying request...", userID)
+			s.logger.Printf("Token refreshed for user %d, retrying request...", userID)
 			token = newAccessToken                           // Update token for the next attempt
 			req.Header.Set("Authorization", "Bearer "+token) // Update header for retry
 			continue                                         // Go to next attempt in the loop
@@ -532,137 +563,182 @@ func (s *SpotifyService) FetchCurrentTrack(userID int64) (*models.Track, error) 
 	return track, nil
 }
 
-func (s *SpotifyService) StartListeningTracker(interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+func (s *SpotifyService) fetchAllUserTracks(ctx context.Context) {
+	// copy userIDs to avoid holding the lock too long
+	s.mu.RLock()
+	userIDs := make([]int64, 0, len(s.userTokens))
+	for userID := range s.userTokens {
+		userIDs = append(userIDs, userID)
+	}
+	s.mu.RUnlock()
 
-	for range ticker.C {
-		// copy userIDs to avoid holding the lock too long
-		s.mu.RLock()
-		userIDs := make([]int64, 0, len(s.userTokens))
-		for userID := range s.userTokens {
-			userIDs = append(userIDs, userID)
+	for _, userID := range userIDs {
+		if ctx.Err() != nil {
+			s.logger.Printf("Context cancelled before starting fetch for user id %d.", userID)
+			break // Exit loop if context is cancelled
 		}
+
+		track, err := s.FetchCurrentTrack(userID)
+		if err != nil {
+			s.logger.Printf("Error fetching track for user %d: %v", userID, err)
+			continue
+		}
+
+		if track == nil {
+			continue
+		}
+
+		s.mu.RLock()
+		currentTrack := s.userTracks[userID]
 		s.mu.RUnlock()
 
-		for _, userID := range userIDs {
-			track, err := s.FetchCurrentTrack(userID)
-			if err != nil {
-				log.Printf("Error fetching track for user %d: %v", userID, err)
-				continue
+		if currentTrack == nil {
+			currentTracks, _ := s.DB.GetRecentTracks(userID, 1)
+			if len(currentTracks) > 0 {
+				currentTrack = currentTracks[0]
 			}
+		}
 
-			if track == nil {
-				continue
+		// if flagged true, we have a new track
+		isNewTrack := currentTrack == nil ||
+			currentTrack.Name != track.Name ||
+			// just check the first one for now
+			currentTrack.Artist[0].Name != track.Artist[0].Name
+
+		// we stamp a track iff we've played more than half (or 30 seconds whichever is greater)
+		isStamped := track.ProgressMs > track.DurationMs/2 && track.ProgressMs > 30000
+
+		// if currentTrack.Timestamp minus track.Timestamp is greater than 30 seconds
+		isLastTrackStamped := currentTrack != nil && time.Since(currentTrack.Timestamp) > 30*time.Second &&
+			currentTrack.DurationMs > 30000
+
+		// just log when we stamp tracks
+		if isNewTrack && isLastTrackStamped && !currentTrack.HasStamped {
+			s.logger.Printf("User %d stamped (previous) track: %s by %s", userID, currentTrack.Name, currentTrack.Artist)
+			currentTrack.HasStamped = true
+			if currentTrack.PlayID != 0 {
+				s.DB.UpdateTrack(currentTrack.PlayID, currentTrack)
+
+				s.logger.Printf("Updated!")
 			}
+		}
 
-			s.mu.RLock()
-			currentTrack := s.userTracks[userID]
-			s.mu.RUnlock()
+		if isStamped && !currentTrack.HasStamped {
+			s.logger.Printf("User %d stamped track: %s by %s", userID, track.Name, track.Artist)
+			track.HasStamped = true
+			// if currenttrack has a playid and the last track is the same as the current track
+			if !isNewTrack && currentTrack.PlayID != 0 {
+				s.DB.UpdateTrack(currentTrack.PlayID, track)
 
-			if currentTrack == nil {
-				currentTracks, _ := s.DB.GetRecentTracks(userID, 1)
-				if len(currentTracks) > 0 {
-					currentTrack = currentTracks[0]
-				}
-			}
-
-			// if flagged true, we have a new track
-			isNewTrack := currentTrack == nil ||
-				currentTrack.Name != track.Name ||
-				// just check the first one for now
-				currentTrack.Artist[0].Name != track.Artist[0].Name
-
-			// we stamp a track iff we've played more than half (or 30 seconds whichever is greater)
-			isStamped := track.ProgressMs > track.DurationMs/2 && track.ProgressMs > 30000
-
-			// if currentTrack.Timestamp minus track.Timestamp is greater than 30 seconds
-			isLastTrackStamped := currentTrack != nil && time.Since(currentTrack.Timestamp) > 30*time.Second &&
-				currentTrack.DurationMs > 30000
-
-			// just log when we stamp tracks
-			if isNewTrack && isLastTrackStamped && !currentTrack.HasStamped {
-				log.Printf("User %d stamped (previous) track: %s by %s", userID, currentTrack.Name, currentTrack.Artist)
-				currentTrack.HasStamped = true
-				if currentTrack.PlayID != 0 {
-					s.DB.UpdateTrack(currentTrack.PlayID, currentTrack)
-
-					log.Printf("Updated!")
-				}
-			}
-
-			if isStamped && !currentTrack.HasStamped {
-				log.Printf("User %d stamped track: %s by %s", userID, track.Name, track.Artist)
-				track.HasStamped = true
-				// if currenttrack has a playid and the last track is the same as the current track
-				if !isNewTrack && currentTrack.PlayID != 0 {
-					s.DB.UpdateTrack(currentTrack.PlayID, track)
-
-					// Update in memory
-					s.mu.Lock()
-					s.userTracks[userID] = track
-					s.mu.Unlock()
-
-					log.Printf("Updated!")
-				}
-			}
-
-			if isNewTrack {
-				id, err := s.DB.SaveTrack(userID, track)
-				if err != nil {
-					log.Printf("Error saving track for user %d: %v", userID, err)
-					continue
-				}
-
-				track.PlayID = id
-
+				// Update in memory
 				s.mu.Lock()
 				s.userTracks[userID] = track
 				s.mu.Unlock()
 
-				// Submit to ATProto PDS
-				// The 'track' variable is *models.Track and has been saved to DB, PlayID is populated.
-				dbUser, errUser := s.DB.GetUserByID(userID) // Fetch user by their internal ID
-				if errUser != nil {
-					log.Printf("User %d: Error fetching user details for PDS submission: %v", userID, errUser)
-				} else if dbUser == nil {
-					log.Printf("User %d: User not found in DB. Skipping PDS submission.", userID)
-				} else if dbUser.ATProtoDID == nil || *dbUser.ATProtoDID == "" {
-					log.Printf("User %d (%d): ATProto DID not set. Skipping PDS submission for track '%s'.", userID, dbUser.ATProtoDID, track.Name)
-				} else {
-					// User has a DID, proceed with hydration and submission
-					var trackToSubmitToPDS *models.Track = track // Default to the original track (already *models.Track)
-					if s.mb != nil {                             // Check if MusicBrainz service is available
-						// musicbrainz.HydrateTrack expects models.Track as second argument, so we pass *track
-						// and it returns *models.Track
-						hydratedTrack, errHydrate := musicbrainz.HydrateTrack(s.mb, *track)
-						if errHydrate != nil {
-							log.Printf("User %d (%d): Error hydrating track '%s' with MusicBrainz: %v. Proceeding with original track data for PDS.", userID, dbUser.ATProtoDID, track.Name, errHydrate)
-						} else {
-							log.Printf("User %d (%d): Successfully hydrated track '%s' with MusicBrainz.", userID, dbUser.ATProtoDID, track.Name)
-							trackToSubmitToPDS = hydratedTrack // hydratedTrack is *models.Track
-						}
-					} else {
-						log.Printf("User %d (%d): MusicBrainz service not configured. Proceeding with original track data for PDS.", userID, dbUser.ATProtoDID)
-					}
-
-					artistName := "Unknown Artist"
-					if len(trackToSubmitToPDS.Artist) > 0 {
-						artistName = trackToSubmitToPDS.Artist[0].Name
-					}
-
-					log.Printf("User %d (%d): Attempting to submit track '%s' by %s to PDS (DID: %s)", userID, dbUser.ATProtoDID, trackToSubmitToPDS.Name, artistName, *dbUser.ATProtoDID)
-					// Use context.Background() for now, or pass down a context if available
-					if errPDS := s.SubmitTrackToPDS(*dbUser.ATProtoDID, trackToSubmitToPDS, context.Background()); errPDS != nil {
-						log.Printf("User %d (%d): Error submitting track '%s' to PDS: %v", userID, dbUser.ATProtoDID, trackToSubmitToPDS.Name, errPDS)
-					} else {
-						log.Printf("User %d (%d): Successfully submitted track '%s' to PDS.", userID, dbUser.ATProtoDID, trackToSubmitToPDS.Name)
-					}
-				}
-				// End of PDS submission block
-
-				log.Printf("User %d is listening to: %s by %s", userID, track.Name, track.Artist)
+				s.logger.Printf("Updated!")
 			}
 		}
+
+		if isNewTrack {
+			id, err := s.DB.SaveTrack(userID, track)
+			if err != nil {
+				s.logger.Printf("Error saving track for user %d: %v", userID, err)
+				continue
+			}
+
+			track.PlayID = id
+
+			s.mu.Lock()
+			s.userTracks[userID] = track
+			s.mu.Unlock()
+
+			// Submit to ATProto PDS
+			// The 'track' variable is *models.Track and has been saved to DB, PlayID is populated.
+			dbUser, errUser := s.DB.GetUserByID(userID) // Fetch user by their internal ID
+			if errUser != nil {
+				s.logger.Printf("User %d: Error fetching user details for PDS submission: %v", userID, errUser)
+			} else if dbUser == nil {
+				s.logger.Printf("User %d: User not found in DB. Skipping PDS submission.", userID)
+			} else if dbUser.ATProtoDID == nil || *dbUser.ATProtoDID == "" {
+				s.logger.Printf("User %d (%d): ATProto DID not set. Skipping PDS submission for track '%s'.", userID, dbUser.ATProtoDID, track.Name)
+			} else {
+				// User has a DID, proceed with hydration and submission
+				var trackToSubmitToPDS *models.Track = track // Default to the original track (already *models.Track)
+				if s.mb != nil {                             // Check if MusicBrainz service is available
+					// musicbrainz.HydrateTrack expects models.Track as second argument, so we pass *track
+					// and it returns *models.Track
+					hydratedTrack, errHydrate := musicbrainz.HydrateTrack(s.mb, *track)
+					if errHydrate != nil {
+						s.logger.Printf("User %d (%d): Error hydrating track '%s' with MusicBrainz: %v. Proceeding with original track data for PDS.", userID, dbUser.ATProtoDID, track.Name, errHydrate)
+					} else {
+						s.logger.Printf("User %d (%d): Successfully hydrated track '%s' with MusicBrainz.", userID, dbUser.ATProtoDID, track.Name)
+						trackToSubmitToPDS = hydratedTrack // hydratedTrack is *models.Track
+					}
+				} else {
+					s.logger.Printf("User %d (%d): MusicBrainz service not configured. Proceeding with original track data for PDS.", userID, dbUser.ATProtoDID)
+				}
+
+				artistName := "Unknown Artist"
+				if len(trackToSubmitToPDS.Artist) > 0 {
+					artistName = trackToSubmitToPDS.Artist[0].Name
+				}
+
+				s.logger.Printf("User %d (%d): Attempting to submit track '%s' by %s to PDS (DID: %s)", userID, dbUser.ATProtoDID, trackToSubmitToPDS.Name, artistName, *dbUser.ATProtoDID)
+				// Use context.Background() for now, or pass down a context if available
+				if errPDS := s.SubmitTrackToPDS(*dbUser.ATProtoDID, trackToSubmitToPDS, context.Background()); errPDS != nil {
+					s.logger.Printf("User %d (%d): Error submitting track '%s' to PDS: %v", userID, dbUser.ATProtoDID, trackToSubmitToPDS.Name, errPDS)
+				} else {
+					s.logger.Printf("User %d (%d): Successfully submitted track '%s' to PDS.", userID, dbUser.ATProtoDID, trackToSubmitToPDS.Name)
+				}
+			}
+			// End of PDS submission block
+
+			s.logger.Printf("User %d is listening to: %s by %s", userID, track.Name, track.Artist)
+		}
 	}
+}
+
+func (s *SpotifyService) StartListeningTracker(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+
+	go func() {
+		if err := s.LoadAllUsers(); err != nil {
+			s.logger.Printf("Error loading spotify users: %v", err)
+		}
+
+		if len(s.userTokens) > 0 {
+			s.fetchAllUserTracks(context.Background())
+		} else {
+			s.logger.Printf("No users to fetch tracks for.")
+		}
+
+		//unloading users to save memory and make sure we get new signups
+		err := s.UnloadAllUsers()
+		if err != nil {
+			log.Printf("Error loading spotify users: %v", err)
+		}
+
+		for range ticker.C {
+			s.logger.Printf("Fetching tracks...")
+			err := s.LoadAllUsers()
+			if err != nil {
+				s.logger.Printf("Error loading spotify users: %v", err)
+				continue
+			}
+			if len(s.userTokens) > 0 {
+				s.fetchAllUserTracks(context.Background())
+			} else {
+				s.logger.Printf("No users to fetch tracks for.")
+				continue
+			}
+			//unloading users to save memory and make sure we get new signups
+			err = s.UnloadAllUsers()
+			if err != nil {
+				log.Printf("Error loading spotify users: %v", err)
+			}
+			s.logger.Printf("Finished fetch cycle suscessfully.")
+
+		}
+	}()
+
 }

@@ -14,10 +14,12 @@ func init() {
 // RECORDTYPE: AlphaFeedPlay
 type AlphaFeedPlay struct {
 	LexiconTypeID string `json:"$type,const=fm.teal.alpha.feed.play" cborgen:"$type,const=fm.teal.alpha.feed.play"`
-	// artistMbIds: Array of Musicbrainz artist IDs
+	// artistMbIds: Array of Musicbrainz artist IDs. Prefer using 'artists'.
 	ArtistMbIds []string `json:"artistMbIds,omitempty" cborgen:"artistMbIds,omitempty"`
-	// artistNames: Array of artist names in order of original appearance.
-	ArtistNames []string `json:"artistNames" cborgen:"artistNames"`
+	// artistNames: Array of artist names in order of original appearance. Prefer using 'artists'.
+	ArtistNames []string `json:"artistNames,omitempty" cborgen:"artistNames,omitempty"`
+	// artists: Array of artists in order of original appearance.
+	Artists []*AlphaFeedDefs_Artist `json:"artists,omitempty" cborgen:"artists,omitempty"`
 	// duration: The length of the track in seconds
 	Duration *int64 `json:"duration,omitempty" cborgen:"duration,omitempty"`
 	// isrc: The ISRC code associated with the recording

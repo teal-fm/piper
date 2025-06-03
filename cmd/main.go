@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/teal-fm/piper/service/lastfm"
 	"log"
 	"net/http"
 	"os"
@@ -14,7 +15,6 @@ import (
 	"github.com/teal-fm/piper/oauth"
 	"github.com/teal-fm/piper/oauth/atproto"
 	apikeyService "github.com/teal-fm/piper/service/apikey"
-	"github.com/teal-fm/piper/service/lastfm"
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"github.com/teal-fm/piper/service/spotify"
 	"github.com/teal-fm/piper/session"
@@ -108,9 +108,9 @@ func main() {
 		lastfmInterval = 30 * time.Second
 	}
 
-	if err := spotifyService.LoadAllUsers(); err != nil {
-		log.Printf("Warning: Failed to preload Spotify users: %v", err)
-	}
+	//if err := spotifyService.LoadAllUsers(); err != nil {
+	//	log.Printf("Warning: Failed to preload Spotify users: %v", err)
+	//}
 	go spotifyService.StartListeningTracker(trackerInterval)
 
 	go lastfmService.StartListeningTracker(lastfmInterval)

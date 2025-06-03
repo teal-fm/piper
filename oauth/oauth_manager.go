@@ -15,12 +15,14 @@ type OAuthServiceManager struct {
 	services       map[string]AuthService
 	sessionManager *session.SessionManager
 	mu             sync.RWMutex
+	logger         *log.Logger
 }
 
 func NewOAuthServiceManager(sessionManager *session.SessionManager) *OAuthServiceManager {
 	return &OAuthServiceManager{
 		services:       make(map[string]AuthService),
 		sessionManager: sessionManager,
+		logger:         log.New(log.Writer(), "oauth: ", log.LstdFlags|log.Lmsgprefix),
 	}
 }
 
@@ -29,7 +31,7 @@ func (m *OAuthServiceManager) RegisterService(name string, service AuthService) 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.services[name] = service
-	log.Printf("Registered auth service: %s", name)
+	m.logger.Printf("Registered auth service: %s", name)
 }
 
 // get an AuthService by registered name
@@ -51,7 +53,7 @@ func (m *OAuthServiceManager) HandleLogin(serviceName string) http.HandlerFunc {
 			return
 		}
 
-		log.Printf("Auth service '%s' not found for login request", serviceName)
+		m.logger.Printf("Auth service '%s' not found for login request", serviceName)
 		http.Error(w, fmt.Sprintf("Auth service '%s' not found", serviceName), http.StatusNotFound)
 	}
 }
@@ -62,10 +64,10 @@ func (m *OAuthServiceManager) HandleCallback(serviceName string) http.HandlerFun
 		service, exists := m.services[serviceName]
 		m.mu.RUnlock()
 
-		log.Printf("Logging in with service %s", serviceName)
+		m.logger.Printf("Logging in with service %s", serviceName)
 
 		if !exists {
-			log.Printf("Auth service '%s' not found for callback request", serviceName)
+			m.logger.Printf("Auth service '%s' not found for callback request", serviceName)
 			http.Error(w, fmt.Sprintf("OAuth service '%s' not found", serviceName), http.StatusNotFound)
 			return
 		}
@@ -73,7 +75,7 @@ func (m *OAuthServiceManager) HandleCallback(serviceName string) http.HandlerFun
 		userID, err := service.HandleCallback(w, r)
 
 		if err != nil {
-			log.Printf("Error handling callback for service '%s': %v", serviceName, err)
+			m.logger.Printf("Error handling callback for service '%s': %v", serviceName, err)
 			http.Error(w, fmt.Sprintf("Error handling callback for service '%s'", serviceName), http.StatusInternalServerError)
 			return
 		}
@@ -83,11 +85,11 @@ func (m *OAuthServiceManager) HandleCallback(serviceName string) http.HandlerFun
 
 			m.sessionManager.SetSessionCookie(w, session)
 
-			log.Printf("Created session for user %d via service %s", userID, serviceName)
+			m.logger.Printf("Created session for user %d via service %s", userID, serviceName)
 
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 		} else {
-			log.Printf("Callback for service '%s' did not result in a valid user ID.", serviceName)
+			m.logger.Printf("Callback for service '%s' did not result in a valid user ID.", serviceName)
 			// todo: redirect to an error page
 			// right now this just redirects home but we don't want this behaviour ideally
 			http.Redirect(w, r, "/", http.StatusSeeOther)

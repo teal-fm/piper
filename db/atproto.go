@@ -80,7 +80,7 @@ func (db *DB) FindOrCreateUserByDID(did string) (*models.User, error) {
 		did).Scan(&user.ID, &user.ATProtoDID, &user.CreatedAt, &user.UpdatedAt)
 
 	if err == sql.ErrNoRows {
-		now := time.Now()
+		now := time.Now().UTC()
 		// create user!
 		result, insertErr := db.Exec(`
 			INSERT INTO users (atproto_did, created_at, updated_at)
@@ -110,9 +110,9 @@ func (db *DB) FindOrCreateUserByDID(did string) (*models.User, error) {
 
 // create or update the current user's ATproto session data.
 func (db *DB) SaveATprotoSession(tokenResp *oauth.TokenResponse, authserverIss string, dpopPrivateJWK jwk.Key, pdsUrl string) error {
-	fmt.Printf("Saving session with PDS url %s", pdsUrl)
-	expiryTime := time.Now().Add(time.Second * time.Duration(tokenResp.ExpiresIn))
-	now := time.Now()
+	db.logger.Printf("Saving session with PDS url %s", pdsUrl)
+	expiryTime := time.Now().UTC().Add(time.Second * time.Duration(tokenResp.ExpiresIn))
+	now := time.Now().UTC()
 
 	dpopPrivateJWKBytes, err := json.Marshal(dpopPrivateJWK)
 	if err != nil {
@@ -172,10 +172,20 @@ func (db *DB) GetAtprotoSession(did string, ctx context.Context, oauthClient oau
 	var authserverIss string
 	var jwkBytes string
 
-	err := db.QueryRow(`
-		SELECT id, atproto_did, atproto_pds_url, atproto_authserver_issuer, atproto_access_token, atproto_refresh_token, atproto_pds_nonce, atproto_authserver_nonce, atproto_dpop_private_jwk, atproto_token_expiry
+	err := db.QueryRow(
+		`
+		SELECT id, 
+		       atproto_did,
+		       atproto_pds_url,
+		       atproto_authserver_issuer,
+		       atproto_access_token,
+		       atproto_refresh_token,
+		       atproto_pds_nonce,
+		       atproto_authserver_nonce,
+		       atproto_dpop_private_jwk,
+		       atproto_token_expiry
 		FROM users
-		WHERE atproto_did = ? OR id`,
+		WHERE atproto_did = ?`,
 		did,
 	).Scan(
 		&oauthSession.ID,
@@ -203,10 +213,10 @@ func (db *DB) GetAtprotoSession(did string, ctx context.Context, oauthClient oau
 	}
 
 	// printout the session details
-	fmt.Printf("Session details from DB: %+v\n", oauthSession)
+	db.logger.Printf("Getting session details for the did: %+v\n", oauthSession.DID)
 
 	// if token is expired, refresh it
-	if time.Now().After(oauthSession.TokenExpiry) {
+	if time.Now().UTC().After(oauthSession.TokenExpiry) {
 
 		resp, err := oauthClient.RefreshTokenRequest(ctx, oauthSession.RefreshToken, authserverIss, oauthSession.DpopAuthServerNonce, privateJwk)
 		if err != nil {
@@ -227,7 +237,7 @@ func (db *DB) GetAtprotoSession(did string, ctx context.Context, oauthClient oau
 			DpopPdsNonce:        oauthSession.DpopPdsNonce,
 			DpopAuthServerNonce: resp.DpopAuthserverNonce,
 			DpopPrivateJWK:      privateJwk,
-			TokenExpiry:         time.Now().Add(time.Duration(resp.ExpiresIn) * time.Second),
+			TokenExpiry:         time.Now().UTC().Add(time.Duration(resp.ExpiresIn) * time.Second),
 		}
 
 	}
@@ -236,7 +246,8 @@ func (db *DB) GetAtprotoSession(did string, ctx context.Context, oauthClient oau
 }
 
 func AtpSessionToAuthArgs(sess *models.ATprotoAuthSession) *oauth.XrpcAuthedRequestArgs {
-	fmt.Printf("DID: %s\nPDS URL: %s\nISS: %s\nAccess Token: %s\nNonce: %s\nPrivate JWK: %s\n", sess.DID, sess.PDSUrl, sess.AuthServerIssuer, sess.AccessToken, sess.DpopPdsNonce, sess.DpopPrivateJWK)
+	//Commenting out so jwts and tokens are not in logs
+	//fmt.Printf("DID: %s\nPDS URL: %s\nISS: %s\nAccess Token: %s\nNonce: %s\nPrivate JWK: %s\n", sess.DID, sess.PDSUrl, sess.AuthServerIssuer, sess.AccessToken, sess.DpopPdsNonce, sess.DpopPrivateJWK)
 	return &oauth.XrpcAuthedRequestArgs{
 		Did:            sess.DID,
 		PdsUrl:         sess.PDSUrl,

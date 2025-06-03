@@ -79,7 +79,7 @@ func (s *Service) HandleAPIKeyManagement(w http.ResponseWriter, r *http.Request)
 			}
 			keyName := reqBody.Name
 			if keyName == "" {
-				keyName = fmt.Sprintf("API Key (via API) - %s", time.Now().Format(time.RFC3339))
+				keyName = fmt.Sprintf("API Key (via API) - %s", time.Now().UTC().Format(time.RFC3339))
 			}
 			validityDays := 30 // Default, could be made configurable via request body
 
@@ -133,7 +133,7 @@ func (s *Service) HandleAPIKeyManagement(w http.ResponseWriter, r *http.Request)
 
 		keyName := r.FormValue("name")
 		if keyName == "" {
-			keyName = fmt.Sprintf("API Key - %s", time.Now().Format(time.RFC3339))
+			keyName = fmt.Sprintf("API Key - %s", time.Now().UTC().Format(time.RFC3339))
 		}
 		validityDays := 1024
 

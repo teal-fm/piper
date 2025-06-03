@@ -28,6 +28,7 @@ func main() {
 			teal.AlphaActorStatus{},
 			teal.AlphaActorProfile_FeaturedItem{},
 			teal.AlphaFeedDefs_PlayView{},
+			teal.AlphaFeedDefs_Artist{},
 		); err != nil {
 		panic(err)
 	}
