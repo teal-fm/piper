@@ -102,7 +102,12 @@ func home(database *db.DB) http.HandlerFunc {
 
 		if !isLoggedIn {
 			html += `
-				<p><a href="/login/atproto">Login with ATProto</a> to get started!</p>`
+				<p>Login with ATProto to get started!</p>
+				<form action="/login/atproto">
+					<label for="handle">handle:</label>
+					<input type="text" id="handle" name="handle" >
+					<input type="submit" value="submit">
+				</form>`
 		} else {
 			html += `
 				<p>You're logged in!</p>
