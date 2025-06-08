@@ -623,7 +623,7 @@ func (s *SpotifyService) fetchAllUserTracks(ctx context.Context) {
 			}
 		}
 
-		if isStamped && !currentTrack.HasStamped {
+		if isStamped && currentTrack != nil && !currentTrack.HasStamped {
 			s.logger.Printf("User %d stamped track: %s by %s", userID, track.Name, track.Artist)
 			track.HasStamped = true
 			// if currenttrack has a playid and the last track is the same as the current track
