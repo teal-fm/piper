@@ -3,11 +3,13 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/teal-fm/piper/service/lastfm"
 	"log"
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/teal-fm/piper/service/lastfm"
+	"github.com/teal-fm/piper/service/playingnow"
 
 	"github.com/spf13/viper"
 	"github.com/teal-fm/piper/config"
@@ -21,13 +23,14 @@ import (
 )
 
 type application struct {
-	database       *db.DB
-	sessionManager *session.SessionManager
-	oauthManager   *oauth.OAuthServiceManager
-	spotifyService *spotify.SpotifyService
-	apiKeyService  *apikeyService.Service
-	mbService      *musicbrainz.MusicBrainzService
-	atprotoService *atproto.ATprotoAuthService
+	database          *db.DB
+	sessionManager    *session.SessionManager
+	oauthManager      *oauth.OAuthServiceManager
+	spotifyService    *spotify.SpotifyService
+	apiKeyService     *apikeyService.Service
+	mbService         *musicbrainz.MusicBrainzService
+	atprotoService    *atproto.ATprotoAuthService
+	playingNowService *playingnow.PlayingNowService
 }
 
 // JSON API handlers
@@ -73,8 +76,9 @@ func main() {
 	}
 
 	mbService := musicbrainz.NewMusicBrainzService(database)
-	spotifyService := spotify.NewSpotifyService(database, atprotoService, mbService)
-	lastfmService := lastfm.NewLastFMService(database, viper.GetString("lastfm.api_key"), mbService, atprotoService)
+	playingNowService := playingnow.NewPlayingNowService(database, atprotoService)
+	spotifyService := spotify.NewSpotifyService(database, atprotoService, mbService, playingNowService)
+	lastfmService := lastfm.NewLastFMService(database, viper.GetString("lastfm.api_key"), mbService, atprotoService, playingNowService)
 
 	sessionManager := session.NewSessionManager(database)
 	oauthManager := oauth.NewOAuthServiceManager(sessionManager)
@@ -93,13 +97,14 @@ func main() {
 	apiKeyService := apikeyService.NewAPIKeyService(database, sessionManager)
 
 	app := &application{
-		database:       database,
-		sessionManager: sessionManager,
-		oauthManager:   oauthManager,
-		apiKeyService:  apiKeyService,
-		mbService:      mbService,
-		spotifyService: spotifyService,
-		atprotoService: atprotoService,
+		database:          database,
+		sessionManager:    sessionManager,
+		oauthManager:      oauthManager,
+		apiKeyService:     apiKeyService,
+		mbService:         mbService,
+		spotifyService:    spotifyService,
+		atprotoService:    atprotoService,
+		playingNowService: playingNowService,
 	}
 
 	trackerInterval := time.Duration(viper.GetInt("tracker.interval")) * time.Second

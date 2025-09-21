@@ -29,25 +29,33 @@ import (
 )
 
 type SpotifyService struct {
-	DB             *db.DB
-	atprotoService *atprotoauth.ATprotoAuthService // Added field
-	mb             *musicbrainz.MusicBrainzService // Added field
-	userTracks     map[int64]*models.Track
-	userTokens     map[int64]string
-	mu             sync.RWMutex
-	logger         *log.Logger
+	DB                *db.DB
+	atprotoService    *atprotoauth.ATprotoAuthService // Added field
+	mb                *musicbrainz.MusicBrainzService // Added field
+	playingNowService interface {
+		PublishPlayingNow(ctx context.Context, userID int64, track *models.Track) error
+		ClearPlayingNow(ctx context.Context, userID int64) error
+	} // Added field for playing now service
+	userTracks map[int64]*models.Track
+	userTokens map[int64]string
+	mu         sync.RWMutex
+	logger     *log.Logger
 }
 
-func NewSpotifyService(database *db.DB, atprotoService *atprotoauth.ATprotoAuthService, musicBrainzService *musicbrainz.MusicBrainzService) *SpotifyService {
+func NewSpotifyService(database *db.DB, atprotoService *atprotoauth.ATprotoAuthService, musicBrainzService *musicbrainz.MusicBrainzService, playingNowService interface {
+	PublishPlayingNow(ctx context.Context, userID int64, track *models.Track) error
+	ClearPlayingNow(ctx context.Context, userID int64) error
+}) *SpotifyService {
 	logger := log.New(os.Stdout, "spotify: ", log.LstdFlags|log.Lmsgprefix)
 
 	return &SpotifyService{
-		DB:             database,
-		atprotoService: atprotoService,
-		mb:             musicBrainzService,
-		userTracks:     make(map[int64]*models.Track),
-		userTokens:     make(map[int64]string),
-		logger:         logger,
+		DB:                database,
+		atprotoService:    atprotoService,
+		mb:                musicBrainzService,
+		playingNowService: playingNowService,
+		userTracks:        make(map[int64]*models.Track),
+		userTokens:        make(map[int64]string),
+		logger:            logger,
 	}
 }
 
@@ -585,6 +593,12 @@ func (s *SpotifyService) fetchAllUserTracks(ctx context.Context) {
 		}
 
 		if track == nil {
+			// No track currently playing - clear playing now status
+			if s.playingNowService != nil {
+				if err := s.playingNowService.ClearPlayingNow(ctx, userID); err != nil {
+					s.logger.Printf("Error clearing playing now for user %d: %v", userID, err)
+				}
+			}
 			continue
 		}
 
@@ -614,7 +628,11 @@ func (s *SpotifyService) fetchAllUserTracks(ctx context.Context) {
 
 		// just log when we stamp tracks
 		if isNewTrack && isLastTrackStamped && !currentTrack.HasStamped {
-			s.logger.Printf("User %d stamped (previous) track: %s by %s", userID, currentTrack.Name, currentTrack.Artist)
+			artistName := "Unknown Artist"
+			if len(currentTrack.Artist) > 0 {
+				artistName = currentTrack.Artist[0].Name
+			}
+			s.logger.Printf("User %d stamped (previous) track: %s by %s", userID, currentTrack.Name, artistName)
 			currentTrack.HasStamped = true
 			if currentTrack.PlayID != 0 {
 				s.DB.UpdateTrack(currentTrack.PlayID, currentTrack)
@@ -624,7 +642,11 @@ func (s *SpotifyService) fetchAllUserTracks(ctx context.Context) {
 		}
 
 		if isStamped && currentTrack != nil && !currentTrack.HasStamped {
-			s.logger.Printf("User %d stamped track: %s by %s", userID, track.Name, track.Artist)
+			artistName := "Unknown Artist"
+			if len(track.Artist) > 0 {
+				artistName = track.Artist[0].Name
+			}
+			s.logger.Printf("User %d stamped track: %s by %s", userID, track.Name, artistName)
 			track.HasStamped = true
 			// if currenttrack has a playid and the last track is the same as the current track
 			if !isNewTrack && currentTrack.PlayID != 0 {
@@ -634,6 +656,13 @@ func (s *SpotifyService) fetchAllUserTracks(ctx context.Context) {
 				s.mu.Lock()
 				s.userTracks[userID] = track
 				s.mu.Unlock()
+
+				// Update playing now status since track progress changed
+				if s.playingNowService != nil {
+					if err := s.playingNowService.PublishPlayingNow(ctx, userID, track); err != nil {
+						s.logger.Printf("Error updating playing now for user %d: %v", userID, err)
+					}
+				}
 
 				s.logger.Printf("Updated!")
 			}
@@ -651,6 +680,13 @@ func (s *SpotifyService) fetchAllUserTracks(ctx context.Context) {
 			s.mu.Lock()
 			s.userTracks[userID] = track
 			s.mu.Unlock()
+
+			// Publish playing now status
+			if s.playingNowService != nil {
+				if err := s.playingNowService.PublishPlayingNow(ctx, userID, track); err != nil {
+					s.logger.Printf("Error publishing playing now for user %d: %v", userID, err)
+				}
+			}
 
 			// Submit to ATProto PDS
 			// The 'track' variable is *models.Track and has been saved to DB, PlayID is populated.
@@ -693,7 +729,11 @@ func (s *SpotifyService) fetchAllUserTracks(ctx context.Context) {
 			}
 			// End of PDS submission block
 
-			s.logger.Printf("User %d is listening to: %s by %s", userID, track.Name, track.Artist)
+			artistName := "Unknown Artist"
+			if len(track.Artist) > 0 {
+				artistName = track.Artist[0].Name
+			}
+			s.logger.Printf("User %d is listening to: %s by %s", userID, track.Name, artistName)
 		}
 	}
 }

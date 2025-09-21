@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/teal-fm/piper/db"
+	"github.com/teal-fm/piper/models"
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"github.com/teal-fm/piper/service/spotify"
 	"github.com/teal-fm/piper/session"
@@ -419,5 +420,103 @@ func apiUnlinkLastfmHandler(database *db.DB) http.HandlerFunc {
 		}
 		log.Printf("API: Successfully unlinked Last.fm username for user ID %d", userID)
 		jsonResponse(w, http.StatusOK, map[string]string{"message": "Last.fm username unlinked successfully"})
+	}
+}
+
+// apiSubmitListensHandler handles ListenBrainz-compatible submissions
+func apiSubmitListensHandler(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, authenticated := session.GetUserID(r.Context())
+		if !authenticated {
+			jsonResponse(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+			return
+		}
+
+		if r.Method != http.MethodPost {
+			jsonResponse(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
+			return
+		}
+
+		// Parse the ListenBrainz submission
+		var submission models.ListenBrainzSubmission
+		if err := json.NewDecoder(r.Body).Decode(&submission); err != nil {
+			log.Printf("apiSubmitListensHandler: Error decoding submission for user %d: %v", userID, err)
+			jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "Invalid JSON format"})
+			return
+		}
+
+		// Validate listen_type
+		validListenTypes := map[string]bool{
+			"single":      true,
+			"import":      true,
+			"playing_now": true,
+		}
+		if !validListenTypes[submission.ListenType] {
+			jsonResponse(w, http.StatusBadRequest, map[string]string{
+				"error": "Invalid listen_type. Must be 'single', 'import', or 'playing_now'",
+			})
+			return
+		}
+
+		// Validate payload
+		if len(submission.Payload) == 0 {
+			jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "Payload cannot be empty"})
+			return
+		}
+
+		// Process each listen in the payload
+		var processedTracks []models.Track
+		var errors []string
+
+		for i, listen := range submission.Payload {
+			// Validate required fields
+			if listen.TrackMetadata.ArtistName == "" {
+				errors = append(errors, fmt.Sprintf("payload[%d]: artist_name is required", i))
+				continue
+			}
+			if listen.TrackMetadata.TrackName == "" {
+				errors = append(errors, fmt.Sprintf("payload[%d]: track_name is required", i))
+				continue
+			}
+
+			// Convert to internal Track format
+			track := listen.ConvertToTrack(userID)
+
+			// For 'playing_now' type, we might want to handle differently
+			// For now, treat all the same but could add temporary storage later
+			if submission.ListenType == "playing_now" {
+				log.Printf("Received playing_now listen for user %d: %s - %s", userID, track.Artist[0].Name, track.Name)
+				// Could store in a separate playing_now table or just log
+				continue
+			}
+
+			// Store the track
+			if _, err := database.SaveTrack(userID, &track); err != nil {
+				log.Printf("apiSubmitListensHandler: Error saving track for user %d: %v", userID, err)
+				errors = append(errors, fmt.Sprintf("payload[%d]: failed to save track", i))
+				continue
+			}
+
+			processedTracks = append(processedTracks, track)
+		}
+
+		// Prepare response
+		response := map[string]interface{}{
+			"status":    "ok",
+			"processed": len(processedTracks),
+		}
+
+		if len(errors) > 0 {
+			response["errors"] = errors
+			if len(processedTracks) == 0 {
+				jsonResponse(w, http.StatusBadRequest, response)
+				return
+			}
+		}
+
+		log.Printf("Successfully processed %d ListenBrainz submissions for user %d (type: %s)",
+			len(processedTracks), userID, submission.ListenType)
+
+		jsonResponse(w, http.StatusOK, response)
 	}
 }
