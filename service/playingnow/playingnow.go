@@ -158,6 +158,8 @@ func (p *PlayingNowService) ClearPlayingNow(ctx context.Context, userID int64) e
 	}
 
 	// Update the record
+	//TODO this is failing with InvalidSwap: Record was at "prevouis cid"
+	//2025/09/22 08:03:29 spotify: Updated!
 	input := atproto.RepoPutRecord_Input{
 		Collection: "fm.teal.alpha.actor.status",
 		Repo:       sess.DID,

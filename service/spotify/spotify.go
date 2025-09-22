@@ -538,14 +538,17 @@ func (s *SpotifyService) FetchCurrentTrack(userID int64) (*models.Track, error) 
 			} `json:"external_urls"`
 			DurationMs int `json:"duration_ms"`
 		} `json:"item"`
-		ProgressMS int `json:"progress_ms"`
+		ProgressMS int  `json:"progress_ms"`
+		IsPlaying  bool `json:"is_playing"`
 	}
 
 	err = json.Unmarshal(bodyBytes, &response) // Use bodyBytes here
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal spotify response: %w", err)
 	}
-
+	if response.IsPlaying == false {
+		return nil, nil
+	}
 	var artists []models.Artist
 	for _, artist := range response.Item.Artists {
 		artists = append(artists, models.Artist{
