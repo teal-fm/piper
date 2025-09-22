@@ -1,4 +1,4 @@
-package main
+package pages
 
 import (
 	"embed"
@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -33,7 +32,7 @@ func NewPages(dev bool) *Pages {
 	if pages.dev {
 		pages.embedFS = os.DirFS(pages.templateDir)
 	} else {
-		//pages.embedFS = Files
+		pages.embedFS = Files
 	}
 
 	return pages
@@ -41,6 +40,8 @@ func NewPages(dev bool) *Pages {
 
 func (p *Pages) fragmentPaths() ([]string, error) {
 	var fragmentPaths []string
+	// When using os.DirFS("templates"), the FS root is already the templates directory.
+	// Walk from "." and use relative paths (no "templates/" prefix).
 	err := fs.WalkDir(p.embedFS, "templates", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -51,9 +52,9 @@ func (p *Pages) fragmentPaths() ([]string, error) {
 		if !strings.HasSuffix(path, ".gohtml") {
 			return nil
 		}
-		if !strings.Contains(path, "fragments/") {
-			return nil
-		}
+		//if !strings.Contains(path, "fragments/") {
+		//	return nil
+		//}
 		fragmentPaths = append(fragmentPaths, path)
 		return nil
 	})
@@ -65,12 +66,12 @@ func (p *Pages) fragmentPaths() ([]string, error) {
 }
 
 func (p *Pages) pathToName(s string) string {
-	return strings.TrimSuffix(strings.TrimPrefix(s, "templates/"), ".html")
+	return strings.TrimSuffix(strings.TrimPrefix(s, "templates/"), ".gohtml")
 }
 
 // reverse of pathToName
 func (p *Pages) nameToPath(s string) string {
-	return "templates/" + s + ".html"
+	return "templates/" + s + ".gohtml"
 }
 
 // parse without memoization
@@ -140,43 +141,11 @@ func (p *Pages) executePlain(name string, w io.Writer, params any) error {
 	return tpl.Execute(w, params)
 }
 
-func (p *Pages) execute(name string, w io.Writer, params any) error {
+func (p *Pages) Execute(name string, w io.Writer, params any) error {
 	tpl, err := p.parseBase(name)
 	if err != nil {
 		return err
 	}
 
 	return tpl.ExecuteTemplate(w, "layouts/base", params)
-}
-
-/// Cache for pages
-
-type TmplCache[K comparable, V any] struct {
-	data  map[K]V
-	mutex sync.RWMutex
-}
-
-func NewTmplCache[K comparable, V any]() *TmplCache[K, V] {
-	return &TmplCache[K, V]{
-		data: make(map[K]V),
-	}
-}
-
-func (c *TmplCache[K, V]) Get(key K) (V, bool) {
-	c.mutex.RLock()
-	defer c.mutex.RUnlock()
-	val, exists := c.data[key]
-	return val, exists
-}
-
-func (c *TmplCache[K, V]) Set(key K, value V) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	c.data[key] = value
-}
-
-func (c *TmplCache[K, V]) Size() int {
-	c.mutex.RLock()
-	defer c.mutex.RUnlock()
-	return len(c.data)
 }

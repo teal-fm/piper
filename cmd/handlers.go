@@ -9,12 +9,13 @@ import (
 
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
+	pages "github.com/teal-fm/piper/pages"
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"github.com/teal-fm/piper/service/spotify"
 	"github.com/teal-fm/piper/session"
 )
 
-func home(database *db.DB, pages *Pages) http.HandlerFunc {
+func home(database *db.DB, pages *pages.Pages) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "text/html")
@@ -138,7 +139,7 @@ func home(database *db.DB, pages *Pages) http.HandlerFunc {
 		</body>
 		</html>
 	`
-		pages.execute("home", w, nil)
+		pages.Execute("home", w, nil)
 
 		//w.Write([]byte(html))
 	}
