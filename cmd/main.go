@@ -107,7 +107,7 @@ func main() {
 		spotifyService:    spotifyService,
 		atprotoService:    atprotoService,
 		playingNowService: playingNowService,
-		pages:             pages.NewPages(false),
+		pages:             pages.NewPages(),
 	}
 
 	trackerInterval := time.Duration(viper.GetInt("tracker.interval")) * time.Second

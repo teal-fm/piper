@@ -15,6 +15,11 @@ import (
 	"github.com/teal-fm/piper/session"
 )
 
+type HomeParams struct {
+	IsLoggedIn     bool
+	LastFMUsername *string
+}
+
 func home(database *db.DB, pages *pages.Pages) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
@@ -33,115 +38,14 @@ func home(database *db.DB, pages *pages.Pages) http.HandlerFunc {
 				log.Printf("Error fetching user %d details for home page: %v", userID, err)
 			}
 		}
-
-		html := `
-		<html>
-		<head>
-			<title>Piper - Spotify & Last.fm Tracker</title>
-			<style>
-				body {
-					font-family: Arial, sans-serif;
-					max-width: 800px;
-					margin: 0 auto;
-					padding: 20px;
-					line-height: 1.6;
-				}
-				h1 {
-					color: #1DB954; /* Spotify green */
-				}
-				.nav {
-					display: flex;
-					flex-wrap: wrap; /* Allow wrapping on smaller screens */
-					margin-bottom: 20px;
-				}
-				.nav a {
-					margin-right: 15px;
-					margin-bottom: 5px; /* Add spacing below links */
-					text-decoration: none;
-					color: #1DB954;
-					font-weight: bold;
-				}
-				.card {
-					border: 1px solid #ddd;
-					border-radius: 8px;
-					padding: 20px;
-					margin-bottom: 20px;
-				}
-				.service-status {
-					font-style: italic;
-					color: #555;
-				}
-			</style>
-		</head>
-		<body>
-			<h1>Piper - Multi-User Spotify & Last.fm Tracker via ATProto</h1>
-			<div class="nav">
-				<a href="/">Home</a>`
-
-		if isLoggedIn {
-			html += `
-				<a href="/current-track">Spotify Current</a>
-				<a href="/history">Spotify History</a>
-				<a href="/link-lastfm">Link Last.fm</a>` // Link to Last.fm page
-			if lastfmUsername != "" {
-				html += ` <a href="/lastfm/recent">Last.fm Recent</a>` // Show only if linked
-			}
-			html += `
-				<a href="/api-keys">API Keys</a>
-				<a href="/login/spotify">Connect Spotify Account</a>
-				<a href="/logout">Logout</a>`
-		} else {
-			html += `
-				<a href="/login/atproto">Login with ATProto</a>`
+		params := HomeParams{
+			IsLoggedIn:     isLoggedIn,
+			LastFMUsername: &lastfmUsername,
 		}
-
-		html += `
-			</div>
-
-			<div class="card">
-				<h2>Welcome to Piper</h2>
-				<p>Piper is a multi-user application that records what you're listening to on Spotify and Last.fm, saving your listening history.</p>`
-
-		if !isLoggedIn {
-			html += `
-				<p>Login with ATProto to get started!</p>
-				<form action="/login/atproto">
-					<label for="handle">handle:</label>
-					<input type="text" id="handle" name="handle" >
-					<input type="submit" value="submit">
-				</form>`
-		} else {
-			html += `
-				<p>You're logged in!</p>
-				<ul>
-					<li><a href="/login/spotify">Connect your Spotify account</a> to start tracking.</li>
-					<li><a href="/link-lastfm">Link your Last.fm account</a> to track scrobbles.</li>
-				</ul>
-				<p>Once connected, you can check out your:</p>
-				<ul>
-					<li><a href="/current-track">Spotify current track</a> or <a href="/history">listening history</a>.</li>`
-			if lastfmUsername != "" {
-				html += `<li><a href="/lastfm/recent">Last.fm recent tracks</a>.</li>`
-			}
-			html += `
-				</ul>
-				<p>You can also manage your <a href="/api-keys">API keys</a> for programmatic access.</p>`
-			if lastfmUsername != "" {
-				html += fmt.Sprintf("<p class='service-status'>Last.fm Username: %s</p>", lastfmUsername)
-			} else {
-				html += "<p class='service-status'>Last.fm account not linked.</p>"
-			}
-
+		err := pages.Execute("home", w, params)
+		if err != nil {
+			log.Printf("Error executing template: %v", err)
 		}
-
-		html += `
-			</div> <!-- Close card div -->
-		</body>
-		</html>
-	`
-		pages.Execute("home", w, nil)
-
-		//w.Write([]byte(html))
 	}
 }
 

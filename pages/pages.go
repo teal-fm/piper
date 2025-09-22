@@ -1,11 +1,13 @@
 package pages
 
+// inspired from tangled's implementation
+//https://tangled.org/@tangled.org/core/blob/master/appview/pages/pages.go
+
 import (
 	"embed"
 	"html/template"
 	"io"
 	"io/fs"
-	"os"
 	"strings"
 	"time"
 )
@@ -13,29 +15,17 @@ import (
 //go:embed templates/*
 var Files embed.FS
 
-// inspired from tangled's implementation
-//https://tangled.org/@tangled.org/core/blob/master/appview/pages/pages.go
-
 type Pages struct {
 	cache       *TmplCache[string, *template.Template]
-	dev         bool
 	templateDir string // Path to templates on disk for dev mode
 	embedFS     fs.FS
 }
 
-func NewPages(dev bool) *Pages {
-	pages := &Pages{
-		cache:       NewTmplCache[string, *template.Template](),
-		dev:         dev,
-		templateDir: "templates",
+func NewPages() *Pages {
+	return &Pages{
+		cache:   NewTmplCache[string, *template.Template](),
+		embedFS: Files,
 	}
-	if pages.dev {
-		pages.embedFS = os.DirFS(pages.templateDir)
-	} else {
-		pages.embedFS = Files
-	}
-
-	return pages
 }
 
 func (p *Pages) fragmentPaths() ([]string, error) {
@@ -99,8 +89,7 @@ func (p *Pages) rawParse(stack ...string) (*template.Template, error) {
 func (p *Pages) parse(stack ...string) (*template.Template, error) {
 	key := strings.Join(stack, "|")
 
-	// never cache in dev mode
-	if cached, exists := p.cache.Get(key); !p.dev && exists {
+	if cached, exists := p.cache.Get(key); exists {
 		return cached, nil
 	}
 
