@@ -11,6 +11,7 @@ import (
 	"github.com/bluesky-social/indigo/api/atproto"
 	lexutil "github.com/bluesky-social/indigo/lex/util"
 	"github.com/bluesky-social/indigo/xrpc"
+	oauth "github.com/haileyok/atproto-oauth-golang"
 	"github.com/spf13/viper"
 	"github.com/teal-fm/piper/api/teal"
 	"github.com/teal-fm/piper/db"
@@ -85,15 +86,22 @@ func (p *PlayingNowService) PublishPlayingNow(ctx context.Context, userID int64,
 		Item:          playView,
 	}
 
+	var swapRecord *string
+	authArgs := db.AtpSessionToAuthArgs(sess)
+
+	swapRecord, err = p.getStatusSwapRecord(ctx, xrpcClient, sess, authArgs)
+	if err != nil {
+		return err
+	}
+
 	// Create the record input
 	input := atproto.RepoPutRecord_Input{
 		Collection: "fm.teal.alpha.actor.status",
 		Repo:       sess.DID,
 		Rkey:       "self", // Use "self" as the record key for current status
 		Record:     &lexutil.LexiconTypeDecoder{Val: status},
+		SwapRecord: swapRecord,
 	}
-
-	authArgs := db.AtpSessionToAuthArgs(sess)
 
 	// Submit to PDS
 	var out atproto.RepoPutRecord_Output
@@ -157,17 +165,22 @@ func (p *PlayingNowService) ClearPlayingNow(ctx context.Context, userID int64) e
 		Item:          emptyPlayView,
 	}
 
+	authArgs := db.AtpSessionToAuthArgs(sess)
+
+	var swapRecord *string
+	swapRecord, err = p.getStatusSwapRecord(ctx, xrpcClient, sess, authArgs)
+	if err != nil {
+		return err
+	}
+
 	// Update the record
-	//TODO this is failing with InvalidSwap: Record was at "prevouis cid"
-	//2025/09/22 08:03:29 spotify: Updated!
 	input := atproto.RepoPutRecord_Input{
 		Collection: "fm.teal.alpha.actor.status",
 		Repo:       sess.DID,
 		Rkey:       "self",
 		Record:     &lexutil.LexiconTypeDecoder{Val: status},
+		SwapRecord: swapRecord,
 	}
-
-	authArgs := db.AtpSessionToAuthArgs(sess)
 
 	var out atproto.RepoPutRecord_Output
 	if err := xrpcClient.Do(ctx, authArgs, xrpc.Procedure, "application/json", "com.atproto.repo.putRecord", nil, input, &out); err != nil {
@@ -249,4 +262,25 @@ func (p *PlayingNowService) trackToPlayView(track *models.Track) (*teal.AlphaFee
 	}
 
 	return playView, nil
+}
+
+// getStatusSwapRecord retrieves the current swap record (CID) for the actor status record.
+// Returns (nil, nil) if the record does not exist yet.
+func (p *PlayingNowService) getStatusSwapRecord(ctx context.Context, xrpcClient *oauth.XrpcClient, sess *models.ATprotoAuthSession, authArgs *oauth.XrpcAuthedRequestArgs) (*string, error) {
+	getOutput := atproto.RepoGetRecord_Output{}
+	if err := xrpcClient.Do(ctx, authArgs, xrpc.Query, "application/json", "com.atproto.repo.getRecord", map[string]any{
+		"repo":       sess.DID,
+		"collection": "fm.teal.alpha.actor.status",
+		"rkey":       "self",
+	}, nil, &getOutput); err != nil {
+		xErr, ok := err.(*xrpc.Error)
+		if !ok {
+			return nil, fmt.Errorf("could not get record: %w", err)
+		}
+		if xErr.StatusCode != 400 { // 400 means not found in this API
+			return nil, fmt.Errorf("could not get record: %w", err)
+		}
+		return nil, nil
+	}
+	return getOutput.Cid, nil
 }
