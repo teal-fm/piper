@@ -14,7 +14,7 @@ import (
 	"github.com/teal-fm/piper/session"
 )
 
-func home(database *db.DB) http.HandlerFunc {
+func home(database *db.DB, pages *Pages) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "text/html")
@@ -138,8 +138,9 @@ func home(database *db.DB) http.HandlerFunc {
 		</body>
 		</html>
 	`
+		pages.execute("home", w, nil)
 
-		w.Write([]byte(html))
+		//w.Write([]byte(html))
 	}
 }
 

@@ -1,0 +1,46 @@
+{{ define "layouts/base" }}
+
+<html lang="en">
+<head>
+    <title>Piper - Spotify & Last.fm Tracker</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1 {
+            color: #1DB954; /* Spotify green */
+        }
+        .nav {
+            display: flex;
+            flex-wrap: wrap; /* Allow wrapping on smaller screens */
+            margin-bottom: 20px;
+        }
+        .nav a {
+            margin-right: 15px;
+            margin-bottom: 5px; /* Add spacing below links */
+            text-decoration: none;
+            color: #1DB954;
+            font-weight: bold;
+        }
+        .card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .service-status {
+            font-style: italic;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+{{ block "content" . }}{{ end }}
+
+</body>
+</html>
+{{ end }}

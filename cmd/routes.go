@@ -11,7 +11,7 @@ import (
 func (app *application) routes() http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/", session.WithPossibleAuth(home(app.database), app.sessionManager))
+	mux.HandleFunc("/", session.WithPossibleAuth(home(app.database, app.pages), app.sessionManager))
 
 	// OAuth Routes
 	mux.HandleFunc("/login/spotify", app.oauthManager.HandleLogin("spotify"))

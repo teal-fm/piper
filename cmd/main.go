@@ -31,6 +31,7 @@ type application struct {
 	mbService         *musicbrainz.MusicBrainzService
 	atprotoService    *atproto.ATprotoAuthService
 	playingNowService *playingnow.PlayingNowService
+	pages             *Pages
 }
 
 // JSON API handlers
@@ -105,6 +106,7 @@ func main() {
 		spotifyService:    spotifyService,
 		atprotoService:    atprotoService,
 		playingNowService: playingNowService,
+		pages:             NewPages(true),
 	}
 
 	trackerInterval := time.Duration(viper.GetInt("tracker.interval")) * time.Second
