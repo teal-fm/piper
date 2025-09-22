@@ -39,12 +39,19 @@ type LastFMService struct {
 	Usernames          []string
 	musicBrainzService *musicbrainz.MusicBrainzService
 	atprotoService     *atprotoauth.ATprotoAuthService
+	playingNowService  interface {
+		PublishPlayingNow(ctx context.Context, userID int64, track *models.Track) error
+		ClearPlayingNow(ctx context.Context, userID int64) error
+	}
 	lastSeenNowPlaying map[string]Track
 	mu                 sync.Mutex
 	logger             *log.Logger
 }
 
-func NewLastFMService(db *db.DB, apiKey string, musicBrainzService *musicbrainz.MusicBrainzService, atprotoService *atprotoauth.ATprotoAuthService) *LastFMService {
+func NewLastFMService(db *db.DB, apiKey string, musicBrainzService *musicbrainz.MusicBrainzService, atprotoService *atprotoauth.ATprotoAuthService, playingNowService interface {
+	PublishPlayingNow(ctx context.Context, userID int64, track *models.Track) error
+	ClearPlayingNow(ctx context.Context, userID int64) error
+}) *LastFMService {
 	logger := log.New(os.Stdout, "lastfm: ", log.LstdFlags|log.Lmsgprefix)
 
 	return &LastFMService{
@@ -58,6 +65,7 @@ func NewLastFMService(db *db.DB, apiKey string, musicBrainzService *musicbrainz.
 		Usernames:          make([]string, 0),
 		atprotoService:     atprotoService,
 		musicBrainzService: musicBrainzService,
+		playingNowService:  playingNowService,
 		lastSeenNowPlaying: make(map[string]Track),
 		mu:                 sync.Mutex{},
 		logger:             logger,
@@ -303,8 +311,24 @@ func (l *LastFMService) processTracks(ctx context.Context, username string, trac
 			l.logger.Printf("current track does not match last seen track for %s", username)
 			// aha! we record this!
 			l.lastSeenNowPlaying[username] = nowPlayingTrack
+
+			// Publish playing now status
+			if l.playingNowService != nil {
+				// Convert Last.fm track to models.Track format
+				piperTrack := l.convertLastFMTrackToModelsTrack(nowPlayingTrack)
+				if err := l.playingNowService.PublishPlayingNow(ctx, user.ID, piperTrack); err != nil {
+					l.logger.Printf("Error publishing playing now for user %s: %v", username, err)
+				}
+			}
 		}
 		l.mu.Unlock()
+	} else {
+		// No now playing track - clear playing now status
+		if l.playingNowService != nil {
+			if err := l.playingNowService.ClearPlayingNow(ctx, user.ID); err != nil {
+				l.logger.Printf("Error clearing playing now for user %s: %v", username, err)
+			}
+		}
 	}
 
 	// find last non-now-playing track
@@ -466,4 +490,39 @@ func (l *LastFMService) SubmitTrackToPDS(did string, track *models.Track, ctx co
 	// submit track to PDS
 
 	return nil
+}
+
+// convertLastFMTrackToModelsTrack converts a Last.fm Track to models.Track format
+func (l *LastFMService) convertLastFMTrackToModelsTrack(track Track) *models.Track {
+	// Create artist array
+	artists := []models.Artist{
+		{
+			Name: track.Artist.Text,
+			// Note: Last.fm doesn't provide MBID in now playing, would need separate lookup
+		},
+	}
+
+	// Set timestamp to current time for now playing
+	timestamp := time.Now()
+
+	piperTrack := &models.Track{
+		Name:           track.Name,
+		Artist:         artists,
+		Album:          track.Album.Text, // Album is a struct with Text field
+		Timestamp:      timestamp,
+		ServiceBaseUrl: "lastfm",
+		HasStamped:     false, // Playing now tracks aren't stamped yet
+	}
+
+	// Add URL if available
+	if track.URL != "" {
+		piperTrack.URL = track.URL
+	}
+
+	// Try to extract MBID if available (Last.fm sometimes provides this)
+	if track.MBID != "" { // MBID is capitalized
+		piperTrack.RecordingMBID = &track.MBID
+	}
+
+	return piperTrack
 }

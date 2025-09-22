@@ -36,6 +36,9 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("/api/v1/history", session.WithAPIAuth(apiTrackHistory(app.spotifyService), app.sessionManager))       // Spotify History
 	mux.HandleFunc("/api/v1/musicbrainz/search", apiMusicBrainzSearch(app.mbService))                                     // MusicBrainz (public?)
 
+	// ListenBrainz-compatible endpoint
+	mux.HandleFunc("/1/submit-listens", session.WithAPIAuth(apiSubmitListensHandler(app.database), app.sessionManager))
+
 	serverUrlRoot := viper.GetString("server.root_url")
 	atpClientId := viper.GetString("atproto.client_id")
 	atpCallbackUrl := viper.GetString("atproto.callback_url")
