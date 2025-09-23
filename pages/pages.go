@@ -1,6 +1,6 @@
 package pages
 
-// inspired from tangled's implementation
+// forked and inspired from tangled's implementation
 //https://tangled.org/@tangled.org/core/blob/master/appview/pages/pages.go
 
 import (
@@ -30,8 +30,6 @@ func NewPages() *Pages {
 
 func (p *Pages) fragmentPaths() ([]string, error) {
 	var fragmentPaths []string
-	// When using os.DirFS("templates"), the FS root is already the templates directory.
-	// Walk from "." and use relative paths (no "templates/" prefix).
 	err := fs.WalkDir(p.embedFS, "templates", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -42,9 +40,6 @@ func (p *Pages) fragmentPaths() ([]string, error) {
 		if !strings.HasSuffix(path, ".gohtml") {
 			return nil
 		}
-		//if !strings.Contains(path, "fragments/") {
-		//	return nil
-		//}
 		fragmentPaths = append(fragmentPaths, path)
 		return nil
 	})
@@ -137,4 +132,11 @@ func (p *Pages) Execute(name string, w io.Writer, params any) error {
 	}
 
 	return tpl.ExecuteTemplate(w, "layouts/base", params)
+}
+
+// Shared view/template params
+
+type NavBar struct {
+	IsLoggedIn     bool
+	LastFMUsername string
 }

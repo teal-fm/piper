@@ -16,11 +16,10 @@ import (
 )
 
 type HomeParams struct {
-	IsLoggedIn     bool
-	LastFMUsername *string
+	NavBar pages.NavBar
 }
 
-func home(database *db.DB, pages *pages.Pages) http.HandlerFunc {
+func home(database *db.DB, pg *pages.Pages) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "text/html")
@@ -39,10 +38,12 @@ func home(database *db.DB, pages *pages.Pages) http.HandlerFunc {
 			}
 		}
 		params := HomeParams{
-			IsLoggedIn:     isLoggedIn,
-			LastFMUsername: &lastfmUsername,
+			NavBar: pages.NavBar{
+				IsLoggedIn:     isLoggedIn,
+				LastFMUsername: lastfmUsername,
+			},
 		}
-		err := pages.Execute("home", w, params)
+		err := pg.Execute("home", w, params)
 		if err != nil {
 			log.Printf("Error executing template: %v", err)
 		}

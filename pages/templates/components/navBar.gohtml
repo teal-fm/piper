@@ -1,0 +1,20 @@
+{{ define "components/navBar" }}
+
+    <div class="nav">
+        <a href="/">Home</a>
+
+        {{if .IsLoggedIn}}
+            <a href="/current-track">Spotify Current</a>
+            <a href="/history">Spotify History</a>
+            <a href="/link-lastfm">Link Last.fm</a>
+            {{ if .LastFMUsername }}
+                <a href="/lastfm/recent">Last.fm Recent</a>
+            {{ end }}
+            <a href="/api-keys">API Keys</a>
+            <a href="/login/spotify">Connect Spotify Account</a>
+            <a href="/logout">Logout</a>
+        {{ else }}
+            <a href="/login/atproto">Login with ATProto</a>
+        {{ end }}
+    </div>
+{{ end }}

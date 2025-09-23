@@ -1,0 +1,92 @@
+
+{{ define "content" }}
+
+{{ template "components/navBar" .NavBar }}
+
+
+<h1>API Key Management</h1>
+
+<div class="card">
+    <h2>Create New API Key</h2>
+    <p>API keys allow programmatic access to your Piper account data.</p>
+    <form method="POST" action="/api-keys">
+        <div style="margin-bottom: 15px;">
+            <label for="name">Key Name (for your reference):</label>
+            <input type="text" id="name" name="name" placeholder="My Application" style="width: 100%; padding: 8px; margin-top: 5px;">
+        </div>
+        <button type="submit" class="btn">Generate New API Key</button>
+    </form>
+</div>
+
+{{if .NewKeyID}} <!-- Changed from .NewKey to .NewKeyID for clarity -->
+<div class="new-key-alert">
+    <h3>Your new API key (ID: {{.NewKeyID}}) has been created</h3>
+    <!-- The message below is misleading if only the ID is shown.
+         Consider changing this text or modifying the flow to show the actual key once for HTML. -->
+    <p><strong>Important:</strong> If this is an ID, ensure you have copied the actual key if it was displayed previously. For keys generated via the API, the key is returned in the API response.</p>
+</div>
+{{end}}
+
+<div class="card">
+    <h2>Your API Keys</h2>
+    {{if .Keys}}
+        <table>
+            <thead>
+            <tr>
+                <th>Name</th>
+                <th>Prefix</th>
+                <th>Created</th>
+                <th>Expires</th>
+                <th>Actions</th>
+            </tr>
+            </thead>
+            <tbody>
+            {{range .Keys}}
+                <tr>
+                    <td>{{.Name}}</td>
+                    <td>{{.KeyPrefix}}</td> <!-- Added KeyPrefix for better identification -->
+                    <td>{{formatTime .CreatedAt}}</td>
+                    <td>{{formatTime .ExpiresAt}}</td>
+                    <td>
+                        <button class="btn btn-danger" onclick="deleteKey('{{.ID}}')">Delete</button>
+                    </td>
+                </tr>
+            {{end}}
+            </tbody>
+        </table>
+    {{else}}
+        <p>You don't have any API keys yet.</p>
+    {{end}}
+</div>
+
+<div class="card">
+    <h2>API Usage</h2>
+    <p>To use your API key, include it in the Authorization header of your HTTP requests:</p>
+    <pre>Authorization: Bearer YOUR_API_KEY</pre>
+    <p>Or include it as a query parameter (less secure for the key itself):</p>
+    <pre>https://your-piper-instance.com/endpoint?api_key=YOUR_API_KEY</pre>
+</div>
+
+<script>
+    function deleteKey(keyId) {
+        if (confirm('Are you sure you want to delete this API key? This action cannot be undone.')) {
+            fetch('/api-keys?key_id=' + keyId, { // This endpoint is handled by HandleAPIKeyManagement
+                method: 'DELETE',
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        window.location.reload();
+                    } else {
+                        alert('Failed to delete API key: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Failed to delete API key due to a network or processing error.');
+                });
+        }
+    }
+</script>
+
+{{ end }}

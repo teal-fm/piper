@@ -22,7 +22,7 @@ func (app *application) routes() http.Handler {
 	// Authenticated Web Routes
 	mux.HandleFunc("/current-track", session.WithAuth(app.spotifyService.HandleCurrentTrack, app.sessionManager))
 	mux.HandleFunc("/history", session.WithAuth(app.spotifyService.HandleTrackHistory, app.sessionManager))
-	mux.HandleFunc("/api-keys", session.WithAuth(app.apiKeyService.HandleAPIKeyManagement, app.sessionManager))
+	mux.HandleFunc("/api-keys", session.WithAuth(app.apiKeyService.HandleAPIKeyManagement(app.database, app.pages), app.sessionManager))
 	mux.HandleFunc("/link-lastfm", session.WithAuth(handleLinkLastfmForm(app.database), app.sessionManager))          // GET form
 	mux.HandleFunc("/link-lastfm/submit", session.WithAuth(handleLinkLastfmSubmit(app.database), app.sessionManager)) // POST submit - Changed route slightly
 	mux.HandleFunc("/logout", app.sessionManager.HandleLogout)
