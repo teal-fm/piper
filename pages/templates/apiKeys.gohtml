@@ -7,7 +7,7 @@
 <h1>API Key Management</h1>
 
 <div class="card">
-    <h2>Create New API Key</h2>
+    <h2 class="teal-header">Create New API Key</h2>
     <p>API keys allow programmatic access to your Piper account data.</p>
     <form method="POST" action="/api-keys">
         <div style="margin-bottom: 15px;">
@@ -20,7 +20,7 @@
 
 {{if .NewKeyID}} <!-- Changed from .NewKey to .NewKeyID for clarity -->
 <div class="new-key-alert">
-    <h3>Your new API key (ID: {{.NewKeyID}}) has been created</h3>
+    <h3 class="teal-header">Your new API key (ID: {{.NewKeyID}}) has been created</h3>
     <!-- The message below is misleading if only the ID is shown.
          Consider changing this text or modifying the flow to show the actual key once for HTML. -->
     <p><strong>Important:</strong> If this is an ID, ensure you have copied the actual key if it was displayed previously. For keys generated via the API, the key is returned in the API response.</p>
@@ -28,7 +28,7 @@
 {{end}}
 
 <div class="card">
-    <h2>Your API Keys</h2>
+    <h2 class="teal-header">Your API Keys</h2>
     {{if .Keys}}
         <table>
             <thead>
@@ -60,7 +60,7 @@
 </div>
 
 <div class="card">
-    <h2>API Usage</h2>
+    <h2 class="teal-header">API Usage</h2>
     <p>To use your API key, include it in the Authorization header of your HTTP requests:</p>
     <pre>Authorization: Bearer YOUR_API_KEY</pre>
     <p>Or include it as a query parameter (less secure for the key itself):</p>

@@ -2,23 +2,8 @@
 {{ define "content" }}
 
     <h1>Piper - Multi-User Spotify & Last.fm Tracker via ATProto</h1>
-    <div class="nav">
-        <a href="/">Home</a>
+    {{ template "components/navBar" .NavBar }}
 
-        {{if .NavBar.IsLoggedIn}}
-            <a href="/current-track">Spotify Current</a>
-            <a href="/history">Spotify History</a>
-            <a href="/link-lastfm">Link Last.fm</a>
-            {{ if .NavBar.LastFMUsername }}
-                <a href="/lastfm/recent">Last.fm Recent</a>
-            {{ end }}
-            <a href="/api-keys">API Keys</a>
-            <a href="/login/spotify">Connect Spotify Account</a>
-            <a href="/logout">Logout</a>
-        {{ else }}
-            <a href="/login/atproto">Login with ATProto</a>
-        {{ end }}
-    </div>
 
     <div class="card">
         <h2>Welcome to Piper</h2>
@@ -53,7 +38,7 @@
             <form action="/login/atproto">
                 <label for="handle">handle:</label>
                 <input type="text" id="handle" name="handle" >
-                <input type="submit" value="submit">
+                <input class="teal-input" type="submit" value="submit">
             </form>
 
 

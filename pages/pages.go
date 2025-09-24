@@ -119,25 +119,20 @@ func (p *Pages) parseBase(top string) (*template.Template, error) {
 }
 
 func (p *Pages) Static() http.Handler {
-	//if p.dev {
-	//	return http.StripPrefix("/static/", http.FileServer(http.Dir("appview/pages/static")))
-	//}
 
 	sub, err := fs.Sub(Files, "static")
 	if err != nil {
-		//p.logger.Error("no static dir found? that's crazy", "err", err)
 		panic(err)
 	}
-	return http.StripPrefix("/static/", http.FileServer(http.FS(sub)))
-	// Custom handler to apply Cache-Control headers for font files
-	//return http.FileServer(http.FS(sub))
-	//return http.FileServer(http.FS(sub))
+
+	return Cache(http.StripPrefix("/static/", http.FileServer(http.FS(sub))))
 }
 
 func Cache(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.Split(r.URL.Path, "?")[0]
-
+		
+		//We may want to change these, just took what tangled has and allows browser side caching
 		if strings.HasSuffix(path, ".css") {
 			// on day for css files
 			w.Header().Set("Cache-Control", "public, max-age=86400")

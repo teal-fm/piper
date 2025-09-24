@@ -1,10 +1,14 @@
 {{ define "content" }}
-    <h2>Link Your Last.fm Account</h2>
-    <p>Enter your Last.fm username to start tracking your scrobbles.</p>
-    <form method="post" action="/link-lastfm">
-        <label for="lastfm_username">Last.fm Username:</label>
-        <input type="text" id="lastfm_username" name="lastfm_username" value="%s" required>
-        <input type="submit" value="Save Username">
-    </form>
+    {{ template "components/navBar" .NavBar }}
+
+    <div class="lastfm-form">
+        <h2>Link Your Last.fm Account</h2>
+        <p>Enter your Last.fm username to start tracking your scrobbles.</p>
+        <form method="post" action="/link-lastfm">
+            <label for="lastfm_username">Last.fm Username:</label>
+            <input type="text" id="lastfm_username" name="lastfm_username" value="{{.CurrentUsername}}" required>
+            <input class="last-fm-input" type="submit" value="Save Username">
+        </form>
+    </div>
 
 {{ end }}

@@ -10,13 +10,9 @@ import (
 
 func (app *application) routes() http.Handler {
 	mux := http.NewServeMux()
-	// Redirect /static to /static/ so it doesn't fall through to "/" handler
+
+	//Handles static file routes
 	mux.Handle("/static/{file_name}", app.pages.Static())
-	//mux.HandleFunc("/static/{file_name}", func(w http.ResponseWriter, r *http.Request) {
-	//	w.Header().Set("Content-Type", "text/html")
-	//
-	//	w.Write([]byte("Static files are served from /static/"))
-	//})
 
 	mux.HandleFunc("/", session.WithPossibleAuth(home(app.database, app.pages), app.sessionManager))
 
@@ -30,8 +26,8 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("/current-track", session.WithAuth(app.spotifyService.HandleCurrentTrack, app.sessionManager))
 	mux.HandleFunc("/history", session.WithAuth(app.spotifyService.HandleTrackHistory, app.sessionManager))
 	mux.HandleFunc("/api-keys", session.WithAuth(app.apiKeyService.HandleAPIKeyManagement(app.database, app.pages), app.sessionManager))
-	mux.HandleFunc("/link-lastfm", session.WithAuth(handleLinkLastfmForm(app.database), app.sessionManager))          // GET form
-	mux.HandleFunc("/link-lastfm/submit", session.WithAuth(handleLinkLastfmSubmit(app.database), app.sessionManager)) // POST submit - Changed route slightly
+	mux.HandleFunc("/link-lastfm", session.WithAuth(handleLinkLastfmForm(app.database, app.pages), app.sessionManager)) // GET form
+	mux.HandleFunc("/link-lastfm/submit", session.WithAuth(handleLinkLastfmSubmit(app.database), app.sessionManager))   // POST submit - Changed route slightly
 	mux.HandleFunc("/logout", app.sessionManager.HandleLogout)
 	mux.HandleFunc("/debug/", session.WithAuth(app.sessionManager.HandleDebug, app.sessionManager))
 
