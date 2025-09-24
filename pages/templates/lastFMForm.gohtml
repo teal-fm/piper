@@ -1,0 +1,14 @@
+{{ define "content" }}
+    {{ template "components/navBar" .NavBar }}
+
+    <div class="max-w-[600px] mx-auto my-5 p-5 border border-gray-300 rounded-lg">
+        <h2 class="text-xl font-semibold mb-2">Link Your Last.fm Account</h2>
+        <p class="mb-3">Enter your Last.fm username to start tracking your scrobbles.</p>
+        <form class="space-y-2" method="post" action="/link-lastfm">
+            <label class="block" for="lastfm_username">Last.fm Username:</label>
+            <input class="block w-[95%] p-2 border border-gray-300 rounded" type="text" id="lastfm_username" name="lastfm_username" value="{{.CurrentUsername}}" required>
+            <input class="bg-[#d51007] text-white px-4 py-2.5 rounded cursor-pointer hover:opacity-90" type="submit" value="Save Username">
+        </form>
+    </div>
+
+{{ end }}

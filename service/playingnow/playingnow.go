@@ -86,9 +86,8 @@ func (p *PlayingNowService) PublishPlayingNow(ctx context.Context, userID int64,
 		Item:          playView,
 	}
 
-	var swapRecord *string
 	authArgs := db.AtpSessionToAuthArgs(sess)
-
+	var swapRecord *string
 	swapRecord, err = p.getStatusSwapRecord(ctx, xrpcClient, sess, authArgs)
 	if err != nil {
 		return err
@@ -166,7 +165,6 @@ func (p *PlayingNowService) ClearPlayingNow(ctx context.Context, userID int64) e
 	}
 
 	authArgs := db.AtpSessionToAuthArgs(sess)
-
 	var swapRecord *string
 	swapRecord, err = p.getStatusSwapRecord(ctx, xrpcClient, sess, authArgs)
 	if err != nil {

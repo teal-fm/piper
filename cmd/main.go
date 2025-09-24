@@ -16,6 +16,7 @@ import (
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/oauth"
 	"github.com/teal-fm/piper/oauth/atproto"
+	pages "github.com/teal-fm/piper/pages"
 	apikeyService "github.com/teal-fm/piper/service/apikey"
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"github.com/teal-fm/piper/service/spotify"
@@ -31,6 +32,7 @@ type application struct {
 	mbService         *musicbrainz.MusicBrainzService
 	atprotoService    *atproto.ATprotoAuthService
 	playingNowService *playingnow.PlayingNowService
+	pages             *pages.Pages
 }
 
 // JSON API handlers
@@ -105,6 +107,7 @@ func main() {
 		spotifyService:    spotifyService,
 		atprotoService:    atprotoService,
 		playingNowService: playingNowService,
+		pages:             pages.NewPages(),
 	}
 
 	trackerInterval := time.Duration(viper.GetInt("tracker.interval")) * time.Second
@@ -113,9 +116,6 @@ func main() {
 		lastfmInterval = 30 * time.Second
 	}
 
-	//if err := spotifyService.LoadAllUsers(); err != nil {
-	//	log.Printf("Warning: Failed to preload Spotify users: %v", err)
-	//}
 	go spotifyService.StartListeningTracker(trackerInterval)
 
 	go lastfmService.StartListeningTracker(lastfmInterval)
