@@ -1,3 +1,6 @@
+//TODO will need a node buiilder here for tailwindcss
+
+
 FROM --platform=${BUILDPLATFORM:-linux/amd64} golang:1.24.3-alpine3.21 as builder
 
 ARG TARGETPLATFORM
