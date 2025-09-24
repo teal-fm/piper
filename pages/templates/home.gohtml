@@ -1,44 +1,44 @@
 
 {{ define "content" }}
 
-    <h1>Piper - Multi-User Spotify & Last.fm Tracker via ATProto</h1>
+    <h1 class="text-[#1DB954]">Piper - Multi-User Spotify & Last.fm Tracker via ATProto</h1>
     {{ template "components/navBar" .NavBar }}
 
 
-    <div class="card">
-        <h2 class="">Welcome to Piper</h2>
-        <p>Piper is a multi-user application that records what you're listening to on Spotify and Last.fm, saving your listening history.</p>
+    <div class="border border-gray-300 rounded-lg p-5 mb-5">
+        <h2 class="text-xl font-semibold mb-2">Welcome to Piper</h2>
+        <p class="mb-3">Piper is a multi-user application that records what you're listening to on Spotify and Last.fm, saving your listening history.</p>
 
     {{if .NavBar.IsLoggedIn}}
-        <p>You're logged in!</p>
-        <ul>
-            <li><a href="/login/spotify">Connect your Spotify account</a> to start tracking.</li>
-            <li><a href="/link-lastfm">Link your Last.fm account</a> to track scrobbles.</li>
+        <p class="mb-2">You're logged in!</p>
+        <ul class="list-disc pl-5 mb-3">
+            <li><a class="text-[#1DB954] font-bold" href="/login/spotify">Connect your Spotify account</a> to start tracking.</li>
+            <li><a class="text-[#1DB954] font-bold" href="/link-lastfm">Link your Last.fm account</a> to track scrobbles.</li>
         </ul>
-        <p>Once connected, you can check out your:</p>
-        <ul>
-            <li><a href="/current-track">Spotify current track</a> or <a href="/history">listening history</a>.</li>
+        <p class="mb-2">Once connected, you can check out your:</p>
+        <ul class="list-disc pl-5 mb-3">
+            <li><a class="text-[#1DB954] font-bold" href="/current-track">Spotify current track</a> or <a class="text-[#1DB954] font-bold" href="/history">listening history</a>.</li>
         {{ if .NavBar.LastFMUsername }}
-            <li><a href="/lastfm/recent">Last.fm recent tracks</a>.</li>
+            <li><a class="text-[#1DB954] font-bold" href="/lastfm/recent">Last.fm recent tracks</a>.</li>
         {{ end }}
 
         </ul>
-        <p>You can also manage your <a href="/api-keys">API keys</a> for programmatic access.</p>
+        <p class="mb-3">You can also manage your <a class="text-[#1DB954] font-bold" href="/api-keys">API keys</a> for programmatic access.</p>
 
         {{ if .NavBar.LastFMUsername }}
-            <p class='service-status'>Last.fm Username: {{ .NavBar.LastFMUsername }}</p>
+            <p class='italic text-gray-600'>Last.fm Username: {{ .NavBar.LastFMUsername }}</p>
         {{else }}
-            <p class='service-status'>Last.fm account not linked.</p>
+            <p class='italic text-gray-600'>Last.fm account not linked.</p>
         {{end}}
 
 
         {{ else }}
 
-            <p>Login with ATProto to get started!</p>
-            <form action="/login/atproto">
-                <label for="handle">handle:</label>
-                <input type="text" id="handle" name="handle" >
-                <input class="teal-input" type="submit" value="submit">
+            <p class="mb-3">Login with ATProto to get started!</p>
+            <form class="space-y-2" action="/login/atproto">
+                <label class="block" for="handle">handle:</label>
+                <input class="block w-[95%] p-2 border border-gray-300 rounded" type="text" id="handle" name="handle" >
+                <input class="bg-[#1DB954] text-white px-4 py-2.5 rounded cursor-pointer hover:opacity-90" type="submit" value="submit">
             </form>
 
 

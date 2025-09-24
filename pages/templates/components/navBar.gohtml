@@ -1,20 +1,20 @@
 {{ define "components/navBar" }}
 
-    <div class="nav">
-        <a href="/">Home</a>
+    <nav class="flex flex-wrap mb-5 gap-x-4 gap-y-1">
+        <a class="text-[#1DB954] font-bold no-underline" href="/">Home</a>
 
         {{if .IsLoggedIn}}
-            <a href="/current-track">Spotify Current</a>
-            <a href="/history">Spotify History</a>
-            <a href="/link-lastfm">Link Last.fm</a>
+            <a class="text-[#1DB954] font-bold no-underline" href="/current-track">Spotify Current</a>
+            <a class="text-[#1DB954] font-bold no-underline" href="/history">Spotify History</a>
+            <a class="text-[#1DB954] font-bold no-underline" href="/link-lastfm">Link Last.fm</a>
             {{ if .LastFMUsername }}
-                <a href="/lastfm/recent">Last.fm Recent</a>
+                <a class="text-[#1DB954] font-bold no-underline" href="/lastfm/recent">Last.fm Recent</a>
             {{ end }}
-            <a href="/api-keys">API Keys</a>
-            <a href="/login/spotify">Connect Spotify Account</a>
-            <a href="/logout">Logout</a>
+            <a class="text-[#1DB954] font-bold no-underline" href="/api-keys">API Keys</a>
+            <a class="text-[#1DB954] font-bold no-underline" href="/login/spotify">Connect Spotify Account</a>
+            <a class="text-[#1DB954] font-bold no-underline" href="/logout">Logout</a>
         {{ else }}
-            <a href="/login/atproto">Login with ATProto</a>
+            <a class="text-[#1DB954] font-bold no-underline" href="/login/atproto">Login with ATProto</a>
         {{ end }}
-    </div>
+    </nav>
 {{ end }}

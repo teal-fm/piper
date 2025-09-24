@@ -4,51 +4,51 @@
 {{ template "components/navBar" .NavBar }}
 
 
-<h1>API Key Management</h1>
+<h1 class="text-[#1DB954]">API Key Management</h1>
 
-<div class="card">
-    <h2 class="teal-header">Create New API Key</h2>
-    <p>API keys allow programmatic access to your Piper account data.</p>
+<div class="border border-gray-300 rounded-lg p-5 mb-5">
+    <h2 class="text-[#1DB954] text-xl font-semibold mb-2">Create New API Key</h2>
+    <p class="mb-3">API keys allow programmatic access to your Piper account data.</p>
     <form method="POST" action="/api-keys">
-        <div style="margin-bottom: 15px;">
-            <label for="name">Key Name (for your reference):</label>
-            <input type="text" id="name" name="name" placeholder="My Application" style="width: 100%; padding: 8px; margin-top: 5px;">
+        <div class="mb-4">
+            <label class="block" for="name">Key Name (for your reference):</label>
+            <input class="mt-1 w-full p-2 border border-gray-300 rounded" type="text" id="name" name="name" placeholder="My Application">
         </div>
-        <button type="submit" class="btn">Generate New API Key</button>
+        <button type="submit" class="bg-[#1DB954] text-white px-4 py-2 rounded cursor-pointer hover:opacity-90">Generate New API Key</button>
     </form>
 </div>
 
 {{if .NewKeyID}} <!-- Changed from .NewKey to .NewKeyID for clarity -->
-<div class="new-key-alert">
-    <h3 class="teal-header">Your new API key (ID: {{.NewKeyID}}) has been created</h3>
+<div class="bg-gray-100 border-l-4 border-[#1DB954] p-4 mb-5">
+    <h3 class="text-[#1DB954] text-lg font-semibold mb-1">Your new API key (ID: {{.NewKeyID}}) has been created</h3>
     <!-- The message below is misleading if only the ID is shown.
          Consider changing this text or modifying the flow to show the actual key once for HTML. -->
     <p><strong>Important:</strong> If this is an ID, ensure you have copied the actual key if it was displayed previously. For keys generated via the API, the key is returned in the API response.</p>
 </div>
 {{end}}
 
-<div class="card">
-    <h2 class="teal-header">Your API Keys</h2>
+<div class="border border-gray-300 rounded-lg p-5 mb-5">
+    <h2 class="text-[#1DB954] text-xl font-semibold mb-2">Your API Keys</h2>
     {{if .Keys}}
-        <table>
+        <table class="w-full border-collapse">
             <thead>
-            <tr>
-                <th>Name</th>
-                <th>Prefix</th>
-                <th>Created</th>
-                <th>Expires</th>
-                <th>Actions</th>
+            <tr class="text-left border-b border-gray-300">
+                <th class="p-2">Name</th>
+                <th class="p-2">Prefix</th>
+                <th class="p-2">Created</th>
+                <th class="p-2">Expires</th>
+                <th class="p-2">Actions</th>
             </tr>
             </thead>
             <tbody>
             {{range .Keys}}
-                <tr>
-                    <td>{{.Name}}</td>
-                    <td>{{.KeyPrefix}}</td> <!-- Added KeyPrefix for better identification -->
-                    <td>{{formatTime .CreatedAt}}</td>
-                    <td>{{formatTime .ExpiresAt}}</td>
-                    <td>
-                        <button class="btn btn-danger" onclick="deleteKey('{{.ID}}')">Delete</button>
+                <tr class="border-b border-gray-200">
+                    <td class="p-2">{{.Name}}</td>
+                    <td class="p-2">{{.KeyPrefix}}</td> <!-- Added KeyPrefix for better identification -->
+                    <td class="p-2">{{formatTime .CreatedAt}}</td>
+                    <td class="p-2">{{formatTime .ExpiresAt}}</td>
+                    <td class="p-2">
+                        <button class="bg-[#dc3545] text-white px-3 py-1.5 rounded cursor-pointer hover:opacity-90" onclick="deleteKey('{{.ID}}')">Delete</button>
                     </td>
                 </tr>
             {{end}}
@@ -59,12 +59,12 @@
     {{end}}
 </div>
 
-<div class="card">
-    <h2 class="teal-header">API Usage</h2>
-    <p>To use your API key, include it in the Authorization header of your HTTP requests:</p>
-    <pre>Authorization: Bearer YOUR_API_KEY</pre>
-    <p>Or include it as a query parameter (less secure for the key itself):</p>
-    <pre>https://your-piper-instance.com/endpoint?api_key=YOUR_API_KEY</pre>
+<div class="border border-gray-300 rounded-lg p-5 mb-5">
+    <h2 class="text-[#1DB954] text-xl font-semibold mb-2">API Usage</h2>
+    <p class="mb-2">To use your API key, include it in the Authorization header of your HTTP requests:</p>
+    <pre class="font-mono p-2 bg-gray-100 border border-gray-300 rounded">Authorization: Bearer YOUR_API_KEY</pre>
+    <p class="mt-3 mb-2">Or include it as a query parameter (less secure for the key itself):</p>
+    <pre class="font-mono p-2 bg-gray-100 border border-gray-300 rounded">https://your-piper-instance.com/endpoint?api_key=YOUR_API_KEY</pre>
 </div>
 
 <script>
