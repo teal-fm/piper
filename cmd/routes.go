@@ -10,6 +10,13 @@ import (
 
 func (app *application) routes() http.Handler {
 	mux := http.NewServeMux()
+	// Redirect /static to /static/ so it doesn't fall through to "/" handler
+	mux.Handle("/static/{file_name}", app.pages.Static())
+	//mux.HandleFunc("/static/{file_name}", func(w http.ResponseWriter, r *http.Request) {
+	//	w.Header().Set("Content-Type", "text/html")
+	//
+	//	w.Write([]byte("Static files are served from /static/"))
+	//})
 
 	mux.HandleFunc("/", session.WithPossibleAuth(home(app.database, app.pages), app.sessionManager))
 

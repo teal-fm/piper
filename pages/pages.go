@@ -1,5 +1,6 @@
 package pages
 
+// Helpers to load gohtml templates and render them
 // forked and inspired from tangled's implementation
 //https://tangled.org/@tangled.org/core/blob/master/appview/pages/pages.go
 
@@ -8,11 +9,12 @@ import (
 	"html/template"
 	"io"
 	"io/fs"
+	"net/http"
 	"strings"
 	"time"
 )
 
-//go:embed templates/*
+//go:embed templates/* static/*
 var Files embed.FS
 
 type Pages struct {
@@ -116,15 +118,37 @@ func (p *Pages) parseBase(top string) (*template.Template, error) {
 	return p.parse(stack...)
 }
 
-func (p *Pages) executePlain(name string, w io.Writer, params any) error {
-	tpl, err := p.parse(name)
-	if err != nil {
-		return err
-	}
+func (p *Pages) Static() http.Handler {
+	//if p.dev {
+	//	return http.StripPrefix("/static/", http.FileServer(http.Dir("appview/pages/static")))
+	//}
 
-	return tpl.Execute(w, params)
+	sub, err := fs.Sub(Files, "static")
+	if err != nil {
+		//p.logger.Error("no static dir found? that's crazy", "err", err)
+		panic(err)
+	}
+	return http.StripPrefix("/static/", http.FileServer(http.FS(sub)))
+	// Custom handler to apply Cache-Control headers for font files
+	//return http.FileServer(http.FS(sub))
+	//return http.FileServer(http.FS(sub))
 }
 
+func Cache(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.Split(r.URL.Path, "?")[0]
+
+		if strings.HasSuffix(path, ".css") {
+			// on day for css files
+			w.Header().Set("Cache-Control", "public, max-age=86400")
+		} else {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
+// Execute What loads and renders the HTML page/
 func (p *Pages) Execute(name string, w io.Writer, params any) error {
 	tpl, err := p.parseBase(name)
 	if err != nil {
