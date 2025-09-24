@@ -203,12 +203,6 @@ func (s *Service) HandleAPIKeyManagement(database *db.DB, pg *pages.Pages) http.
 			newKeyValueToShow = newlyCreatedKeyID
 		}
 
-		//t, err := template.New("apikeys").Funcs(funcMap).Parse(tmpl)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Error parsing template: %v", err), http.StatusInternalServerError)
-			return
-		}
-
 		data := struct {
 			Keys     []*db_apikey.ApiKey // Assuming GetUserApiKeys returns this type
 			NewKeyID string              // Changed from NewKey for clarity as it's an ID
@@ -228,6 +222,5 @@ func (s *Service) HandleAPIKeyManagement(database *db.DB, pg *pages.Pages) http.
 		if err != nil {
 			log.Printf("Error executing template: %v", err)
 		}
-		//t.Execute(w, data)
 	}
 }

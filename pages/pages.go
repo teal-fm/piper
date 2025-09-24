@@ -131,8 +131,7 @@ func (p *Pages) Static() http.Handler {
 func Cache(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.Split(r.URL.Path, "?")[0]
-		
-		//We may want to change these, just took what tangled has and allows browser side caching
+		// We may want to change these, just took what tangled has and allows browser side caching
 		if strings.HasSuffix(path, ".css") {
 			// on day for css files
 			w.Header().Set("Cache-Control", "public, max-age=86400")

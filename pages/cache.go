@@ -2,7 +2,7 @@ package pages
 
 import "sync"
 
-/// Cache for pages
+// Cache for pages
 
 type TmplCache[K comparable, V any] struct {
 	data  map[K]V
