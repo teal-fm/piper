@@ -9,8 +9,11 @@ import (
 
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
+	atprotoauth "github.com/teal-fm/piper/oauth/atproto"
 	pages "github.com/teal-fm/piper/pages"
+	atprotoservice "github.com/teal-fm/piper/service/atproto"
 	"github.com/teal-fm/piper/service/musicbrainz"
+	"github.com/teal-fm/piper/service/playingnow"
 	"github.com/teal-fm/piper/service/spotify"
 	"github.com/teal-fm/piper/session"
 )
@@ -187,6 +190,10 @@ func apiTrackHistory(spotifyService *spotify.SpotifyService) http.HandlerFunc {
 
 func apiMusicBrainzSearch(mbService *musicbrainz.MusicBrainzService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if mbService == nil {
+			jsonResponse(w, http.StatusServiceUnavailable, map[string]string{"error": "MusicBrainz service is not available"})
+			return
+		}
 
 		params := musicbrainz.SearchParams{
 			Track:   r.URL.Query().Get("track"),
@@ -318,7 +325,7 @@ func apiUnlinkLastfmHandler(database *db.DB) http.HandlerFunc {
 }
 
 // apiSubmitListensHandler handles ListenBrainz-compatible submissions
-func apiSubmitListensHandler(database *db.DB) http.HandlerFunc {
+func apiSubmitListensHandler(database *db.DB, atprotoService *atprotoauth.ATprotoAuthService, playingNowService *playingnow.PlayingNowService, mbService *musicbrainz.MusicBrainzService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID, authenticated := session.GetUserID(r.Context())
 		if !authenticated {
@@ -358,6 +365,14 @@ func apiSubmitListensHandler(database *db.DB) http.HandlerFunc {
 			return
 		}
 
+		// Get user for PDS submission
+		user, err := database.GetUserByID(userID)
+		if err != nil {
+			log.Printf("apiSubmitListensHandler: Error getting user %d: %v", userID, err)
+			jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": "Failed to get user"})
+			return
+		}
+
 		// Process each listen in the payload
 		var processedTracks []models.Track
 		var errors []string
@@ -376,11 +391,28 @@ func apiSubmitListensHandler(database *db.DB) http.HandlerFunc {
 			// Convert to internal Track format
 			track := listen.ConvertToTrack(userID)
 
-			// For 'playing_now' type, we might want to handle differently
-			// For now, treat all the same but could add temporary storage later
+			// Attempt to hydrate with MusicBrainz data if service is available and track doesn't have MBIDs
+			if mbService != nil && track.RecordingMBID == nil {
+				hydratedTrack, err := musicbrainz.HydrateTrack(mbService, track)
+				if err != nil {
+					log.Printf("apiSubmitListensHandler: Could not hydrate track with MusicBrainz for user %d: %v (continuing with original data)", userID, err)
+					// Continue with non-hydrated track
+				} else if hydratedTrack != nil {
+					track = *hydratedTrack
+					log.Printf("apiSubmitListensHandler: Successfully hydrated track '%s' with MusicBrainz data", track.Name)
+				}
+			}
+
+			// For 'playing_now' type, publish to PDS as actor status
 			if submission.ListenType == "playing_now" {
 				log.Printf("Received playing_now listen for user %d: %s - %s", userID, track.Artist[0].Name, track.Name)
-				// Could store in a separate playing_now table or just log
+
+				if user.ATProtoDID != nil && playingNowService != nil {
+					if err := playingNowService.PublishPlayingNow(r.Context(), userID, &track); err != nil {
+						log.Printf("apiSubmitListensHandler: Error publishing playing_now to PDS for user %d: %v", userID, err)
+						// Don't fail the request, just log the error
+					}
+				}
 				continue
 			}
 
@@ -389,6 +421,14 @@ func apiSubmitListensHandler(database *db.DB) http.HandlerFunc {
 				log.Printf("apiSubmitListensHandler: Error saving track for user %d: %v", userID, err)
 				errors = append(errors, fmt.Sprintf("payload[%d]: failed to save track", i))
 				continue
+			}
+
+			// Submit to PDS as feed.play record
+			if user.ATProtoDID != nil && atprotoService != nil {
+				if err := atprotoservice.SubmitPlayToPDS(r.Context(), *user.ATProtoDID, &track, atprotoService); err != nil {
+					log.Printf("apiSubmitListensHandler: Error submitting play to PDS for user %d: %v", userID, err)
+					// Don't fail the request, just log the error
+				}
 			}
 
 			processedTracks = append(processedTracks, track)
