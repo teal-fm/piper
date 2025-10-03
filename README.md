@@ -9,7 +9,7 @@ music providers.
 
 well its just a work in progress... we build in the open!
 
-## Setup
+## setup
 It is recommend to have port forward url while working with piper. Development or running from docker because of external callbacks.
 
 You have a couple of options
@@ -44,7 +44,7 @@ This is a break down of what each env variable is and what it may look like
 
 
 
-#### development
+## development
 
 make sure you have your env setup following [the env var setup](#env-variables)
 
@@ -69,8 +69,19 @@ run air:
 ```
 air
 ```
-
 air should automatically build and run piper, and watch for changes on relevant files.
+
+
+## tailwindcss
+
+To use tailwindcss you will have to install the tailwindcss cli. This will take the [./pages/static/base.css](./pages/static/base.css) and transform it into a [./pages/static/main.css](./pages/static/main.css) 
+which is imported on the [./pages/templates/layouts/base.gohtml](./pages/templates/layouts/base.gohtml). When running the dev server tailwindcss will watch for changes and recompile the main.css file.
+
+1. Install tailwindcss cli `npm install tailwindcss @tailwindcss/cli`
+2. run `npx @tailwindcss/cli -i ./pages/static/base.css -o ./pages/static/main.css --watch`
+
+
+
 
 #### Lexicon changes
 1. Copy the new or changed json schema files to the [lexicon folders](./lexicons)
