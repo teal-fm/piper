@@ -11,6 +11,7 @@ import (
 
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
+	"github.com/teal-fm/piper/service/musicbrainz"
 	"github.com/teal-fm/piper/session"
 )
 
@@ -102,7 +103,7 @@ func TestListenBrainzSubmission_Success(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	// Call handler
-	handler := apiSubmitListensHandler(database)
+	handler := apiSubmitListensHandler(database, nil, nil, nil)
 	handler(rr, req)
 
 	// Check response
@@ -186,7 +187,7 @@ func TestListenBrainzSubmission_MinimalPayload(t *testing.T) {
 	req = req.WithContext(ctx)
 
 	rr := httptest.NewRecorder()
-	handler := apiSubmitListensHandler(database)
+	handler := apiSubmitListensHandler(database, nil, nil, nil)
 	handler(rr, req)
 
 	if rr.Code != http.StatusOK {
@@ -263,7 +264,7 @@ func TestListenBrainzSubmission_BulkImport(t *testing.T) {
 	req = req.WithContext(ctx)
 
 	rr := httptest.NewRecorder()
-	handler := apiSubmitListensHandler(database)
+	handler := apiSubmitListensHandler(database, nil, nil, nil)
 	handler(rr, req)
 
 	if rr.Code != http.StatusOK {
@@ -324,7 +325,7 @@ func TestListenBrainzSubmission_PlayingNow(t *testing.T) {
 	req = req.WithContext(ctx)
 
 	rr := httptest.NewRecorder()
-	handler := apiSubmitListensHandler(database)
+	handler := apiSubmitListensHandler(database, nil, nil, nil)
 	handler(rr, req)
 
 	if rr.Code != http.StatusOK {
@@ -419,7 +420,7 @@ func TestListenBrainzSubmission_ValidationErrors(t *testing.T) {
 			req = req.WithContext(ctx)
 
 			rr := httptest.NewRecorder()
-			handler := apiSubmitListensHandler(database)
+			handler := apiSubmitListensHandler(database, nil, nil, nil)
 			handler(rr, req)
 
 			if rr.Code != tc.expectedStatus {
@@ -462,7 +463,7 @@ func TestListenBrainzSubmission_Unauthorized(t *testing.T) {
 	// No Authorization header
 
 	rr := httptest.NewRecorder()
-	handler := apiSubmitListensHandler(database)
+	handler := apiSubmitListensHandler(database, nil, nil, nil)
 	handler(rr, req)
 
 	if rr.Code != http.StatusUnauthorized {
@@ -535,5 +536,83 @@ func TestListenBrainzDataConversion(t *testing.T) {
 	}
 	if track.Artist[1].MBID == nil || *track.Artist[1].MBID != "test-artist-mbid-2" {
 		t.Errorf("Second artist MBID not set correctly")
+	}
+}
+
+func TestListenBrainzSubmission_WithMusicBrainzHydration(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	userID, apiKey := createTestUser(t, database)
+
+	// Create a MusicBrainz service for hydration
+	mbService := musicbrainz.NewMusicBrainzService(database)
+
+	// Create minimal submission (artist and track name only)
+	submission := models.ListenBrainzSubmission{
+		ListenType: "single",
+		Payload: []models.ListenBrainzPayload{
+			{
+				ListenedAt: func() *int64 { i := int64(1704067200); return &i }(),
+				TrackMetadata: models.ListenBrainzTrackMetadata{
+					ArtistName: "Daft Punk",
+					TrackName:  "One More Time",
+					// No MBIDs provided - should be hydrated
+				},
+			},
+		},
+	}
+
+	jsonData, err := json.Marshal(submission)
+	if err != nil {
+		t.Fatalf("Failed to marshal submission: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/1/submit-listens", bytes.NewReader(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Token "+apiKey)
+
+	ctx := withUserContext(req.Context(), userID)
+	req = req.WithContext(ctx)
+
+	rr := httptest.NewRecorder()
+
+	// Call handler with MusicBrainz service
+	handler := apiSubmitListensHandler(database, nil, nil, mbService)
+	handler(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d. Body: %s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+
+	// Verify track was saved
+	tracks, err := database.GetRecentTracks(userID, 10)
+	if err != nil {
+		t.Fatalf("Failed to get tracks from database: %v", err)
+	}
+
+	if len(tracks) != 1 {
+		t.Fatalf("Expected 1 track in database, got %d", len(tracks))
+	}
+
+	track := tracks[0]
+
+	// The track should have been hydrated with MusicBrainz data
+	// Note: This test requires network access to MusicBrainz API
+	// In a real test environment, you might want to mock the HTTP client
+	if track.RecordingMBID != nil {
+		t.Logf("Track was hydrated with recording MBID: %s", *track.RecordingMBID)
+	}
+
+	if track.ReleaseMBID != nil {
+		t.Logf("Track was hydrated with release MBID: %s", *track.ReleaseMBID)
+	}
+
+	// Even if hydration fails, the track should still be saved with original data
+	if track.Name != "One More Time" {
+		t.Errorf("Expected track name 'One More Time', got %s", track.Name)
+	}
+	if len(track.Artist) == 0 || track.Artist[0].Name != "Daft Punk" {
+		t.Errorf("Expected artist 'Daft Punk', got %v", track.Artist)
 	}
 }

@@ -3,7 +3,6 @@ package lastfm
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -14,14 +13,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bluesky-social/indigo/api/atproto"
-	lexutil "github.com/bluesky-social/indigo/lex/util"
-	"github.com/bluesky-social/indigo/xrpc"
-	"github.com/spf13/viper"
-	"github.com/teal-fm/piper/api/teal"
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
 	atprotoauth "github.com/teal-fm/piper/oauth/atproto"
+	atprotoservice "github.com/teal-fm/piper/service/atproto"
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"golang.org/x/time/rate"
 )
@@ -419,77 +414,8 @@ func (l *LastFMService) processTracks(ctx context.Context, username string, trac
 }
 
 func (l *LastFMService) SubmitTrackToPDS(did string, track *models.Track, ctx context.Context) error {
-	client, err := l.atprotoService.GetATProtoClient()
-	if err != nil || client == nil {
-		return err
-	}
-
-	xrpcClient := l.atprotoService.GetXrpcClient()
-	if xrpcClient == nil {
-		return errors.New("xrpc client is kil")
-	}
-
-	// we check for client above
-	sess, err := l.db.GetAtprotoSession(did, ctx, *client)
-	if err != nil {
-		return fmt.Errorf("Couldn't get Atproto session: %s", err)
-	}
-
-	// printout the session details
-	l.logger.Printf("Submitting track for the did: %+v\n", sess.DID)
-
-	artists := make([]*teal.AlphaFeedDefs_Artist, 0, len(track.Artist))
-	for _, a := range track.Artist {
-		artist := &teal.AlphaFeedDefs_Artist{
-			ArtistName: a.Name,
-			ArtistMbId: a.MBID,
-		}
-		artists = append(artists, artist)
-	}
-
-	var durationPtr *int64
-	if track.DurationMs > 0 {
-		durationSeconds := track.DurationMs / 1000
-		durationPtr = &durationSeconds
-	}
-
-	playedTimeStr := track.Timestamp.Format(time.RFC3339)
-	submissionAgent := viper.GetString("app.submission_agent")
-	if submissionAgent == "" {
-		submissionAgent = "piper/v0.0.1" // Default if not configured
-	}
-
-	// track -> tealfm track
-	tfmTrack := teal.AlphaFeedPlay{
-		LexiconTypeID: "fm.teal.alpha.feed.play", // Assuming this is the correct Lexicon ID
-		// tfm specifies duration in seconds
-		Duration:  durationPtr, // Pointer required
-		TrackName: track.Name,
-		// should be unix timestamp
-		PlayedTime:            &playedTimeStr, // Pointer required
-		Artists:               artists,
-		ReleaseMbId:           track.ReleaseMBID,   // Pointer required
-		ReleaseName:           &track.Album,        // Pointer required
-		RecordingMbId:         track.RecordingMBID, // Pointer required
-		SubmissionClientAgent: &submissionAgent,    // Pointer required
-	}
-
-	input := atproto.RepoCreateRecord_Input{
-		Collection: "fm.teal.alpha.feed.play",
-		Repo:       sess.DID,
-		Record:     &lexutil.LexiconTypeDecoder{Val: &tfmTrack},
-	}
-
-	authArgs := db.AtpSessionToAuthArgs(sess)
-
-	var out atproto.RepoCreateRecord_Output
-	if err := xrpcClient.Do(ctx, authArgs, xrpc.Procedure, "application/json", "com.atproto.repo.createRecord", nil, input, &out); err != nil {
-		return err
-	}
-
-	// submit track to PDS
-
-	return nil
+	// Use shared atproto service for submission
+	return atprotoservice.SubmitPlayToPDS(ctx, did, track, l.atprotoService)
 }
 
 // convertLastFMTrackToModelsTrack converts a Last.fm Track to models.Track format
