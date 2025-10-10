@@ -81,6 +81,8 @@ func (m *OAuthServiceManager) HandleCallback(serviceName string) http.HandlerFun
 		}
 
 		if userID > 0 {
+
+			//TODO move this to the HandleCallback for atproto oauth since that's the only one that should be saving them
 			session := m.sessionManager.CreateSession(userID)
 
 			m.sessionManager.SetSessionCookie(w, session)

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/teal-fm/piper/service/lastfm"
@@ -58,20 +57,26 @@ func main() {
 	}
 
 	// --- Service Initializations ---
-	jwksBytes, err := os.ReadFile("./jwks.json")
-	if err != nil {
-		// run `make jwtgen`
-		log.Fatalf("Error reading JWK file: %v", err)
-	}
-	jwks, err := atproto.LoadJwks(jwksBytes)
-	if err != nil {
-		log.Fatalf("Error loading JWK: %v", err)
-	}
+	//jwksBytes, err := os.ReadFile("./jwks.json")
+	//if err != nil {
+	//	// run `make jwtgen`
+	//	log.Fatalf("Error reading JWK file: %v", err)
+	//}
+	//jwks, err := atproto.LoadJwks(jwksBytes)
+	//if err != nil {
+	//	log.Fatalf("Error loading JWK: %v", err)
+	//}
+	//TODO rename after it's all moved over
+	var newJwkPrivateKey = viper.GetString("atproto.client_secret_key")
+	//TODO add in a way to generate the client_key_id, which is just a timestamp something unquie
+	//Ideally should have a way to generate both of these. Prob just shell commands?
+	var clientSecretKeyId = "1758199756"
 	atprotoService, err := atproto.NewATprotoAuthService(
 		database,
-		jwks,
+		newJwkPrivateKey,
 		viper.GetString("atproto.client_id"),
 		viper.GetString("atproto.callback_url"),
+		clientSecretKeyId,
 	)
 	if err != nil {
 		log.Fatalf("Error creating ATproto auth service: %v", err)

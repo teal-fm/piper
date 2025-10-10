@@ -3,7 +3,7 @@ module github.com/teal-fm/piper
 go 1.24.0
 
 require (
-	github.com/bluesky-social/indigo v0.0.0-20250506174012-7075cf22f63e
+	github.com/bluesky-social/indigo v0.0.0-20251003000214-3259b215110e
 	github.com/dlclark/regexp2 v1.11.5
 	github.com/haileyok/atproto-oauth-golang v0.0.2
 	github.com/ipfs/go-cid v0.4.1
@@ -39,7 +39,7 @@ require (
 	github.com/goccy/go-json v0.10.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/gohugoio/hugo v0.134.3 // indirect
-	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
+	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.5 // indirect

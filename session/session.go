@@ -17,6 +17,10 @@ import (
 
 // session/session.go
 type Session struct {
+
+	//need to re work this. May add onto it for atproto oauth. But need to be careful about that expiresd
+	//Maybe a speerate oauth session store table and it has a created date? yeah do that then can look it up by session id from this table for user actions
+
 	ID                  string
 	UserID              int64
 	ATprotoDID          string

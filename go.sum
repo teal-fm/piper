@@ -39,6 +39,8 @@ github.com/bep/tmc v0.5.1 h1:CsQnSC6MsomH64gw0cT5f+EwQDcvZz4AazKunFwTpuI=
 github.com/bep/tmc v0.5.1/go.mod h1:tGYHN8fS85aJPhDLgXETVKp+PR382OvFi2+q2GkGsq0=
 github.com/bluesky-social/indigo v0.0.0-20250506174012-7075cf22f63e h1:yEW1njmALj7i1AjLhq6Lsxts48JUCTT+wpM9m7GNLVY=
 github.com/bluesky-social/indigo v0.0.0-20250506174012-7075cf22f63e/go.mod h1:ovyxp8AMO1Hoe838vMJUbqHTZaAR8ABM3g3TXu+A5Ng=
+github.com/bluesky-social/indigo v0.0.0-20251003000214-3259b215110e h1:IutKPwmbU0LrYqw03EuwJtMdAe67rDTrL1U8S8dicRU=
+github.com/bluesky-social/indigo v0.0.0-20251003000214-3259b215110e/go.mod h1:n6QE1NDPFoi7PRbMUZmc2y7FibCqiVU4ePpsvhHUBR8=
 github.com/carlmjohnson/versioninfo v0.22.5 h1:O00sjOLUAFxYQjlN/bzYTuZiS0y6fWDQjMRvwtKgwwc=
 github.com/carlmjohnson/versioninfo v0.22.5/go.mod h1:QT9mph3wcVfISUKd0i9sZfVrPviHuSF+cUtLjm2WSf8=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
@@ -123,6 +125,7 @@ github.com/gohugoio/localescompressed v1.0.1 h1:KTYMi8fCWYLswFyJAeOtuk/EkXR/KPTH
 github.com/gohugoio/localescompressed v1.0.1/go.mod h1:jBF6q8D7a0vaEmcWPNcAjUZLJaIVNiwvM3WlmTvooB0=
 github.com/golang-jwt/jwt/v5 v5.2.1 h1:OuVbFODueb089Lh128TAcimifWaLhJwVflnrgM17wHk=
 github.com/golang-jwt/jwt/v5 v5.2.1/go.mod h1:pqrtFR0X4osieyHYxtmOUWsAWrfe1Q5UVIyoH402zdk=
+github.com/golang-jwt/jwt/v5 v5.2.2/go.mod h1:pqrtFR0X4osieyHYxtmOUWsAWrfe1Q5UVIyoH402zdk=
 github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b/go.mod h1:SBH7ygxi8pfUlaOkMMuAQtPIUF8ecWP5IEl/CR7VP2Q=
 github.com/golang/mock v1.1.1/go.mod h1:oTYuIxOrZwtPieC+H1uAHpcLFnEyAGVDL/k47Jfbm0A=
 github.com/golang/protobuf v1.2.0/go.mod h1:6lQm79b+lXiMfvg/cZm0SGofjICqVBUtrP5yJMmIC1U=
