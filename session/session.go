@@ -89,7 +89,7 @@ func (sm *SessionManager) CreateSession(userID int64, atProtoSessionId string) *
 		_, err := sm.db.Exec(`
 		INSERT INTO sessions (id, user_id, at_proto_session_id, created_at, expires_at)
 		VALUES (?, ?, ?, ?, ?)`,
-			sessionID, userID, now, expiresAt)
+			sessionID, userID, atProtoSessionId, now, expiresAt)
 
 		if err != nil {
 			log.Printf("Error storing session in database: %v", err)

@@ -45,7 +45,7 @@ func (app *application) routes() http.Handler {
 	serverUrlRoot := viper.GetString("server.root_url")
 	atpClientId := viper.GetString("atproto.client_id")
 	atpCallbackUrl := viper.GetString("atproto.callback_url")
-	mux.HandleFunc("/.well-known/client-metadata.json", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/oauth-client-metadata.json", func(w http.ResponseWriter, r *http.Request) {
 		app.atprotoService.HandleClientMetadata(w, r, serverUrlRoot, atpClientId, atpCallbackUrl)
 	})
 	mux.HandleFunc("/oauth/jwks.json", app.atprotoService.HandleJwks)

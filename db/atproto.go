@@ -110,13 +110,15 @@ func (db *DB) SetLatestATProtoSessionId(did string, atProtoSessionID string) err
 	result, err := db.Exec(`
 		UPDATE users
 		SET 
-		    most_recent_at_session_id = ?
+		    most_recent_at_session_id = ?,
 			updated_at = ?
 		WHERE atproto_did = ?`,
 		atProtoSessionID,
 		now,
+		did,
 	)
 	if err != nil {
+		db.logger.Printf("%v", err)
 		return fmt.Errorf("failed to update atproto session for did %s: %w", did, atProtoSessionID)
 	}
 

@@ -71,16 +71,6 @@ func NewATprotoAuthService(db *db.DB, sessionManager *session.SessionManager, cl
 }
 
 func (a *ATprotoAuthService) GetATProtoClient(accountDID string, sessionID string, ctx context.Context) (*client.APIClient, error) {
-	//DID here is the session key
-	//Session id is the session id, if the backend calls it prob use the newest one created? Handle outside of the method
-
-	//TODO need to take into account each client is for a user in logic
-	//if a.clientApp != nil {
-	//	return a.clientApp, nil
-	//}
-	//TODO I have no idea if this is right
-	//context := context.Background()
-
 	did, err := syntax.ParseDID(accountDID)
 	if err != nil {
 		return nil, err
@@ -150,6 +140,7 @@ func (a *ATprotoAuthService) HandleCallback(w http.ResponseWriter, r *http.Reque
 		return 0, fmt.Errorf("failed to find or create user")
 	}
 
+	//This is piper's session for manging piper, not atproto sessions
 	createdSession := a.sessionManager.CreateSession(user.ID, sessData.SessionID)
 	a.sessionManager.SetSessionCookie(w, createdSession)
 	a.logger.Printf("Created session for user %d via service atproto", user)
