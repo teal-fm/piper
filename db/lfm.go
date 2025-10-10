@@ -42,13 +42,13 @@ func (db *DB) GetAllUsersWithLastFM() ([]*models.User, error) {
 
 func (db *DB) GetUserByLastFM(lastfmUsername string) (*models.User, error) {
 	row := db.QueryRow(`
-    SELECT id, username, email, atproto_did, created_at, updated_at, lastfm_username
+    SELECT id, username, email, atproto_did, most_recent_at_session_id, created_at, updated_at, lastfm_username
     FROM users
     WHERE lastfm_username = ?`, lastfmUsername)
 
 	user := &models.User{}
 	err := row.Scan(
-		&user.ID, &user.Username, &user.Email, &user.ATProtoDID,
+		&user.ID, &user.MostRecentAtProtoSessionID, &user.Username, &user.Email, &user.ATProtoDID,
 		&user.CreatedAt, &user.UpdatedAt, &user.LastFMUsername)
 	if err != nil {
 		return nil, err

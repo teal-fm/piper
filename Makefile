@@ -25,7 +25,3 @@ lexgen-types:
 		--build-file ./lexcfg.json \
 		../atproto/lexicons \
 		./lexicons/teal
-
-.PHONY: jwtgen
-jwtgen:
-	go run github.com/haileyok/atproto-oauth-golang/cmd/helper generate-jwks

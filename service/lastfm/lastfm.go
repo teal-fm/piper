@@ -390,7 +390,7 @@ func (l *LastFMService) processTracks(ctx context.Context, username string, trac
 		}
 		l.db.SaveTrack(user.ID, hydratedTrack)
 		l.logger.Printf("Submitting track")
-		err = l.SubmitTrackToPDS(*user.ATProtoDID, hydratedTrack, ctx)
+		err = l.SubmitTrackToPDS(*user.ATProtoDID, *user.MostRecentAtProtoSessionID, hydratedTrack, ctx)
 		if err != nil {
 			l.logger.Printf("error submitting track for user %s: %s - %s: %v", username, track.Artist.Text, track.Name, err)
 		}

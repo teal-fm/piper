@@ -29,7 +29,6 @@ COPY . .
 #Overwrite the main.css with the one from the builder
 COPY --from=node_builder /app/static/main.css /app/pages/static/main.css
  #generate the jwks
-RUN go run github.com/haileyok/atproto-oauth-golang/cmd/helper generate-jwks
 RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags='-w -s -extldflags "-static"' -o main ./cmd
 ARG TARGETOS=${TARGETPLATFORM%%/*}
 ARG TARGETARCH=${TARGETPLATFORM##*/}

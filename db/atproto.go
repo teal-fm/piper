@@ -3,73 +3,14 @@ package db
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
-	oauth "github.com/haileyok/atproto-oauth-golang"
-	"github.com/haileyok/atproto-oauth-golang/helpers"
-	"github.com/lestrrat-go/jwx/v2/jwk"
+	"github.com/bluesky-social/indigo/atproto/auth/oauth"
+	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/teal-fm/piper/models"
 )
-
-type ATprotoAuthData struct {
-	State               string    `json:"state"`
-	DID                 string    `json:"did"`
-	PDSUrl              string    `json:"pds_url"`
-	AuthServerIssuer    string    `json:"authserver_issuer"`
-	PKCEVerifier        string    `json:"pkce_verifier"`
-	DPoPAuthServerNonce string    `json:"dpop_authserver_nonce"`
-	DPoPPrivateJWK      jwk.Key   `json:"dpop_private_jwk"`
-	CreatedAt           time.Time `json:"created_at"`
-}
-
-func (db *DB) SaveATprotoAuthData(data *models.ATprotoAuthData) error {
-	dpopPrivateJWKBytes, err := json.Marshal(data.DPoPPrivateJWK)
-	if err != nil {
-		return err
-	}
-
-	_, err = db.Exec(`
-	INSERT INTO atproto_auth_data (state, did, pds_url, authserver_issuer, pkce_verifier, dpop_authserver_nonce, dpop_private_jwk)
-	VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		data.State, data.DID, data.PDSUrl, data.AuthServerIssuer, data.PKCEVerifier, data.DPoPAuthServerNonce, string(dpopPrivateJWKBytes))
-
-	return err
-}
-
-func (db *DB) GetATprotoAuthData(state string) (*models.ATprotoAuthData, error) {
-	var data models.ATprotoAuthData
-	var dpopPrivateJWKString string
-
-	err := db.QueryRow(`
-	SELECT state, did, pds_url, authserver_issuer, pkce_verifier, dpop_authserver_nonce, dpop_private_jwk
-	FROM atproto_auth_data
-	WHERE state = ?`,
-		state).Scan(
-		&data.State,
-		&data.DID,
-		&data.PDSUrl,
-		&data.AuthServerIssuer,
-		&data.PKCEVerifier,
-		&data.DPoPAuthServerNonce,
-		&dpopPrivateJWKString,
-	)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("no auth data found for state %s: %w", state, err)
-		}
-		return nil, fmt.Errorf("failed to scan auth data for state %s: %w", state, err)
-	}
-
-	key, err := helpers.ParseJWKFromBytes([]byte(dpopPrivateJWKString))
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse DPoPPrivateJWK for state %s: %w", state, err)
-	}
-	data.DPoPPrivateJWK = key
-
-	return &data, nil
-}
 
 func (db *DB) FindOrCreateUserByDID(did string) (*models.User, error) {
 	var user models.User
@@ -108,152 +49,302 @@ func (db *DB) FindOrCreateUserByDID(did string) (*models.User, error) {
 	return &user, err
 }
 
-// create or update the current user's ATproto session data.
-func (db *DB) SaveATprotoSession(tokenResp *oauth.TokenResponse, authserverIss string, dpopPrivateJWK jwk.Key, pdsUrl string) error {
-	db.logger.Printf("Saving session with PDS url %s", pdsUrl)
-	expiryTime := time.Now().UTC().Add(time.Second * time.Duration(tokenResp.ExpiresIn))
+func (db *DB) SetLatestATProtoSessionId(did string, atProtoSessionID string) error {
+	db.logger.Printf("Setting latest atproto session id for did %s to %s", did, atProtoSessionID)
 	now := time.Now().UTC()
-
-	dpopPrivateJWKBytes, err := json.Marshal(dpopPrivateJWK)
-	if err != nil {
-		return err
-	}
 
 	result, err := db.Exec(`
 		UPDATE users
-		SET atproto_access_token = ?,
-			atproto_refresh_token = ?,
-			atproto_token_expiry = ?,
-			atproto_scope = ?,
-			atproto_sub = ?,
-			atproto_authserver_issuer = ?,
-			atproto_token_type = ?,
-			atproto_authserver_nonce = ?,
-			atproto_dpop_private_jwk = ?,
-			atproto_pds_url = ?,
-			atproto_pds_nonce = ?,
+		SET 
+		    most_recent_at_session_id = ?,
 			updated_at = ?
 		WHERE atproto_did = ?`,
-		tokenResp.AccessToken,
-		tokenResp.RefreshToken,
-		expiryTime,
-		tokenResp.Scope,
-		tokenResp.Sub,
-		authserverIss,
-		tokenResp.TokenType,
-		tokenResp.DpopAuthserverNonce,
-		string(dpopPrivateJWKBytes),
-		pdsUrl,
-		// will get set later
-		"",
+		atProtoSessionID,
 		now,
-		tokenResp.Sub,
+		did,
 	)
-
 	if err != nil {
-		return fmt.Errorf("failed to update atproto session for did %s: %w", tokenResp.Sub, err)
+		db.logger.Printf("%v", err)
+		return fmt.Errorf("failed to update atproto session for did %s: %w", did, atProtoSessionID)
 	}
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		// it's possible the update succeeded here?
-		return fmt.Errorf("failed to check rows affected after updating atproto session for did %s: %w", tokenResp.Sub, err)
+		return fmt.Errorf("failed to check rows affected after updating atproto session for did %s: %w", did, atProtoSessionID)
 	}
 
 	if rowsAffected == 0 {
-		return fmt.Errorf("no user found with did %s to update session, creating new session", tokenResp.Sub)
+		return fmt.Errorf("no user found with did %s to update session, creating new session", did)
 	}
 
 	return nil
 }
 
-func (db *DB) GetAtprotoSession(did string, ctx context.Context, oauthClient oauth.Client) (*models.ATprotoAuthSession, error) {
-	var oauthSession models.ATprotoAuthSession
-	var authserverIss string
-	var jwkBytes string
-
-	err := db.QueryRow(
-		`
-		SELECT id, 
-		       atproto_did,
-		       atproto_pds_url,
-		       atproto_authserver_issuer,
-		       atproto_access_token,
-		       atproto_refresh_token,
-		       atproto_pds_nonce,
-		       atproto_authserver_nonce,
-		       atproto_dpop_private_jwk,
-		       atproto_token_expiry
-		FROM users
-		WHERE atproto_did = ?`,
-		did,
-	).Scan(
-		&oauthSession.ID,
-		&oauthSession.DID,
-		&oauthSession.PDSUrl,
-		&authserverIss,
-		&oauthSession.AccessToken,
-		&oauthSession.RefreshToken,
-		&oauthSession.DpopPdsNonce,
-		&oauthSession.DpopAuthServerNonce,
-		&jwkBytes,
-		&oauthSession.TokenExpiry,
-	)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get atproto session for did %s: %w", did, err)
-	}
-
-	privateJwk, err := helpers.ParseJWKFromBytes([]byte(jwkBytes))
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse DPoPPrivateJWK: %w", err)
-	} else {
-		// add jwk to the struct
-		oauthSession.DpopPrivateJWK = privateJwk
-	}
-
-	// printout the session details
-	db.logger.Printf("Getting session details for the did: %+v\n", oauthSession.DID)
-
-	// if token is expired, refresh it
-	if time.Now().UTC().After(oauthSession.TokenExpiry) {
-
-		resp, err := oauthClient.RefreshTokenRequest(ctx, oauthSession.RefreshToken, authserverIss, oauthSession.DpopAuthServerNonce, privateJwk)
-		if err != nil {
-			return nil, err
-		}
-
-		if err := db.SaveATprotoSession(resp, authserverIss, privateJwk, oauthSession.PDSUrl); err != nil {
-			return nil, fmt.Errorf("failed to save refreshed token: %w", err)
-		}
-
-		oauthSession = models.ATprotoAuthSession{
-			ID:                  oauthSession.ID,
-			DID:                 oauthSession.DID,
-			PDSUrl:              oauthSession.PDSUrl,
-			AuthServerIssuer:    authserverIss,
-			AccessToken:         resp.AccessToken,
-			RefreshToken:        resp.RefreshToken,
-			DpopPdsNonce:        oauthSession.DpopPdsNonce,
-			DpopAuthServerNonce: resp.DpopAuthserverNonce,
-			DpopPrivateJWK:      privateJwk,
-			TokenExpiry:         time.Now().UTC().Add(time.Duration(resp.ExpiresIn) * time.Second),
-		}
-
-	}
-
-	return &oauthSession, nil
+type SqliteATProtoStore struct {
+	db *sql.DB
 }
 
-func AtpSessionToAuthArgs(sess *models.ATprotoAuthSession) *oauth.XrpcAuthedRequestArgs {
-	//Commenting out so jwts and tokens are not in logs
-	//fmt.Printf("DID: %s\nPDS URL: %s\nISS: %s\nAccess Token: %s\nNonce: %s\nPrivate JWK: %s\n", sess.DID, sess.PDSUrl, sess.AuthServerIssuer, sess.AccessToken, sess.DpopPdsNonce, sess.DpopPrivateJWK)
-	return &oauth.XrpcAuthedRequestArgs{
-		Did:            sess.DID,
-		PdsUrl:         sess.PDSUrl,
-		Issuer:         sess.AuthServerIssuer,
-		AccessToken:    sess.AccessToken,
-		DpopPdsNonce:   sess.DpopPdsNonce,
-		DpopPrivateJwk: sess.DpopPrivateJWK,
+var _ oauth.ClientAuthStore = (*SqliteATProtoStore)(nil)
+
+func NewSqliteATProtoStore(db *sql.DB) *SqliteATProtoStore {
+	return &SqliteATProtoStore{
+		db: db,
 	}
+}
+
+func sessionKey(did syntax.DID, sessionID string) string {
+	return fmt.Sprintf("%s/%s", did, sessionID)
+}
+
+func splitScopes(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Fields(s)
+}
+
+func joinScopes(scopes []string) string {
+	if len(scopes) == 0 {
+		return ""
+	}
+	return strings.Join(scopes, " ")
+}
+
+func (s *SqliteATProtoStore) GetSession(ctx context.Context, did syntax.DID, sessionID string) (*oauth.ClientSessionData, error) {
+	lookUpKey := sessionKey(did, sessionID)
+
+	var (
+		accountDIDStr                string
+		lookUpKeyStr                 string
+		sessionIDStr                 string
+		hostURL                      string
+		authServerURL                string
+		authServerTokenEndpoint      string
+		authServerRevocationEndpoint string
+		scopesStr                    string
+		accessToken                  string
+		refreshToken                 string
+		dpopAuthServerNonce          string
+		dpopHostNonce                string
+		dpopPrivateKeyMultibase      string
+	)
+
+	err := s.db.QueryRow(`
+		SELECT account_did,
+		       look_up_key,
+		       session_id,
+		       host_url,
+		       authserver_url,
+		       authserver_token_endpoint,
+		       authserver_revocation_endpoint,
+		       scopes,
+		       access_token,
+		       refresh_token,
+		       dpop_authserver_nonce,
+		       dpop_host_nonce,
+		       dpop_privatekey_multibase
+		FROM atproto_sessions
+		WHERE look_up_key = ?
+	`, lookUpKey).Scan(
+		&accountDIDStr,
+		&lookUpKeyStr,
+		&sessionIDStr,
+		&hostURL,
+		&authServerURL,
+		&authServerTokenEndpoint,
+		&authServerRevocationEndpoint,
+		&scopesStr,
+		&accessToken,
+		&refreshToken,
+		&dpopAuthServerNonce,
+		&dpopHostNonce,
+		&dpopPrivateKeyMultibase,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("session not found: %s", lookUpKey)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	accDID, err := syntax.ParseDID(accountDIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid account DID in session: %w", err)
+	}
+
+	sess := oauth.ClientSessionData{
+		AccountDID:                   accDID,
+		SessionID:                    sessionIDStr,
+		HostURL:                      hostURL,
+		AuthServerURL:                authServerURL,
+		AuthServerTokenEndpoint:      authServerTokenEndpoint,
+		AuthServerRevocationEndpoint: authServerRevocationEndpoint,
+		Scopes:                       splitScopes(scopesStr),
+		AccessToken:                  accessToken,
+		RefreshToken:                 refreshToken,
+		DPoPAuthServerNonce:          dpopAuthServerNonce,
+		DPoPHostNonce:                dpopHostNonce,
+		DPoPPrivateKeyMultibase:      dpopPrivateKeyMultibase,
+	}
+
+	return &sess, nil
+}
+
+func (s *SqliteATProtoStore) SaveSession(ctx context.Context, sess oauth.ClientSessionData) error {
+	lookUpKey := sessionKey(sess.AccountDID, sess.SessionID)
+	// simple upsert: delete then insert
+	_, _ = s.db.Exec(`DELETE FROM atproto_sessions WHERE look_up_key = ?`, lookUpKey)
+	_, err := s.db.Exec(`
+		INSERT INTO atproto_sessions (
+			look_up_key,
+			account_did,
+			session_id,
+			host_url,
+			authserver_url,
+			authserver_token_endpoint,
+			authserver_revocation_endpoint,
+			scopes,
+			access_token,
+			refresh_token,
+			dpop_authserver_nonce,
+			dpop_host_nonce,
+			dpop_privatekey_multibase
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		lookUpKey,
+		sess.AccountDID.String(),
+		sess.SessionID,
+		sess.HostURL,
+		sess.AuthServerURL,
+		sess.AuthServerTokenEndpoint,
+		sess.AuthServerRevocationEndpoint,
+		joinScopes(sess.Scopes),
+		sess.AccessToken,
+		sess.RefreshToken,
+		sess.DPoPAuthServerNonce,
+		sess.DPoPHostNonce,
+		sess.DPoPPrivateKeyMultibase,
+	)
+	return err
+}
+
+func (s *SqliteATProtoStore) DeleteSession(ctx context.Context, did syntax.DID, sessionID string) error {
+	lookUpKey := sessionKey(did, sessionID)
+	_, err := s.db.Exec(`DELETE FROM atproto_sessions WHERE look_up_key = ?`, lookUpKey)
+	return err
+}
+
+func (s *SqliteATProtoStore) GetAuthRequestInfo(ctx context.Context, state string) (*oauth.AuthRequestData, error) {
+	var (
+		authServerURL                string
+		accountDIDStr                sql.NullString
+		scopesStr                    string
+		requestURI                   string
+		authServerTokenEndpoint      string
+		authServerRevocationEndpoint string
+		pkceVerifier                 string
+		dpopAuthServerNonce          string
+		dpopPrivateKeyMultibase      string
+	)
+	err := s.db.QueryRow(`
+		SELECT authserver_url,
+		       account_did,
+		       scopes,
+		       request_uri,
+		       authserver_token_endpoint,
+		       authserver_revocation_endpoint,
+		       pkce_verifier,
+		       dpop_authserver_nonce,
+		       dpop_privatekey_multibase
+		FROM atproto_state
+		WHERE state = ?
+	`, state).Scan(
+		&authServerURL,
+		&accountDIDStr,
+		&scopesStr,
+		&requestURI,
+		&authServerTokenEndpoint,
+		&authServerRevocationEndpoint,
+		&pkceVerifier,
+		&dpopAuthServerNonce,
+		&dpopPrivateKeyMultibase,
+	)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("request info not found: %s", state)
+	}
+	if err != nil {
+		return nil, err
+	}
+	var accountDIDPtr *syntax.DID
+	if accountDIDStr.Valid && accountDIDStr.String != "" {
+		acc, err := syntax.ParseDID(accountDIDStr.String)
+		if err != nil {
+			return nil, fmt.Errorf("invalid account DID in auth request: %w", err)
+		}
+		accountDIDPtr = &acc
+	}
+	info := oauth.AuthRequestData{
+		State:                        state,
+		AuthServerURL:                authServerURL,
+		AccountDID:                   accountDIDPtr,
+		Scopes:                       splitScopes(scopesStr),
+		RequestURI:                   requestURI,
+		AuthServerTokenEndpoint:      authServerTokenEndpoint,
+		AuthServerRevocationEndpoint: authServerRevocationEndpoint,
+		PKCEVerifier:                 pkceVerifier,
+		DPoPAuthServerNonce:          dpopAuthServerNonce,
+		DPoPPrivateKeyMultibase:      dpopPrivateKeyMultibase,
+	}
+	return &info, nil
+}
+
+func (s *SqliteATProtoStore) SaveAuthRequestInfo(ctx context.Context, info oauth.AuthRequestData) error {
+	// ensure not already exists
+	var exists int
+	err := s.db.QueryRow(`SELECT 1 FROM atproto_state WHERE state = ?`, info.State).Scan(&exists)
+	if err == nil {
+		return fmt.Errorf("auth request already saved for state %s", info.State)
+	}
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	var accountDIDStr interface{}
+	if info.AccountDID != nil {
+		accountDIDStr = info.AccountDID.String()
+	} else {
+		accountDIDStr = nil
+	}
+	_, err = s.db.Exec(`
+		INSERT INTO atproto_state (
+			state,
+			authserver_url,
+			account_did,
+			scopes,
+			request_uri,
+			authserver_token_endpoint,
+			authserver_revocation_endpoint,
+			pkce_verifier,
+			dpop_authserver_nonce,
+			dpop_privatekey_multibase
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		info.State,
+		info.AuthServerURL,
+		accountDIDStr,
+		joinScopes(info.Scopes),
+		info.RequestURI,
+		info.AuthServerTokenEndpoint,
+		info.AuthServerRevocationEndpoint,
+		info.PKCEVerifier,
+		info.DPoPAuthServerNonce,
+		info.DPoPPrivateKeyMultibase,
+	)
+	return err
+}
+
+func (s *SqliteATProtoStore) DeleteAuthRequestInfo(ctx context.Context, state string) error {
+	_, err := s.db.Exec(`DELETE FROM atproto_state WHERE state = ?`, state)
+	return err
 }

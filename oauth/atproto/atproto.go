@@ -3,198 +3,168 @@ package atproto
 import (
 	"context"
 	"fmt"
+
+	"github.com/bluesky-social/indigo/atproto/auth/oauth"
+	_ "github.com/bluesky-social/indigo/atproto/auth/oauth"
+	"github.com/bluesky-social/indigo/atproto/client"
+	"github.com/bluesky-social/indigo/atproto/crypto"
+	"github.com/bluesky-social/indigo/atproto/syntax"
+	"github.com/teal-fm/piper/db"
+
+	"github.com/teal-fm/piper/session"
+
 	"log"
 	"net/http"
 	"net/url"
-
-	oauth "github.com/haileyok/atproto-oauth-golang"
-	"github.com/haileyok/atproto-oauth-golang/helpers"
-	"github.com/lestrrat-go/jwx/v2/jwk"
-	"github.com/teal-fm/piper/db"
-	"github.com/teal-fm/piper/models"
+	"os"
+	"slices"
 )
 
 type ATprotoAuthService struct {
-	client      *oauth.Client
-	jwks        jwk.Key
-	DB          *db.DB
-	clientId    string
-	callbackUrl string
-	xrpc        *oauth.XrpcClient
+	clientApp      *oauth.ClientApp
+	DB             *db.DB
+	sessionManager *session.SessionManager
+	clientId       string
+	callbackUrl    string
+	logger         *log.Logger
 }
 
-func NewATprotoAuthService(db *db.DB, jwks jwk.Key, clientId string, callbackUrl string) (*ATprotoAuthService, error) {
+func NewATprotoAuthService(database *db.DB, sessionManager *session.SessionManager, clientSecretKey string, clientId string, callbackUrl string, clientSecretId string) (*ATprotoAuthService, error) {
 	fmt.Println(clientId, callbackUrl)
-	cli, err := oauth.NewClient(oauth.ClientArgs{
-		ClientJwk:   jwks,
-		ClientId:    clientId,
-		RedirectUri: callbackUrl,
-	})
+
+	scopes := []string{"atproto", "repo:fm.teal.alpha.feed.play", "repo:fm.teal.alpha.actor.status"}
+
+	var config oauth.ClientConfig
+	config = oauth.NewPublicConfig(clientId, callbackUrl, scopes)
+
+	priv, err := crypto.ParsePrivateMultibase(clientSecretKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create atproto oauth client: %w", err)
+		return nil, err
 	}
+	if err := config.SetClientSecret(priv, clientSecretId); err != nil {
+		return nil, err
+	}
+
+	oauthClient := oauth.NewClientApp(&config, db.NewSqliteATProtoStore(database.DB))
+
+	logger := log.New(os.Stdout, "ATProto oauth: ", log.LstdFlags|log.Lmsgprefix)
+
 	svc := &ATprotoAuthService{
-		client:      cli,
-		jwks:        jwks,
-		callbackUrl: callbackUrl,
-		DB:          db,
-		clientId:    clientId,
+		clientApp:      oauthClient,
+		callbackUrl:    callbackUrl,
+		DB:             database,
+		sessionManager: sessionManager,
+		clientId:       clientId,
+		logger:         logger,
 	}
-	svc.NewXrpcClient()
 	return svc, nil
 }
 
-func (a *ATprotoAuthService) GetATProtoClient() (*oauth.Client, error) {
-	if a.client != nil {
-		return a.client, nil
-	}
-
-	if a.client == nil {
-		cli, err := oauth.NewClient(oauth.ClientArgs{
-			ClientJwk:   a.jwks,
-			ClientId:    a.clientId,
-			RedirectUri: a.callbackUrl,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create atproto oauth client: %w", err)
-		}
-		a.client = cli
-	}
-
-	return a.client, nil
-}
-
-func LoadJwks(jwksBytes []byte) (jwk.Key, error) {
-	key, err := helpers.ParseJWKFromBytes(jwksBytes)
+func (a *ATprotoAuthService) GetATProtoClient(accountDID string, sessionID string, ctx context.Context) (*client.APIClient, error) {
+	did, err := syntax.ParseDID(accountDID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse JWK from bytes: %w", err)
+		return nil, err
 	}
-	return key, nil
+
+	oauthSess, err := a.clientApp.ResumeSession(ctx, did, sessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	return oauthSess.APIClient(), nil
+
 }
 
 func (a *ATprotoAuthService) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	handle := r.URL.Query().Get("handle")
 	if handle == "" {
-		log.Printf("ATProto Login Error: handle is required")
+		a.logger.Printf("ATProto Login Error: handle is required")
 		http.Error(w, "handle query parameter is required", http.StatusBadRequest)
 		return
 	}
-
-	authUrl, err := a.getLoginUrlAndSaveState(r.Context(), handle)
+	ctx := r.Context()
+	redirectURL, err := a.clientApp.StartAuthFlow(ctx, handle)
 	if err != nil {
-		log.Printf("ATProto Login Error: Failed to get login URL for handle %s: %v", handle, err)
 		http.Error(w, fmt.Sprintf("Error initiating login: %v", err), http.StatusInternalServerError)
-		return
+	}
+	authUrl, err := url.Parse(redirectURL)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error initiating login: %v", err), http.StatusInternalServerError)
 	}
 
-	log.Printf("ATProto Login: Redirecting user %s to %s", handle, authUrl.String())
+	a.logger.Printf("ATProto Login: Redirecting user %s to %s", handle, authUrl.String())
 	http.Redirect(w, r, authUrl.String(), http.StatusFound)
 }
 
-func (a *ATprotoAuthService) getLoginUrlAndSaveState(ctx context.Context, handle string) (*url.URL, error) {
-	scope := "atproto transition:generic"
-	// resolve
-	ui, err := a.getUserInformation(ctx, handle)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user information for %s: %w", handle, err)
+func (a *ATprotoAuthService) HandleLogout(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("session")
+
+	if err == nil {
+		session, exists := a.sessionManager.GetSession(cookie.Value)
+		if !exists {
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+
+		dbUser, err := a.DB.GetUserByID(session.UserID)
+		if err != nil {
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+		did, err := syntax.ParseDID(*dbUser.ATProtoDID)
+
+		if err != nil {
+			a.logger.Printf("Should not happen: %s", err)
+			a.sessionManager.ClearSessionCookie(w)
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+		}
+
+		ctx := r.Context()
+		err = a.clientApp.Logout(ctx, did, session.ATProtoSessionID)
+		if err != nil {
+			a.logger.Printf("Error logging the user: %s out: %s", did, err)
+		}
+		a.sessionManager.DeleteSession(cookie.Value)
 	}
 
-	fmt.Println("user info: ", ui.AuthServer, ui.AuthService)
+	a.sessionManager.ClearSessionCookie(w)
 
-	// create a dpop jwk for this session
-	k, err := helpers.GenerateKey(nil) // Generate ephemeral DPoP key for this flow
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate DPoP key: %w", err)
-	}
-
-	// Send PAR auth req
-	parResp, err := a.client.SendParAuthRequest(ctx, ui.AuthServer, ui.AuthMeta, ui.Handle, scope, k)
-	if err != nil {
-		return nil, fmt.Errorf("failed PAR request to %s: %w", ui.AuthServer, err)
-	}
-
-	// Save state
-	data := &models.ATprotoAuthData{
-		State:               parResp.State,
-		DID:                 ui.DID,
-		PDSUrl:              ui.AuthService,
-		AuthServerIssuer:    ui.AuthMeta.Issuer,
-		PKCEVerifier:        parResp.PkceVerifier,
-		DPoPAuthServerNonce: parResp.DpopAuthserverNonce,
-		DPoPPrivateJWK:      k,
-	}
-
-	// print data
-	fmt.Println(data)
-
-	err = a.DB.SaveATprotoAuthData(data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to save ATProto auth data for state %s: %w", parResp.State, err)
-	}
-
-	// Construct authorization URL using the request_uri from PAR response
-	authEndpointURL, err := url.Parse(ui.AuthMeta.AuthorizationEndpoint)
-	if err != nil {
-		return nil, fmt.Errorf("invalid authorization endpoint URL %s: %w", ui.AuthMeta.AuthorizationEndpoint, err)
-	}
-	q := authEndpointURL.Query()
-	q.Set("client_id", a.clientId)
-	q.Set("request_uri", parResp.RequestUri)
-	q.Set("state", parResp.State)
-	authEndpointURL.RawQuery = q.Encode()
-
-	return authEndpointURL, nil
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (a *ATprotoAuthService) HandleCallback(w http.ResponseWriter, r *http.Request) (int64, error) {
-	state := r.URL.Query().Get("state")
-	code := r.URL.Query().Get("code")
-	issuer := r.URL.Query().Get("iss") // Issuer (auth base URL) is needed for token request
+	ctx := r.Context()
 
-	if state == "" || code == "" || issuer == "" {
-		errMsg := r.URL.Query().Get("error")
-		errDesc := r.URL.Query().Get("error_description")
-		log.Printf("ATProto Callback Error: Missing parameters. State: '%s', Code: '%s', Issuer: '%s'. Error: '%s', Description: '%s'", state, code, issuer, errMsg, errDesc)
-		http.Error(w, fmt.Sprintf("Authorization callback failed: %s (%s). Missing state, code, or issuer.", errMsg, errDesc), http.StatusBadRequest)
-		return 0, fmt.Errorf("missing state, code, or issuer")
-	}
-
-	// Retrieve saved data using state
-	data, err := a.DB.GetATprotoAuthData(state)
+	sessData, err := a.clientApp.ProcessCallback(ctx, r.URL.Query())
 	if err != nil {
-		log.Printf("ATProto Callback Error: Failed to retrieve auth data for state '%s': %v", state, err)
-		http.Error(w, "Invalid or expired state.", http.StatusBadRequest)
-		return 0, fmt.Errorf("invalid or expired state")
+		errMsg := fmt.Errorf("processing OAuth callback: %w", err)
+		http.Error(w, errMsg.Error(), http.StatusBadRequest)
+		return 0, errMsg
 	}
 
-	// Clean up the temporary auth data now that we've retrieved it
-	// defer a.DB.DeleteATprotoAuthData(state) // Consider adding deletion logic
-	// if issuers don't match, return an error
-	if data.AuthServerIssuer != issuer {
-		log.Printf("ATProto Callback Error: Issuer mismatch for state '%s', expected '%s', got '%s'", state, data.AuthServerIssuer, issuer)
-		http.Error(w, "Invalid or expired state.", http.StatusBadRequest)
-		return 0, fmt.Errorf("issuer mismatch")
+	// It's in the example repo and leaving for some debugging cause i've seen different scopes cause issues before
+	// so may be some nice debugging info to have
+	if !slices.Equal(sessData.Scopes, a.clientApp.Config.Scopes) {
+		a.logger.Printf("session auth scopes did not match those requested")
 	}
 
-	resp, err := a.client.InitialTokenRequest(r.Context(), code, issuer, data.PKCEVerifier, data.DPoPAuthServerNonce, data.DPoPPrivateJWK)
+	user, err := a.DB.FindOrCreateUserByDID(sessData.AccountDID.String())
 	if err != nil {
-		log.Printf("ATProto Callback Error: Failed initial token request for state '%s', issuer '%s': %v", state, issuer, err)
-		http.Error(w, fmt.Sprintf("Error exchanging code for token: %v", err), http.StatusInternalServerError)
-		return 0, fmt.Errorf("failed initial token request")
-	}
-
-	userID, err := a.DB.FindOrCreateUserByDID(data.DID)
-	if err != nil {
-		log.Printf("ATProto Callback Error: Failed to find or create user for DID %s: %v", data.DID, err)
+		a.logger.Printf("ATProto Callback Error: Failed to find or create user for DID %s: %v", sessData.AccountDID.String(), err)
 		http.Error(w, "Failed to process user information.", http.StatusInternalServerError)
 		return 0, fmt.Errorf("failed to find or create user")
 	}
 
-	err = a.DB.SaveATprotoSession(resp, data.AuthServerIssuer, data.DPoPPrivateJWK, data.PDSUrl)
+	//This is piper's session for manging piper, not atproto sessions
+	createdSession := a.sessionManager.CreateSession(user.ID, sessData.SessionID)
+	a.sessionManager.SetSessionCookie(w, createdSession)
+	a.logger.Printf("Created session for user %d via service atproto", user.ATProtoDID)
+
+	err = a.DB.SetLatestATProtoSessionId(sessData.AccountDID.String(), sessData.SessionID)
 	if err != nil {
-		log.Printf("ATProto Callback Error: Failed to save ATProto tokens for user %d (DID %s): %v", userID.ID, data.DID, err)
+		a.logger.Printf("Failed to set latest atproto session id for user %d: %v", user.ID, err)
 	}
 
-	log.Printf("ATProto Callback Success: User %d (DID: %s) authenticated.", userID.ID, data.DID)
-	return userID.ID, nil
+	a.logger.Printf("ATProto Callback Success: User %d (DID: %s) authenticated.", user.ID, user.ATProtoDID)
+	return user.ID, nil
 }

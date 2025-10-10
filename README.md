@@ -23,6 +23,14 @@ Copy [.env.template](.env.template) and name it [.env](.env)
 
 This is a break down of what each env variable is and what it may look like
 
+**_breaking piper/v0.0.2 changes env_**
+
+You now have to bring your own private key to run piper. Can do this via goat `goat key generate -t P-256`. You want the one that is labeled under "Secret Key (Multibase Syntax): save this securely (eg, add to password manager)"
+
+- `ATPROTO_CLIENT_SECRET_KEY` - Private key for oauth confidential client. This can be generated via goat `goat key generate -t P-256`
+- `ATPROTO_CLIENT_SECRET_KEY_ID` - Key ID for oauth confidential client. This needs to be persistent and unique, can use a timestamp. Here's one for you: `1758199756`
+
+
 - `SERVER_PORT` - The port piper is hosted on
 - `SERVER_HOST` - The server host. `localhost` is fine here, or `0.0.0.0` for docker
 - `SERVER_ROOT_URL` - This needs to be the pubically accessible url created in [Setup](#setup). Like `https://piper.teal.fm`
@@ -53,7 +61,6 @@ assuming you have go installed and set up properly:
 run some make scripts:
 
 ```
-make jwtgen
 
 make dev-setup
 ```

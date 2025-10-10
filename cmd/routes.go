@@ -28,7 +28,7 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("/api-keys", session.WithAuth(app.apiKeyService.HandleAPIKeyManagement(app.database, app.pages), app.sessionManager))
 	mux.HandleFunc("/link-lastfm", session.WithAuth(handleLinkLastfmForm(app.database, app.pages), app.sessionManager)) // GET form
 	mux.HandleFunc("/link-lastfm/submit", session.WithAuth(handleLinkLastfmSubmit(app.database), app.sessionManager))   // POST submit - Changed route slightly
-	mux.HandleFunc("/logout", app.sessionManager.HandleLogout)
+	mux.HandleFunc("/logout", app.oauthManager.HandleLogout("atproto"))
 	mux.HandleFunc("/debug/", session.WithAuth(app.sessionManager.HandleDebug, app.sessionManager))
 
 	mux.HandleFunc("/api/v1/me", session.WithAPIAuth(apiMeHandler(app.database), app.sessionManager))
@@ -45,7 +45,7 @@ func (app *application) routes() http.Handler {
 	serverUrlRoot := viper.GetString("server.root_url")
 	atpClientId := viper.GetString("atproto.client_id")
 	atpCallbackUrl := viper.GetString("atproto.callback_url")
-	mux.HandleFunc("/.well-known/client-metadata.json", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/oauth-client-metadata.json", func(w http.ResponseWriter, r *http.Request) {
 		app.atprotoService.HandleClientMetadata(w, r, serverUrlRoot, atpClientId, atpCallbackUrl)
 	})
 	mux.HandleFunc("/oauth/jwks.json", app.atprotoService.HandleJwks)

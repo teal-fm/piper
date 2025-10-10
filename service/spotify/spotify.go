@@ -657,7 +657,7 @@ func (s *SpotifyService) fetchAllUserTracks(ctx context.Context) {
 
 				s.logger.Printf("User %d (%d): Attempting to submit track '%s' by %s to PDS (DID: %s)", userID, dbUser.ATProtoDID, trackToSubmitToPDS.Name, artistName, *dbUser.ATProtoDID)
 				// Use context.Background() for now, or pass down a context if available
-				if errPDS := s.SubmitTrackToPDS(*dbUser.ATProtoDID, trackToSubmitToPDS, context.Background()); errPDS != nil {
+				if errPDS := s.SubmitTrackToPDS(*dbUser.ATProtoDID, *dbUser.MostRecentAtProtoSessionID, trackToSubmitToPDS, context.Background()); errPDS != nil {
 					s.logger.Printf("User %d (%d): Error submitting track '%s' to PDS: %v", userID, dbUser.ATProtoDID, trackToSubmitToPDS.Name, errPDS)
 				} else {
 					s.logger.Printf("User %d (%d): Successfully submitted track '%s' to PDS.", userID, dbUser.ATProtoDID, trackToSubmitToPDS.Name)
