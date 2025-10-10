@@ -6,22 +6,43 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-
-	"github.com/haileyok/atproto-oauth-golang/helpers"
 )
 
+func strPtr(raw string) *string {
+	return &raw
+}
+
 func (a *ATprotoAuthService) HandleJwks(w http.ResponseWriter, r *http.Request) {
-	pubKey, err := a.jwks.PublicKey()
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error getting public key from JWK: %v", err), http.StatusInternalServerError)
-		log.Printf("Error getting public key from JWK: %v", err)
+	meta := a.clientApp.Config.ClientMetadata()
+	if a.clientApp.Config.IsConfidential() {
+		meta.JWKSURI = strPtr(fmt.Sprintf("https://%s/oauth/jwks.json", r.Host))
+	}
+	meta.ClientName = strPtr("indigo atp-oauth-demo")
+	meta.ClientURI = strPtr(fmt.Sprintf("https://%s", r.Host))
+
+	// internal consistency check
+	if err := meta.Validate(a.clientApp.Config.ClientID); err != nil {
+		a.logger.Printf("validating client metadata", "err", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(helpers.CreateJwksResponseObject(pubKey)); err != nil {
-		log.Printf("Error encoding JWKS response: %v", err)
+	if err := json.NewEncoder(w).Encode(meta); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
+	//pubKey, err := a.jwks.PublicKey()
+	//if err != nil {
+	//	http.Error(w, fmt.Sprintf("Error getting public key from JWK: %v", err), http.StatusInternalServerError)
+	//	log.Printf("Error getting public key from JWK: %v", err)
+	//	return
+	//}
+	//
+	//w.Header().Set("Content-Type", "application/json")
+	//if err := json.NewEncoder(w).Encode(helpers.CreateJwksResponseObject(pubKey)); err != nil {
+	//	log.Printf("Error encoding JWKS response: %v", err)
+	//}
 }
 
 func (a *ATprotoAuthService) HandleClientMetadata(w http.ResponseWriter, r *http.Request, serverUrlRoot, serverMetadataUrl, serverCallbackUrl string) {

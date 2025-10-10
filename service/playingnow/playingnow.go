@@ -9,10 +9,13 @@ import (
 	"time"
 
 	"github.com/bluesky-social/indigo/api/atproto"
+	"github.com/bluesky-social/indigo/atproto/client"
 	lexutil "github.com/bluesky-social/indigo/lex/util"
 	"github.com/bluesky-social/indigo/xrpc"
-	oauth "github.com/haileyok/atproto-oauth-golang"
 	"github.com/spf13/viper"
+
+	//oauth "github.com/haileyok/atproto-oauth-golang"
+	//"github.com/spf13/viper"
 	"github.com/teal-fm/piper/api/teal"
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
@@ -53,20 +56,9 @@ func (p *PlayingNowService) PublishPlayingNow(ctx context.Context, userID int64,
 	did := *user.ATProtoDID
 
 	// Get ATProto client
-	client, err := p.atprotoService.GetATProtoClient()
+	client, err := p.atprotoService.GetATProtoClient(did, *user.MostRecentAtProtoSessionID, ctx)
 	if err != nil || client == nil {
 		return fmt.Errorf("failed to get ATProto client: %w", err)
-	}
-
-	xrpcClient := p.atprotoService.GetXrpcClient()
-	if xrpcClient == nil {
-		return fmt.Errorf("xrpc client is not available")
-	}
-
-	// Get user session
-	sess, err := p.db.GetAtprotoSession(did, ctx, *client)
-	if err != nil {
-		return fmt.Errorf("couldn't get Atproto session for DID %s: %w", did, err)
 	}
 
 	// Convert track to PlayView format
@@ -86,9 +78,8 @@ func (p *PlayingNowService) PublishPlayingNow(ctx context.Context, userID int64,
 		Item:          playView,
 	}
 
-	authArgs := db.AtpSessionToAuthArgs(sess)
 	var swapRecord *string
-	swapRecord, err = p.getStatusSwapRecord(ctx, xrpcClient, sess, authArgs)
+	swapRecord, err = p.getStatusSwapRecord(ctx, client)
 	if err != nil {
 		return err
 	}
@@ -96,7 +87,7 @@ func (p *PlayingNowService) PublishPlayingNow(ctx context.Context, userID int64,
 	// Create the record input
 	input := atproto.RepoPutRecord_Input{
 		Collection: "fm.teal.alpha.actor.status",
-		Repo:       sess.DID,
+		Repo:       client.AccountDID.String(),
 		Rkey:       "self", // Use "self" as the record key for current status
 		Record:     &lexutil.LexiconTypeDecoder{Val: status},
 		SwapRecord: swapRecord,
@@ -104,7 +95,7 @@ func (p *PlayingNowService) PublishPlayingNow(ctx context.Context, userID int64,
 
 	// Submit to PDS
 	var out atproto.RepoPutRecord_Output
-	if err := xrpcClient.Do(ctx, authArgs, xrpc.Procedure, "application/json", "com.atproto.repo.putRecord", nil, input, &out); err != nil {
+	if err := client.Post(ctx, "com.atproto.repo.putRecord", input, &out); err != nil {
 		p.logger.Printf("Error creating playing now status for DID %s: %v", did, err)
 		return fmt.Errorf("failed to create playing now status for DID %s: %w", did, err)
 	}
@@ -131,20 +122,9 @@ func (p *PlayingNowService) ClearPlayingNow(ctx context.Context, userID int64) e
 	did := *user.ATProtoDID
 
 	// Get ATProto clients
-	client, err := p.atprotoService.GetATProtoClient()
+	client, err := p.atprotoService.GetATProtoClient(did, *user.MostRecentAtProtoSessionID, ctx)
 	if err != nil || client == nil {
 		return fmt.Errorf("failed to get ATProto client: %w", err)
-	}
-
-	xrpcClient := p.atprotoService.GetXrpcClient()
-	if xrpcClient == nil {
-		return fmt.Errorf("xrpc client is not available")
-	}
-
-	// Get user session
-	sess, err := p.db.GetAtprotoSession(did, ctx, *client)
-	if err != nil {
-		return fmt.Errorf("couldn't get Atproto session for DID %s: %w", did, err)
 	}
 
 	// Create an expired status (essentially clearing it)
@@ -164,9 +144,8 @@ func (p *PlayingNowService) ClearPlayingNow(ctx context.Context, userID int64) e
 		Item:          emptyPlayView,
 	}
 
-	authArgs := db.AtpSessionToAuthArgs(sess)
 	var swapRecord *string
-	swapRecord, err = p.getStatusSwapRecord(ctx, xrpcClient, sess, authArgs)
+	swapRecord, err = p.getStatusSwapRecord(ctx, client)
 	if err != nil {
 		return err
 	}
@@ -174,14 +153,14 @@ func (p *PlayingNowService) ClearPlayingNow(ctx context.Context, userID int64) e
 	// Update the record
 	input := atproto.RepoPutRecord_Input{
 		Collection: "fm.teal.alpha.actor.status",
-		Repo:       sess.DID,
+		Repo:       client.AccountDID.String(),
 		Rkey:       "self",
 		Record:     &lexutil.LexiconTypeDecoder{Val: status},
 		SwapRecord: swapRecord,
 	}
 
 	var out atproto.RepoPutRecord_Output
-	if err := xrpcClient.Do(ctx, authArgs, xrpc.Procedure, "application/json", "com.atproto.repo.putRecord", nil, input, &out); err != nil {
+	if err := client.Post(ctx, "com.atproto.repo.putRecord", input, &out); err != nil {
 		p.logger.Printf("Error clearing playing now status for DID %s: %v", did, err)
 		return fmt.Errorf("failed to clear playing now status for DID %s: %w", did, err)
 	}
@@ -264,13 +243,13 @@ func (p *PlayingNowService) trackToPlayView(track *models.Track) (*teal.AlphaFee
 
 // getStatusSwapRecord retrieves the current swap record (CID) for the actor status record.
 // Returns (nil, nil) if the record does not exist yet.
-func (p *PlayingNowService) getStatusSwapRecord(ctx context.Context, xrpcClient *oauth.XrpcClient, sess *models.ATprotoAuthSession, authArgs *oauth.XrpcAuthedRequestArgs) (*string, error) {
+func (p *PlayingNowService) getStatusSwapRecord(ctx context.Context, atApiClient *client.APIClient) (*string, error) {
 	getOutput := atproto.RepoGetRecord_Output{}
-	if err := xrpcClient.Do(ctx, authArgs, xrpc.Query, "application/json", "com.atproto.repo.getRecord", map[string]any{
-		"repo":       sess.DID,
+	if err := atApiClient.Get(ctx, "com.atproto.repo.getRecord", map[string]any{
+		"repo":       atApiClient.AccountDID.String(),
 		"collection": "fm.teal.alpha.actor.status",
 		"rkey":       "self",
-	}, nil, &getOutput); err != nil {
+	}, nil); err != nil {
 		xErr, ok := err.(*xrpc.Error)
 		if !ok {
 			return nil, fmt.Errorf("could not get record: %w", err)

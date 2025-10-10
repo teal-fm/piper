@@ -45,17 +45,7 @@ func (db *DB) Initialize() error {
 		username TEXT,                      -- Made nullable, might not have username initially
 		email TEXT UNIQUE,                  -- Made nullable
 		atproto_did TEXT UNIQUE,            -- Atproto DID (identifier)
-		atproto_pds_url TEXT,
-		atproto_authserver_issuer TEXT,
-		atproto_access_token TEXT,          -- Atproto access token
-		atproto_refresh_token TEXT,         -- Atproto refresh token
-		atproto_token_expiry TIMESTAMP,     -- Atproto token expiry
-		atproto_sub TEXT,
-		atproto_scope TEXT,                 -- Atproto token scope
-		atproto_token_type TEXT,            -- Atproto token type
-		atproto_authserver_nonce TEXT,
-		atproto_pds_nonce TEXT,
-		atproto_dpop_private_jwk TEXT,
+		most_recent_at_session_id TEXT,     -- Most recent oAuth session id
 		spotify_id TEXT UNIQUE,             -- Spotify specific ID
 		access_token TEXT,                  -- Spotify access token
 		refresh_token TEXT,                 -- Spotify refresh token
@@ -162,9 +152,20 @@ func (db *DB) GetUserByID(ID int64) (*models.User, error) {
 	user := &models.User{}
 
 	err := db.QueryRow(`
-	SELECT id, username, email, atproto_did, spotify_id, access_token, refresh_token, token_expiry, lastfm_username, created_at, updated_at
+	SELECT id, 
+	       username,
+	       email,
+	       atproto_did,
+	       most_recent_at_session_id,
+	       spotify_id,
+	       access_token,
+	       refresh_token,
+	       token_expiry,
+	       lastfm_username,
+	       created_at,
+	       updated_at
 	FROM users WHERE id = ?`, ID).Scan(
-		&user.ID, &user.Username, &user.Email, &user.ATProtoDID, &user.SpotifyID,
+		&user.ID, &user.Username, &user.Email, &user.ATProtoDID, &user.MostRecentAtProtoSessionID, &user.SpotifyID,
 		&user.AccessToken, &user.RefreshToken, &user.TokenExpiry,
 		&user.LastFMUsername,
 		&user.CreatedAt, &user.UpdatedAt)

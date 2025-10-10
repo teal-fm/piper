@@ -56,6 +56,8 @@ func main() {
 		log.Fatalf("Error initializing database: %v", err)
 	}
 
+	sessionManager := session.NewSessionManager(database)
+
 	// --- Service Initializations ---
 	//jwksBytes, err := os.ReadFile("./jwks.json")
 	//if err != nil {
@@ -73,6 +75,7 @@ func main() {
 	var clientSecretKeyId = "1758199756"
 	atprotoService, err := atproto.NewATprotoAuthService(
 		database,
+		sessionManager,
 		newJwkPrivateKey,
 		viper.GetString("atproto.client_id"),
 		viper.GetString("atproto.callback_url"),
@@ -87,8 +90,7 @@ func main() {
 	spotifyService := spotify.NewSpotifyService(database, atprotoService, mbService, playingNowService)
 	lastfmService := lastfm.NewLastFMService(database, viper.GetString("lastfm.api_key"), mbService, atprotoService, playingNowService)
 
-	sessionManager := session.NewSessionManager(database)
-	oauthManager := oauth.NewOAuthServiceManager(sessionManager)
+	oauthManager := oauth.NewOAuthServiceManager()
 
 	spotifyOAuth := oauth.NewOAuth2Service(
 		viper.GetString("spotify.client_id"),

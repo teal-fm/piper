@@ -12,14 +12,12 @@ import (
 	"strings"
 
 	"github.com/bluesky-social/indigo/atproto/syntax"
-	oauth "github.com/haileyok/atproto-oauth-golang"
 )
 
 // user information struct
 type UserInformation struct {
-	AuthService string                            `json:"authService"`
-	AuthServer  string                            `json:"authServer"`
-	AuthMeta    *oauth.OauthAuthorizationMetadata `json:"authMeta"`
+	AuthService string `json:"authService"`
+	AuthServer  string `json:"authServer"`
 	// do NOT save the current handle permanently!
 	Handle string `json:"handle"`
 	DID    string `json:"did"`
@@ -32,57 +30,6 @@ type Identity struct {
 		Type            string `json:"type"`
 		ServiceEndpoint string `json:"serviceEndpoint"`
 	} `json:"service"`
-}
-
-func (a *ATprotoAuthService) getUserInformation(ctx context.Context, handleOrDid string) (*UserInformation, error) {
-	cli := a.client
-
-	// if we have a did skip this
-	did := handleOrDid
-	err := error(nil)
-	// technically checking SHOULD be more rigorous.
-	if !strings.HasPrefix(handleOrDid, "did:") {
-		did, err = resolveHandle(ctx, did)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		did = handleOrDid
-	}
-
-	doc, err := getIdentityDocument(ctx, did)
-	if err != nil {
-		return nil, err
-	}
-
-	service, err := getAtprotoPdsService(doc)
-	if err != nil {
-		return nil, err
-	}
-
-	authserver, err := cli.ResolvePdsAuthServer(ctx, service)
-	if err != nil {
-		return nil, err
-	}
-
-	authmeta, err := cli.FetchAuthServerMetadata(ctx, authserver)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(doc.AlsoKnownAs) == 0 {
-		return nil, fmt.Errorf("alsoKnownAs is empty, couldn't acquire handle: %w", err)
-
-	}
-	handle := strings.Replace(doc.AlsoKnownAs[0], "at://", "", 1)
-
-	return &UserInformation{
-		AuthService: service,
-		AuthServer:  authserver,
-		AuthMeta:    authmeta,
-		Handle:      handle,
-		DID:         did,
-	}, nil
 }
 
 func resolveHandle(ctx context.Context, handle string) (string, error) {

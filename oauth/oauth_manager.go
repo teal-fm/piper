@@ -6,23 +6,19 @@ import (
 	"log"
 	"net/http"
 	"sync"
-
-	"github.com/teal-fm/piper/session"
 )
 
 // manages multiple oauth client services
 type OAuthServiceManager struct {
-	services       map[string]AuthService
-	sessionManager *session.SessionManager
-	mu             sync.RWMutex
-	logger         *log.Logger
+	services map[string]AuthService
+	mu       sync.RWMutex
+	logger   *log.Logger
 }
 
-func NewOAuthServiceManager(sessionManager *session.SessionManager) *OAuthServiceManager {
+func NewOAuthServiceManager() *OAuthServiceManager {
 	return &OAuthServiceManager{
-		services:       make(map[string]AuthService),
-		sessionManager: sessionManager,
-		logger:         log.New(log.Writer(), "oauth: ", log.LstdFlags|log.Lmsgprefix),
+		services: make(map[string]AuthService),
+		logger:   log.New(log.Writer(), "oauth: ", log.LstdFlags|log.Lmsgprefix),
 	}
 }
 
@@ -81,13 +77,6 @@ func (m *OAuthServiceManager) HandleCallback(serviceName string) http.HandlerFun
 		}
 
 		if userID > 0 {
-
-			//TODO move this to the HandleCallback for atproto oauth since that's the only one that should be saving them
-			session := m.sessionManager.CreateSession(userID)
-
-			m.sessionManager.SetSessionCookie(w, session)
-
-			m.logger.Printf("Created session for user %d via service %s", userID, serviceName)
 
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 		} else {

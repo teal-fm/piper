@@ -3,7 +3,6 @@ package lastfm
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -16,7 +15,6 @@ import (
 
 	"github.com/bluesky-social/indigo/api/atproto"
 	lexutil "github.com/bluesky-social/indigo/lex/util"
-	"github.com/bluesky-social/indigo/xrpc"
 	"github.com/spf13/viper"
 	"github.com/teal-fm/piper/api/teal"
 	"github.com/teal-fm/piper/db"
@@ -395,7 +393,7 @@ func (l *LastFMService) processTracks(ctx context.Context, username string, trac
 		}
 		l.db.SaveTrack(user.ID, hydratedTrack)
 		l.logger.Printf("Submitting track")
-		err = l.SubmitTrackToPDS(*user.ATProtoDID, hydratedTrack, ctx)
+		err = l.SubmitTrackToPDS(*user.ATProtoDID, *user.MostRecentAtProtoSessionID, hydratedTrack, ctx)
 		if err != nil {
 			l.logger.Printf("error submitting track for user %s: %s - %s: %v", username, track.Artist.Text, track.Name, err)
 		}
@@ -418,25 +416,14 @@ func (l *LastFMService) processTracks(ctx context.Context, username string, trac
 	return nil
 }
 
-func (l *LastFMService) SubmitTrackToPDS(did string, track *models.Track, ctx context.Context) error {
-	client, err := l.atprotoService.GetATProtoClient()
+func (l *LastFMService) SubmitTrackToPDS(did string, mostRecentAtProtoSessionID string, track *models.Track, ctx context.Context) error {
+	client, err := l.atprotoService.GetATProtoClient(did, mostRecentAtProtoSessionID, ctx)
 	if err != nil || client == nil {
 		return err
 	}
 
-	xrpcClient := l.atprotoService.GetXrpcClient()
-	if xrpcClient == nil {
-		return errors.New("xrpc client is kil")
-	}
-
-	// we check for client above
-	sess, err := l.db.GetAtprotoSession(did, ctx, *client)
-	if err != nil {
-		return fmt.Errorf("Couldn't get Atproto session: %s", err)
-	}
-
 	// printout the session details
-	l.logger.Printf("Submitting track for the did: %+v\n", sess.DID)
+	l.logger.Printf("Submitting track for the did: %+v\n", client.AccountDID.String())
 
 	artists := make([]*teal.AlphaFeedDefs_Artist, 0, len(track.Artist))
 	for _, a := range track.Artist {
@@ -476,14 +463,12 @@ func (l *LastFMService) SubmitTrackToPDS(did string, track *models.Track, ctx co
 
 	input := atproto.RepoCreateRecord_Input{
 		Collection: "fm.teal.alpha.feed.play",
-		Repo:       sess.DID,
+		Repo:       client.AccountDID.String(),
 		Record:     &lexutil.LexiconTypeDecoder{Val: &tfmTrack},
 	}
 
-	authArgs := db.AtpSessionToAuthArgs(sess)
-
 	var out atproto.RepoCreateRecord_Output
-	if err := xrpcClient.Do(ctx, authArgs, xrpc.Procedure, "application/json", "com.atproto.repo.createRecord", nil, input, &out); err != nil {
+	if err := client.Post(ctx, "com.atproto.repo.createRecord", input, &out); err != nil {
 		return err
 	}
 

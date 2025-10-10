@@ -18,7 +18,6 @@ import (
 
 	"github.com/bluesky-social/indigo/api/atproto"      // Added for atproto.RepoCreateRecord_Input
 	lexutil "github.com/bluesky-social/indigo/lex/util" // Added for lexutil.LexiconTypeDecoder
-	"github.com/bluesky-social/indigo/xrpc"             // Added for xrpc.Client
 	"github.com/spf13/viper"
 	"github.com/teal-fm/piper/api/teal" // Added for teal.AlphaFeedPlay
 	"github.com/teal-fm/piper/db"
@@ -59,21 +58,11 @@ func NewSpotifyService(database *db.DB, atprotoService *atprotoauth.ATprotoAuthS
 	}
 }
 
-func (s *SpotifyService) SubmitTrackToPDS(did string, track *models.Track, ctx context.Context) error {
-	client, err := s.atprotoService.GetATProtoClient()
+func (s *SpotifyService) SubmitTrackToPDS(did string, mostRecentAtProtoSessionID string, track *models.Track, ctx context.Context) error {
+	client, err := s.atprotoService.GetATProtoClient(did, mostRecentAtProtoSessionID, ctx)
 	if err != nil || client == nil {
 		s.logger.Printf("Error getting ATProto client: %v", err)
 		return fmt.Errorf("failed to get ATProto client: %w", err)
-	}
-
-	xrpcClient := s.atprotoService.GetXrpcClient()
-	if xrpcClient == nil {
-		return errors.New("xrpc client is not available")
-	}
-
-	sess, err := s.DB.GetAtprotoSession(did, ctx, *client)
-	if err != nil {
-		return fmt.Errorf("couldn't get Atproto session for DID %s: %w", did, err)
 	}
 
 	artists := make([]*teal.AlphaFeedDefs_Artist, 0, len(track.Artist))
@@ -121,14 +110,12 @@ func (s *SpotifyService) SubmitTrackToPDS(did string, track *models.Track, ctx c
 
 	input := atproto.RepoCreateRecord_Input{
 		Collection: "fm.teal.alpha.feed.play", // Ensure this collection is correct
-		Repo:       sess.DID,
+		Repo:       client.AccountDID.String(),
 		Record:     &lexutil.LexiconTypeDecoder{Val: &tfmTrack},
 	}
 
-	authArgs := db.AtpSessionToAuthArgs(sess)
-
 	var out atproto.RepoCreateRecord_Output
-	if err := xrpcClient.Do(ctx, authArgs, xrpc.Procedure, "application/json", "com.atproto.repo.createRecord", nil, input, &out); err != nil {
+	if err := client.Post(ctx, "com.atproto.repo.createRecord", input, &out); err != nil {
 		s.logger.Printf("Error creating record for DID %s: %v. Input: %+v", did, err, input)
 		return fmt.Errorf("failed to create record on PDS for DID %s: %w", did, err)
 	}
@@ -724,7 +711,7 @@ func (s *SpotifyService) fetchAllUserTracks(ctx context.Context) {
 
 				s.logger.Printf("User %d (%d): Attempting to submit track '%s' by %s to PDS (DID: %s)", userID, dbUser.ATProtoDID, trackToSubmitToPDS.Name, artistName, *dbUser.ATProtoDID)
 				// Use context.Background() for now, or pass down a context if available
-				if errPDS := s.SubmitTrackToPDS(*dbUser.ATProtoDID, trackToSubmitToPDS, context.Background()); errPDS != nil {
+				if errPDS := s.SubmitTrackToPDS(*dbUser.ATProtoDID, *dbUser.MostRecentAtProtoSessionID, trackToSubmitToPDS, context.Background()); errPDS != nil {
 					s.logger.Printf("User %d (%d): Error submitting track '%s' to PDS: %v", userID, dbUser.ATProtoDID, trackToSubmitToPDS.Name, errPDS)
 				} else {
 					s.logger.Printf("User %d (%d): Successfully submitted track '%s' to PDS.", userID, dbUser.ATProtoDID, trackToSubmitToPDS.Name)
