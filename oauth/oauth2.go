@@ -86,6 +86,11 @@ func (o *OAuth2Service) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, authURL, http.StatusSeeOther)
 }
 
+func (o *OAuth2Service) HandleLogout(w http.ResponseWriter, r *http.Request) {
+	//TODO not implemented yet. not sure what the api call is for this package
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
 func (o *OAuth2Service) HandleCallback(w http.ResponseWriter, r *http.Request) (int64, error) {
 	state := r.URL.Query().Get("state")
 	if state != o.state {

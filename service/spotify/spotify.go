@@ -59,7 +59,7 @@ func NewSpotifyService(database *db.DB, atprotoService *atprotoauth.ATprotoAuthS
 	}
 }
 
-func (s *SpotifyService) SubmitTrackToPDS(did string, track *models.Track, ctx context.Context) error {
+func (s *SpotifyService) SubmitTrackToPDS(did string, mostRecentAtProtoSessionID string, track *models.Track, ctx context.Context) error {
 	//Had a empty feed.play get submitted not sure why. Tracking here
 	if track.Name == "" {
 		s.logger.Println("Track name is empty. Skipping submission. Please record the logs before and send to the teal.fm Discord")
@@ -67,7 +67,7 @@ func (s *SpotifyService) SubmitTrackToPDS(did string, track *models.Track, ctx c
 	}
 
 	// Use shared atproto service for submission
-	return atprotoservice.SubmitPlayToPDS(ctx, did, track, s.atprotoService)
+	return atprotoservice.SubmitPlayToPDS(ctx, did, mostRecentAtProtoSessionID, track, s.atprotoService)
 }
 
 func (s *SpotifyService) SetAccessToken(token string, refreshToken string, userId int64, hasSession bool) (int64, error) {
@@ -657,7 +657,7 @@ func (s *SpotifyService) fetchAllUserTracks(ctx context.Context) {
 
 				s.logger.Printf("User %d (%d): Attempting to submit track '%s' by %s to PDS (DID: %s)", userID, dbUser.ATProtoDID, trackToSubmitToPDS.Name, artistName, *dbUser.ATProtoDID)
 				// Use context.Background() for now, or pass down a context if available
-				if errPDS := s.SubmitTrackToPDS(*dbUser.ATProtoDID, trackToSubmitToPDS, context.Background()); errPDS != nil {
+				if errPDS := s.SubmitTrackToPDS(*dbUser.ATProtoDID, *dbUser.MostRecentAtProtoSessionID, trackToSubmitToPDS, context.Background()); errPDS != nil {
 					s.logger.Printf("User %d (%d): Error submitting track '%s' to PDS: %v", userID, dbUser.ATProtoDID, trackToSubmitToPDS.Name, errPDS)
 				} else {
 					s.logger.Printf("User %d (%d): Successfully submitted track '%s' to PDS.", userID, dbUser.ATProtoDID, trackToSubmitToPDS.Name)

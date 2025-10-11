@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/teal-fm/piper/service/lastfm"
@@ -57,21 +56,28 @@ func main() {
 		log.Fatalf("Error initializing database: %v", err)
 	}
 
+	sessionManager := session.NewSessionManager(database)
+
 	// --- Service Initializations ---
-	jwksBytes, err := os.ReadFile("./jwks.json")
-	if err != nil {
-		// run `make jwtgen`
-		log.Fatalf("Error reading JWK file: %v", err)
+
+	var newJwkPrivateKey = viper.GetString("atproto.client_secret_key")
+	if newJwkPrivateKey == "" {
+		fmt.Printf("You now have to set the ATPROTO_CLIENT_SECRET_KEY env var to a private key. This can be done via goat key generate -t P-256")
+		return
 	}
-	jwks, err := atproto.LoadJwks(jwksBytes)
-	if err != nil {
-		log.Fatalf("Error loading JWK: %v", err)
+	var clientSecretKeyId = viper.GetString("atproto.client_secret_key_id")
+	if clientSecretKeyId == "" {
+		fmt.Printf("You also now have to set the ATPROTO_CLIENT_SECRET_KEY_ID env var to a key ID. This needs to be persistent and unique. Here's one for you: %d", time.Now().Unix())
+		return
 	}
+
 	atprotoService, err := atproto.NewATprotoAuthService(
 		database,
-		jwks,
+		sessionManager,
+		newJwkPrivateKey,
 		viper.GetString("atproto.client_id"),
 		viper.GetString("atproto.callback_url"),
+		clientSecretKeyId,
 	)
 	if err != nil {
 		log.Fatalf("Error creating ATproto auth service: %v", err)
@@ -82,8 +88,7 @@ func main() {
 	spotifyService := spotify.NewSpotifyService(database, atprotoService, mbService, playingNowService)
 	lastfmService := lastfm.NewLastFMService(database, viper.GetString("lastfm.api_key"), mbService, atprotoService, playingNowService)
 
-	sessionManager := session.NewSessionManager(database)
-	oauthManager := oauth.NewOAuthServiceManager(sessionManager)
+	oauthManager := oauth.NewOAuthServiceManager()
 
 	spotifyOAuth := oauth.NewOAuth2Service(
 		viper.GetString("spotify.client_id"),

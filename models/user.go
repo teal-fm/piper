@@ -18,10 +18,13 @@ type User struct {
 	LastFMUsername *string
 
 	// atp info
-	ATProtoDID          *string
-	ATProtoAccessToken  *string
-	ATProtoRefreshToken *string
-	ATProtoTokenExpiry  *time.Time
+	ATProtoDID *string
+	//This is meant to only be used by the automated music stamping service. If the user ever does an
+	//atproto action from the web ui use the atproto session id for the logged-in session
+	MostRecentAtProtoSessionID *string
+	//ATProtoAccessToken  *string
+	//ATProtoRefreshToken *string
+	//ATProtoTokenExpiry  *time.Time
 
 	CreatedAt time.Time
 	UpdatedAt time.Time

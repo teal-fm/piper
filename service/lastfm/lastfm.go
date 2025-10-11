@@ -390,7 +390,7 @@ func (l *LastFMService) processTracks(ctx context.Context, username string, trac
 		}
 		l.db.SaveTrack(user.ID, hydratedTrack)
 		l.logger.Printf("Submitting track")
-		err = l.SubmitTrackToPDS(*user.ATProtoDID, hydratedTrack, ctx)
+		err = l.SubmitTrackToPDS(*user.ATProtoDID, *user.MostRecentAtProtoSessionID, hydratedTrack, ctx)
 		if err != nil {
 			l.logger.Printf("error submitting track for user %s: %s - %s: %v", username, track.Artist.Text, track.Name, err)
 		}
@@ -413,9 +413,9 @@ func (l *LastFMService) processTracks(ctx context.Context, username string, trac
 	return nil
 }
 
-func (l *LastFMService) SubmitTrackToPDS(did string, track *models.Track, ctx context.Context) error {
+func (l *LastFMService) SubmitTrackToPDS(did string, mostRecentAtProtoSessionID string, track *models.Track, ctx context.Context) error {
 	// Use shared atproto service for submission
-	return atprotoservice.SubmitPlayToPDS(ctx, did, track, l.atprotoService)
+	return atprotoservice.SubmitPlayToPDS(ctx, did, mostRecentAtProtoSessionID, track, l.atprotoService)
 }
 
 // convertLastFMTrackToModelsTrack converts a Last.fm Track to models.Track format

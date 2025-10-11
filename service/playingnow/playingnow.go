@@ -8,11 +8,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/bluesky-social/indigo/api/atproto"
+	"github.com/bluesky-social/indigo/atproto/client"
 	lexutil "github.com/bluesky-social/indigo/lex/util"
-	"github.com/bluesky-social/indigo/xrpc"
-	oauth "github.com/haileyok/atproto-oauth-golang"
 	"github.com/spf13/viper"
+
+	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	"github.com/teal-fm/piper/api/teal"
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
@@ -52,21 +52,10 @@ func (p *PlayingNowService) PublishPlayingNow(ctx context.Context, userID int64,
 
 	did := *user.ATProtoDID
 
-	// Get ATProto client
-	client, err := p.atprotoService.GetATProtoClient()
-	if err != nil || client == nil {
-		return fmt.Errorf("failed to get ATProto client: %w", err)
-	}
-
-	xrpcClient := p.atprotoService.GetXrpcClient()
-	if xrpcClient == nil {
-		return fmt.Errorf("xrpc client is not available")
-	}
-
-	// Get user session
-	sess, err := p.db.GetAtprotoSession(did, ctx, *client)
-	if err != nil {
-		return fmt.Errorf("couldn't get Atproto session for DID %s: %w", did, err)
+	// Get ATProto atProtoClient
+	atProtoClient, err := p.atprotoService.GetATProtoClient(did, *user.MostRecentAtProtoSessionID, ctx)
+	if err != nil || atProtoClient == nil {
+		return fmt.Errorf("failed to get ATProto atProtoClient: %w", err)
 	}
 
 	// Convert track to PlayView format
@@ -86,25 +75,23 @@ func (p *PlayingNowService) PublishPlayingNow(ctx context.Context, userID int64,
 		Item:          playView,
 	}
 
-	authArgs := db.AtpSessionToAuthArgs(sess)
 	var swapRecord *string
-	swapRecord, err = p.getStatusSwapRecord(ctx, xrpcClient, sess, authArgs)
+	swapRecord, err = p.getStatusSwapRecord(ctx, atProtoClient)
 	if err != nil {
 		return err
 	}
 
 	// Create the record input
-	input := atproto.RepoPutRecord_Input{
+	input := comatproto.RepoPutRecord_Input{
 		Collection: "fm.teal.alpha.actor.status",
-		Repo:       sess.DID,
+		Repo:       atProtoClient.AccountDID.String(),
 		Rkey:       "self", // Use "self" as the record key for current status
 		Record:     &lexutil.LexiconTypeDecoder{Val: status},
 		SwapRecord: swapRecord,
 	}
 
 	// Submit to PDS
-	var out atproto.RepoPutRecord_Output
-	if err := xrpcClient.Do(ctx, authArgs, xrpc.Procedure, "application/json", "com.atproto.repo.putRecord", nil, input, &out); err != nil {
+	if _, err := comatproto.RepoPutRecord(ctx, atProtoClient, &input); err != nil {
 		p.logger.Printf("Error creating playing now status for DID %s: %v", did, err)
 		return fmt.Errorf("failed to create playing now status for DID %s: %w", did, err)
 	}
@@ -131,20 +118,9 @@ func (p *PlayingNowService) ClearPlayingNow(ctx context.Context, userID int64) e
 	did := *user.ATProtoDID
 
 	// Get ATProto clients
-	client, err := p.atprotoService.GetATProtoClient()
-	if err != nil || client == nil {
-		return fmt.Errorf("failed to get ATProto client: %w", err)
-	}
-
-	xrpcClient := p.atprotoService.GetXrpcClient()
-	if xrpcClient == nil {
-		return fmt.Errorf("xrpc client is not available")
-	}
-
-	// Get user session
-	sess, err := p.db.GetAtprotoSession(did, ctx, *client)
-	if err != nil {
-		return fmt.Errorf("couldn't get Atproto session for DID %s: %w", did, err)
+	atProtoClient, err := p.atprotoService.GetATProtoClient(did, *user.MostRecentAtProtoSessionID, ctx)
+	if err != nil || atProtoClient == nil {
+		return fmt.Errorf("failed to get ATProto atProtoClient: %w", err)
 	}
 
 	// Create an expired status (essentially clearing it)
@@ -164,24 +140,22 @@ func (p *PlayingNowService) ClearPlayingNow(ctx context.Context, userID int64) e
 		Item:          emptyPlayView,
 	}
 
-	authArgs := db.AtpSessionToAuthArgs(sess)
 	var swapRecord *string
-	swapRecord, err = p.getStatusSwapRecord(ctx, xrpcClient, sess, authArgs)
+	swapRecord, err = p.getStatusSwapRecord(ctx, atProtoClient)
 	if err != nil {
 		return err
 	}
 
 	// Update the record
-	input := atproto.RepoPutRecord_Input{
+	input := comatproto.RepoPutRecord_Input{
 		Collection: "fm.teal.alpha.actor.status",
-		Repo:       sess.DID,
+		Repo:       atProtoClient.AccountDID.String(),
 		Rkey:       "self",
 		Record:     &lexutil.LexiconTypeDecoder{Val: status},
 		SwapRecord: swapRecord,
 	}
 
-	var out atproto.RepoPutRecord_Output
-	if err := xrpcClient.Do(ctx, authArgs, xrpc.Procedure, "application/json", "com.atproto.repo.putRecord", nil, input, &out); err != nil {
+	if _, err := comatproto.RepoPutRecord(ctx, atProtoClient, &input); err != nil {
 		p.logger.Printf("Error clearing playing now status for DID %s: %v", did, err)
 		return fmt.Errorf("failed to clear playing now status for DID %s: %w", did, err)
 	}
@@ -242,7 +216,7 @@ func (p *PlayingNowService) trackToPlayView(track *models.Track) (*teal.AlphaFee
 	// Get submission client agent
 	submissionAgent := viper.GetString("app.submission_agent")
 	if submissionAgent == "" {
-		submissionAgent = "piper/v0.0.1"
+		submissionAgent = "piper/v0.0.2"
 	}
 
 	playView := &teal.AlphaFeedDefs_PlayView{
@@ -264,21 +238,20 @@ func (p *PlayingNowService) trackToPlayView(track *models.Track) (*teal.AlphaFee
 
 // getStatusSwapRecord retrieves the current swap record (CID) for the actor status record.
 // Returns (nil, nil) if the record does not exist yet.
-func (p *PlayingNowService) getStatusSwapRecord(ctx context.Context, xrpcClient *oauth.XrpcClient, sess *models.ATprotoAuthSession, authArgs *oauth.XrpcAuthedRequestArgs) (*string, error) {
-	getOutput := atproto.RepoGetRecord_Output{}
-	if err := xrpcClient.Do(ctx, authArgs, xrpc.Query, "application/json", "com.atproto.repo.getRecord", map[string]any{
-		"repo":       sess.DID,
-		"collection": "fm.teal.alpha.actor.status",
-		"rkey":       "self",
-	}, nil, &getOutput); err != nil {
-		xErr, ok := err.(*xrpc.Error)
+func (p *PlayingNowService) getStatusSwapRecord(ctx context.Context, atApiClient *client.APIClient) (*string, error) {
+	result, err := comatproto.RepoGetRecord(ctx, atApiClient, "", "fm.teal.alpha.actor.status", atApiClient.AccountDID.String(), "self")
+
+	if err != nil {
+		xErr, ok := err.(*client.APIError)
 		if !ok {
-			return nil, fmt.Errorf("could not get record: %w", err)
+			return nil, fmt.Errorf("error getting the record: %w", err)
 		}
-		if xErr.StatusCode != 400 { // 400 means not found in this API
-			return nil, fmt.Errorf("could not get record: %w", err)
+		if xErr.StatusCode == 400 { // 400 means not found in this API, which would be the case if the record does not exist yet
+			return nil, nil
 		}
-		return nil, nil
+
+		return nil, fmt.Errorf("error getting the record: %w", err)
+
 	}
-	return getOutput.Cid, nil
+	return result.Cid, nil
 }

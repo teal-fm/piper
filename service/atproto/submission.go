@@ -6,37 +6,24 @@ import (
 	"log"
 	"time"
 
-	"github.com/bluesky-social/indigo/api/atproto"
+	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	lexutil "github.com/bluesky-social/indigo/lex/util"
-	"github.com/bluesky-social/indigo/xrpc"
 	"github.com/spf13/viper"
 	"github.com/teal-fm/piper/api/teal"
-	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
 	atprotoauth "github.com/teal-fm/piper/oauth/atproto"
 )
 
 // SubmitPlayToPDS submits a track play to the ATProto PDS as a feed.play record
-func SubmitPlayToPDS(ctx context.Context, did string, track *models.Track, atprotoService *atprotoauth.ATprotoAuthService) error {
+func SubmitPlayToPDS(ctx context.Context, did string, mostRecentAtProtoSessionID string, track *models.Track, atprotoService *atprotoauth.ATprotoAuthService) error {
 	if did == "" {
 		return fmt.Errorf("DID cannot be empty")
 	}
 
 	// Get ATProto client
-	client, err := atprotoService.GetATProtoClient()
+	client, err := atprotoService.GetATProtoClient(did, mostRecentAtProtoSessionID, ctx)
 	if err != nil || client == nil {
 		return fmt.Errorf("failed to get ATProto client: %w", err)
-	}
-
-	xrpcClient := atprotoService.GetXrpcClient()
-	if xrpcClient == nil {
-		return fmt.Errorf("xrpc client is not available")
-	}
-
-	// Get user session
-	sess, err := atprotoService.DB.GetAtprotoSession(did, ctx, *client)
-	if err != nil {
-		return fmt.Errorf("couldn't get Atproto session for DID %s: %w", did, err)
 	}
 
 	// Convert track to feed.play record
@@ -46,15 +33,13 @@ func SubmitPlayToPDS(ctx context.Context, did string, track *models.Track, atpro
 	}
 
 	// Create the record
-	input := atproto.RepoCreateRecord_Input{
+	input := comatproto.RepoCreateRecord_Input{
 		Collection: "fm.teal.alpha.feed.play",
-		Repo:       sess.DID,
+		Repo:       client.AccountDID.String(),
 		Record:     &lexutil.LexiconTypeDecoder{Val: playRecord},
 	}
 
-	authArgs := db.AtpSessionToAuthArgs(sess)
-	var out atproto.RepoCreateRecord_Output
-	if err := xrpcClient.Do(ctx, authArgs, xrpc.Procedure, "application/json", "com.atproto.repo.createRecord", nil, input, &out); err != nil {
+	if _, err := comatproto.RepoCreateRecord(ctx, client, &input); err != nil {
 		return fmt.Errorf("failed to create play record for DID %s: %w", did, err)
 	}
 

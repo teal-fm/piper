@@ -6,23 +6,19 @@ import (
 	"log"
 	"net/http"
 	"sync"
-
-	"github.com/teal-fm/piper/session"
 )
 
 // manages multiple oauth client services
 type OAuthServiceManager struct {
-	services       map[string]AuthService
-	sessionManager *session.SessionManager
-	mu             sync.RWMutex
-	logger         *log.Logger
+	services map[string]AuthService
+	mu       sync.RWMutex
+	logger   *log.Logger
 }
 
-func NewOAuthServiceManager(sessionManager *session.SessionManager) *OAuthServiceManager {
+func NewOAuthServiceManager() *OAuthServiceManager {
 	return &OAuthServiceManager{
-		services:       make(map[string]AuthService),
-		sessionManager: sessionManager,
-		logger:         log.New(log.Writer(), "oauth: ", log.LstdFlags|log.Lmsgprefix),
+		services: make(map[string]AuthService),
+		logger:   log.New(log.Writer(), "oauth: ", log.LstdFlags|log.Lmsgprefix),
 	}
 }
 
@@ -58,6 +54,22 @@ func (m *OAuthServiceManager) HandleLogin(serviceName string) http.HandlerFunc {
 	}
 }
 
+func (m *OAuthServiceManager) HandleLogout(serviceName string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		m.mu.RLock()
+		service, exists := m.services[serviceName]
+		m.mu.RUnlock()
+
+		if exists {
+			service.HandleLogout(w, r)
+			return
+		}
+
+		m.logger.Printf("Auth service '%s' not found for login request", serviceName)
+		http.Error(w, fmt.Sprintf("Auth service '%s' not found", serviceName), http.StatusNotFound)
+	}
+}
+
 func (m *OAuthServiceManager) HandleCallback(serviceName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		m.mu.RLock()
@@ -81,11 +93,6 @@ func (m *OAuthServiceManager) HandleCallback(serviceName string) http.HandlerFun
 		}
 
 		if userID > 0 {
-			session := m.sessionManager.CreateSession(userID)
-
-			m.sessionManager.SetSessionCookie(w, session)
-
-			m.logger.Printf("Created session for user %d via service %s", userID, serviceName)
 
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 		} else {

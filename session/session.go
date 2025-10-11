@@ -17,13 +17,15 @@ import (
 
 // session/session.go
 type Session struct {
-	ID                  string
-	UserID              int64
-	ATprotoDID          string
-	ATprotoAccessToken  string
-	ATprotoRefreshToken string
-	CreatedAt           time.Time
-	ExpiresAt           time.Time
+
+	//need to re work this. May add onto it for atproto oauth. But need to be careful about that expiresd
+	//Maybe a speerate oauth session store table and it has a created date? yeah do that then can look it up by session id from this table for user actions
+
+	ID               string
+	UserID           int64
+	ATProtoSessionID string
+	CreatedAt        time.Time
+	ExpiresAt        time.Time
 }
 
 type SessionManager struct {
@@ -38,7 +40,8 @@ func NewSessionManager(database *db.DB) *SessionManager {
 	_, err := database.Exec(`
 	CREATE TABLE IF NOT EXISTS sessions (
 		id TEXT PRIMARY KEY,
-		user_id INTEGER NOT NULL,
+		user_id INTEGER NOT NULL,		
+		at_proto_session_id TEXT NOT NULL,
 		created_at TIMESTAMP,
 		expires_at TIMESTAMP,
 		FOREIGN KEY (user_id) REFERENCES users(id)
@@ -58,7 +61,7 @@ func NewSessionManager(database *db.DB) *SessionManager {
 }
 
 // create a new session for a user
-func (sm *SessionManager) CreateSession(userID int64) *Session {
+func (sm *SessionManager) CreateSession(userID int64, atProtoSessionId string) *Session {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -71,10 +74,11 @@ func (sm *SessionManager) CreateSession(userID int64) *Session {
 	expiresAt := now.Add(24 * time.Hour) // 24-hour session
 
 	session := &Session{
-		ID:        sessionID,
-		UserID:    userID,
-		CreatedAt: now,
-		ExpiresAt: expiresAt,
+		ID:               sessionID,
+		UserID:           userID,
+		ATProtoSessionID: atProtoSessionId,
+		CreatedAt:        now,
+		ExpiresAt:        expiresAt,
 	}
 
 	// store session in memory
@@ -83,9 +87,9 @@ func (sm *SessionManager) CreateSession(userID int64) *Session {
 	// store session in database if available
 	if sm.db != nil {
 		_, err := sm.db.Exec(`
-		INSERT INTO sessions (id, user_id, created_at, expires_at)
-		VALUES (?, ?, ?, ?)`,
-			sessionID, userID, now, expiresAt)
+		INSERT INTO sessions (id, user_id, at_proto_session_id, created_at, expires_at)
+		VALUES (?, ?, ?, ?, ?)`,
+			sessionID, userID, atProtoSessionId, now, expiresAt)
 
 		if err != nil {
 			log.Printf("Error storing session in database: %v", err)
@@ -116,9 +120,9 @@ func (sm *SessionManager) GetSession(sessionID string) (*Session, bool) {
 		session = &Session{ID: sessionID}
 
 		err := sm.db.QueryRow(`
-		SELECT user_id, created_at, expires_at
+		SELECT user_id, at_proto_session_id, created_at, expires_at
 		FROM sessions WHERE id = ?`, sessionID).Scan(
-			&session.UserID, &session.CreatedAt, &session.ExpiresAt)
+			&session.UserID, &session.ATProtoSessionID, &session.CreatedAt, &session.ExpiresAt)
 
 		if err != nil {
 			return nil, false
@@ -178,17 +182,6 @@ func (sm *SessionManager) ClearSessionCookie(w http.ResponseWriter) {
 		MaxAge:   -1,
 	}
 	http.SetCookie(w, cookie)
-}
-
-func (sm *SessionManager) HandleLogout(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("session")
-	if err == nil {
-		sm.DeleteSession(cookie.Value)
-	}
-
-	sm.ClearSessionCookie(w)
-
-	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (sm *SessionManager) GetAPIKeyManager() *apikey.ApiKeyManager {
