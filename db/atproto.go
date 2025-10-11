@@ -113,37 +113,54 @@ func joinScopes(scopes []string) string {
 
 func (s *SqliteATProtoStore) GetSession(ctx context.Context, did syntax.DID, sessionID string) (*oauth.ClientSessionData, error) {
 	lookUpKey := sessionKey(did, sessionID)
-	session := oauth.ClientSessionData{}
+
+	var (
+		accountDIDStr                string
+		lookUpKeyStr                 string
+		sessionIDStr                 string
+		hostURL                      string
+		authServerURL                string
+		authServerTokenEndpoint      string
+		authServerRevocationEndpoint string
+		scopesStr                    string
+		accessToken                  string
+		refreshToken                 string
+		dpopAuthServerNonce          string
+		dpopHostNonce                string
+		dpopPrivateKeyMultibase      string
+	)
+
 	err := s.db.QueryRow(`
-	SELECT *	
-		account_did,
-	    look_up_key,
-		session_id,
-		host_url,
-		authserver_url,
-		authserver_token_endpoint,
-		authserver_revocation_endpoint,
-		scopes,
-		access_token,
-		refresh_token,
-		dpop_authserver_nonce,
-		dpop_host_nonce,
-		dpop_privatekey_multibase,
-	FROM atproto_sessions 
-	WHERE look_up_key = ?`, lookUpKey).Scan(
-		//TODO This may error out?
-		session.AccountDID,
-		session.SessionID,
-		session.HostURL,
-		session.AuthServerURL,
-		session.AuthServerTokenEndpoint,
-		session.AuthServerRevocationEndpoint,
-		session.Scopes,
-		session.AccessToken,
-		session.RefreshToken,
-		session.DPoPAuthServerNonce,
-		session.DPoPHostNonce,
-		session.DPoPPrivateKeyMultibase)
+		SELECT account_did,
+		       look_up_key,
+		       session_id,
+		       host_url,
+		       authserver_url,
+		       authserver_token_endpoint,
+		       authserver_revocation_endpoint,
+		       scopes,
+		       access_token,
+		       refresh_token,
+		       dpop_authserver_nonce,
+		       dpop_host_nonce,
+		       dpop_privatekey_multibase
+		FROM atproto_sessions
+		WHERE look_up_key = ?
+	`, lookUpKey).Scan(
+		&accountDIDStr,
+		&lookUpKeyStr,
+		&sessionIDStr,
+		&hostURL,
+		&authServerURL,
+		&authServerTokenEndpoint,
+		&authServerRevocationEndpoint,
+		&scopesStr,
+		&accessToken,
+		&refreshToken,
+		&dpopAuthServerNonce,
+		&dpopHostNonce,
+		&dpopPrivateKeyMultibase,
+	)
 
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session not found: %s", lookUpKey)
@@ -152,13 +169,31 @@ func (s *SqliteATProtoStore) GetSession(ctx context.Context, did syntax.DID, ses
 		return nil, err
 	}
 
-	return &session, nil
+	accDID, err := syntax.ParseDID(accountDIDStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid account DID in session: %w", err)
+	}
+
+	sess := oauth.ClientSessionData{
+		AccountDID:                   accDID,
+		SessionID:                    sessionIDStr,
+		HostURL:                      hostURL,
+		AuthServerURL:                authServerURL,
+		AuthServerTokenEndpoint:      authServerTokenEndpoint,
+		AuthServerRevocationEndpoint: authServerRevocationEndpoint,
+		Scopes:                       splitScopes(scopesStr),
+		AccessToken:                  accessToken,
+		RefreshToken:                 refreshToken,
+		DPoPAuthServerNonce:          dpopAuthServerNonce,
+		DPoPHostNonce:                dpopHostNonce,
+		DPoPPrivateKeyMultibase:      dpopPrivateKeyMultibase,
+	}
+
+	return &sess, nil
 }
 
 func (s *SqliteATProtoStore) SaveSession(ctx context.Context, sess oauth.ClientSessionData) error {
 	lookUpKey := sessionKey(sess.AccountDID, sess.SessionID)
-	// simple upsert: delete then insert
-	_, _ = s.db.Exec(`DELETE FROM atproto_sessions WHERE look_up_key = ?`, lookUpKey)
 	_, err := s.db.Exec(`
 		INSERT INTO atproto_sessions (
 			look_up_key,
@@ -175,6 +210,19 @@ func (s *SqliteATProtoStore) SaveSession(ctx context.Context, sess oauth.ClientS
 			dpop_host_nonce,
 			dpop_privatekey_multibase
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(look_up_key) DO UPDATE SET
+			account_did = excluded.account_did,
+			session_id = excluded.session_id,
+			host_url = excluded.host_url,
+			authserver_url = excluded.authserver_url,
+			authserver_token_endpoint = excluded.authserver_token_endpoint,
+			authserver_revocation_endpoint = excluded.authserver_revocation_endpoint,
+			scopes = excluded.scopes,
+			access_token = excluded.access_token,
+			refresh_token = excluded.refresh_token,
+			dpop_authserver_nonce = excluded.dpop_authserver_nonce,
+			dpop_host_nonce = excluded.dpop_host_nonce,
+			dpop_privatekey_multibase = excluded.dpop_privatekey_multibase
 	`,
 		lookUpKey,
 		sess.AccountDID.String(),
@@ -192,7 +240,6 @@ func (s *SqliteATProtoStore) SaveSession(ctx context.Context, sess oauth.ClientS
 	)
 	return err
 }
-
 func (s *SqliteATProtoStore) DeleteSession(ctx context.Context, did syntax.DID, sessionID string) error {
 	lookUpKey := sessionKey(did, sessionID)
 	_, err := s.db.Exec(`DELETE FROM atproto_sessions WHERE look_up_key = ?`, lookUpKey)
@@ -264,22 +311,13 @@ func (s *SqliteATProtoStore) GetAuthRequestInfo(ctx context.Context, state strin
 }
 
 func (s *SqliteATProtoStore) SaveAuthRequestInfo(ctx context.Context, info oauth.AuthRequestData) error {
-	// ensure not already exists
-	var exists int
-	err := s.db.QueryRow(`SELECT 1 FROM atproto_state WHERE state = ?`, info.State).Scan(&exists)
-	if err == nil {
-		return fmt.Errorf("auth request already saved for state %s", info.State)
-	}
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
 	var accountDIDStr interface{}
 	if info.AccountDID != nil {
 		accountDIDStr = info.AccountDID.String()
 	} else {
 		accountDIDStr = nil
 	}
-	_, err = s.db.Exec(`
+	_, err := s.db.Exec(`
 		INSERT INTO atproto_state (
 			state,
 			authserver_url,
@@ -292,6 +330,16 @@ func (s *SqliteATProtoStore) SaveAuthRequestInfo(ctx context.Context, info oauth
 			dpop_authserver_nonce,
 			dpop_privatekey_multibase
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(state) DO UPDATE SET
+			authserver_url = excluded.authserver_url,
+			account_did = excluded.account_did,
+			scopes = excluded.scopes,
+			request_uri = excluded.request_uri,
+			authserver_token_endpoint = excluded.authserver_token_endpoint,
+			authserver_revocation_endpoint = excluded.authserver_revocation_endpoint,
+			pkce_verifier = excluded.pkce_verifier,
+			dpop_authserver_nonce = excluded.dpop_authserver_nonce,
+			dpop_privatekey_multibase = excluded.dpop_privatekey_multibase
 	`,
 		info.State,
 		info.AuthServerURL,
