@@ -10,6 +10,7 @@ import (
 	"github.com/bluesky-social/indigo/atproto/crypto"
 	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/teal-fm/piper/db"
+
 	"github.com/teal-fm/piper/session"
 
 	"log"
@@ -28,7 +29,7 @@ type ATprotoAuthService struct {
 	logger         *log.Logger
 }
 
-func NewATprotoAuthService(db *db.DB, sessionManager *session.SessionManager, clientSecretKey string, clientId string, callbackUrl string, clientSecretId string) (*ATprotoAuthService, error) {
+func NewATprotoAuthService(database *db.DB, sessionManager *session.SessionManager, clientSecretKey string, clientId string, callbackUrl string, clientSecretId string) (*ATprotoAuthService, error) {
 	fmt.Println(clientId, callbackUrl)
 
 	scopes := []string{"atproto", "repo:fm.teal.alpha.feed.play", "repo:fm.teal.alpha.actor.status"}
@@ -44,16 +45,14 @@ func NewATprotoAuthService(db *db.DB, sessionManager *session.SessionManager, cl
 		return nil, err
 	}
 
-	//TODO write a sqlite store
-
-	oauthClient := oauth.NewClientApp(&config, oauth.NewMemStore())
+	oauthClient := oauth.NewClientApp(&config, db.NewSqliteATProtoStore(database.DB))
 
 	logger := log.New(os.Stdout, "ATProto oauth: ", log.LstdFlags|log.Lmsgprefix)
 
 	svc := &ATprotoAuthService{
 		clientApp:      oauthClient,
 		callbackUrl:    callbackUrl,
-		DB:             db,
+		DB:             database,
 		sessionManager: sessionManager,
 		clientId:       clientId,
 		logger:         logger,
