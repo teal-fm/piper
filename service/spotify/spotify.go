@@ -84,7 +84,7 @@ func (s *SpotifyService) SubmitTrackToPDS(did string, mostRecentAtProtoSessionID
 	playedTimeStr := track.Timestamp.Format(time.RFC3339)
 	submissionAgent := viper.GetString("app.submission_agent")
 	if submissionAgent == "" {
-		submissionAgent = "piper/v0.0.1" // Default if not configured
+		submissionAgent = "piper/v0.0.2" // Default if not configured
 	}
 
 	//Had a empty feed.play get submitted not sure why. Tracking here

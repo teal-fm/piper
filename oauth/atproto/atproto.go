@@ -98,7 +98,7 @@ func (a *ATprotoAuthService) HandleLogin(w http.ResponseWriter, r *http.Request)
 
 func (a *ATprotoAuthService) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("session")
-	//TODO should we clear atproto oauth session as well?
+
 	if err == nil {
 		session, exists := a.sessionManager.GetSession(cookie.Value)
 		if !exists {

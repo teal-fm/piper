@@ -59,20 +59,18 @@ func main() {
 	sessionManager := session.NewSessionManager(database)
 
 	// --- Service Initializations ---
-	//jwksBytes, err := os.ReadFile("./jwks.json")
-	//if err != nil {
-	//	// run `make jwtgen`
-	//	log.Fatalf("Error reading JWK file: %v", err)
-	//}
-	//jwks, err := atproto.LoadJwks(jwksBytes)
-	//if err != nil {
-	//	log.Fatalf("Error loading JWK: %v", err)
-	//}
-	//TODO rename after it's all moved over
+
 	var newJwkPrivateKey = viper.GetString("atproto.client_secret_key")
-	//TODO add in a way to generate the client_key_id, which is just a timestamp something unquie
-	//Ideally should have a way to generate both of these. Prob just shell commands?
-	var clientSecretKeyId = "1758199756"
+	if newJwkPrivateKey == "" {
+		fmt.Printf("You now have to set the ATPROTO_CLIENT_SECRET_KEY env var to a private key. This can be done via goat key generate -t P-256")
+		return
+	}
+	var clientSecretKeyId = viper.GetString("atproto.client_secret_key_id")
+	if clientSecretKeyId == "" {
+		fmt.Printf("You also now have to set the ATPROTO_CLIENT_SECRET_KEY_ID env var to a key ID. This needs to be persistent and unique. Here's one for you: %d", time.Now().Unix())
+		return
+	}
+
 	atprotoService, err := atproto.NewATprotoAuthService(
 		database,
 		sessionManager,

@@ -216,7 +216,7 @@ func (p *PlayingNowService) trackToPlayView(track *models.Track) (*teal.AlphaFee
 	// Get submission client agent
 	submissionAgent := viper.GetString("app.submission_agent")
 	if submissionAgent == "" {
-		submissionAgent = "piper/v0.0.1"
+		submissionAgent = "piper/v0.0.2"
 	}
 
 	playView := &teal.AlphaFeedDefs_PlayView{
