@@ -13,13 +13,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bluesky-social/indigo/api/atproto"
+	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	lexutil "github.com/bluesky-social/indigo/lex/util"
 	"github.com/spf13/viper"
 	"github.com/teal-fm/piper/api/teal"
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
 	atprotoauth "github.com/teal-fm/piper/oauth/atproto"
+
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"golang.org/x/time/rate"
 )
@@ -461,14 +462,13 @@ func (l *LastFMService) SubmitTrackToPDS(did string, mostRecentAtProtoSessionID 
 		SubmissionClientAgent: &submissionAgent,    // Pointer required
 	}
 
-	input := atproto.RepoCreateRecord_Input{
+	input := comatproto.RepoCreateRecord_Input{
 		Collection: "fm.teal.alpha.feed.play",
 		Repo:       client.AccountDID.String(),
 		Record:     &lexutil.LexiconTypeDecoder{Val: &tfmTrack},
 	}
 
-	var out atproto.RepoCreateRecord_Output
-	if err := client.Post(ctx, "com.atproto.repo.createRecord", input, &out); err != nil {
+	if _, err := comatproto.RepoCreateRecord(ctx, client, &input); err != nil {
 		return err
 	}
 

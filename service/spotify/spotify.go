@@ -16,7 +16,8 @@ import (
 
 	"context" // Added for context.Context
 
-	"github.com/bluesky-social/indigo/api/atproto"      // Added for atproto.RepoCreateRecord_Input
+	comatproto "github.com/bluesky-social/indigo/api/atproto"
+
 	lexutil "github.com/bluesky-social/indigo/lex/util" // Added for lexutil.LexiconTypeDecoder
 	"github.com/spf13/viper"
 	"github.com/teal-fm/piper/api/teal" // Added for teal.AlphaFeedPlay
@@ -108,19 +109,19 @@ func (s *SpotifyService) SubmitTrackToPDS(did string, mostRecentAtProtoSessionID
 		SubmissionClientAgent: &submissionAgent,
 	}
 
-	input := atproto.RepoCreateRecord_Input{
+	input := comatproto.RepoCreateRecord_Input{
 		Collection: "fm.teal.alpha.feed.play", // Ensure this collection is correct
 		Repo:       client.AccountDID.String(),
 		Record:     &lexutil.LexiconTypeDecoder{Val: &tfmTrack},
 	}
 
-	var out atproto.RepoCreateRecord_Output
-	if err := client.Post(ctx, "com.atproto.repo.createRecord", input, &out); err != nil {
+	result, err := comatproto.RepoCreateRecord(ctx, client, &input)
+	if err != nil {
 		s.logger.Printf("Error creating record for DID %s: %v. Input: %+v", did, err, input)
 		return fmt.Errorf("failed to create record on PDS for DID %s: %w", did, err)
 	}
 
-	s.logger.Printf("Successfully submitted track '%s' to PDS for DID %s. Record URI: %s", track.Name, did, out.Uri)
+	s.logger.Printf("Successfully submitted track '%s' to PDS for DID %s. Record URI: %s", track.Name, did, result.Uri)
 	return nil
 }
 

@@ -8,13 +8,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/bluesky-social/indigo/api/atproto"
 	"github.com/bluesky-social/indigo/atproto/client"
 	lexutil "github.com/bluesky-social/indigo/lex/util"
 	"github.com/spf13/viper"
 
-	//oauth "github.com/haileyok/atproto-oauth-golang"
-	//"github.com/spf13/viper"
+	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	"github.com/teal-fm/piper/api/teal"
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
@@ -54,10 +52,10 @@ func (p *PlayingNowService) PublishPlayingNow(ctx context.Context, userID int64,
 
 	did := *user.ATProtoDID
 
-	// Get ATProto client
-	client, err := p.atprotoService.GetATProtoClient(did, *user.MostRecentAtProtoSessionID, ctx)
-	if err != nil || client == nil {
-		return fmt.Errorf("failed to get ATProto client: %w", err)
+	// Get ATProto atProtoClient
+	atProtoClient, err := p.atprotoService.GetATProtoClient(did, *user.MostRecentAtProtoSessionID, ctx)
+	if err != nil || atProtoClient == nil {
+		return fmt.Errorf("failed to get ATProto atProtoClient: %w", err)
 	}
 
 	// Convert track to PlayView format
@@ -78,23 +76,22 @@ func (p *PlayingNowService) PublishPlayingNow(ctx context.Context, userID int64,
 	}
 
 	var swapRecord *string
-	swapRecord, err = p.getStatusSwapRecord(ctx, client)
+	swapRecord, err = p.getStatusSwapRecord(ctx, atProtoClient)
 	if err != nil {
 		return err
 	}
 
 	// Create the record input
-	input := atproto.RepoPutRecord_Input{
+	input := comatproto.RepoPutRecord_Input{
 		Collection: "fm.teal.alpha.actor.status",
-		Repo:       client.AccountDID.String(),
+		Repo:       atProtoClient.AccountDID.String(),
 		Rkey:       "self", // Use "self" as the record key for current status
 		Record:     &lexutil.LexiconTypeDecoder{Val: status},
 		SwapRecord: swapRecord,
 	}
 
 	// Submit to PDS
-	var out atproto.RepoPutRecord_Output
-	if err := client.Post(ctx, "com.atproto.repo.putRecord", input, &out); err != nil {
+	if _, err := comatproto.RepoPutRecord(ctx, atProtoClient, &input); err != nil {
 		p.logger.Printf("Error creating playing now status for DID %s: %v", did, err)
 		return fmt.Errorf("failed to create playing now status for DID %s: %w", did, err)
 	}
@@ -121,9 +118,9 @@ func (p *PlayingNowService) ClearPlayingNow(ctx context.Context, userID int64) e
 	did := *user.ATProtoDID
 
 	// Get ATProto clients
-	client, err := p.atprotoService.GetATProtoClient(did, *user.MostRecentAtProtoSessionID, ctx)
-	if err != nil || client == nil {
-		return fmt.Errorf("failed to get ATProto client: %w", err)
+	atProtoClient, err := p.atprotoService.GetATProtoClient(did, *user.MostRecentAtProtoSessionID, ctx)
+	if err != nil || atProtoClient == nil {
+		return fmt.Errorf("failed to get ATProto atProtoClient: %w", err)
 	}
 
 	// Create an expired status (essentially clearing it)
@@ -144,22 +141,21 @@ func (p *PlayingNowService) ClearPlayingNow(ctx context.Context, userID int64) e
 	}
 
 	var swapRecord *string
-	swapRecord, err = p.getStatusSwapRecord(ctx, client)
+	swapRecord, err = p.getStatusSwapRecord(ctx, atProtoClient)
 	if err != nil {
 		return err
 	}
 
 	// Update the record
-	input := atproto.RepoPutRecord_Input{
+	input := comatproto.RepoPutRecord_Input{
 		Collection: "fm.teal.alpha.actor.status",
-		Repo:       client.AccountDID.String(),
+		Repo:       atProtoClient.AccountDID.String(),
 		Rkey:       "self",
 		Record:     &lexutil.LexiconTypeDecoder{Val: status},
 		SwapRecord: swapRecord,
 	}
 
-	var out atproto.RepoPutRecord_Output
-	if err := client.Post(ctx, "com.atproto.repo.putRecord", input, &out); err != nil {
+	if _, err := comatproto.RepoPutRecord(ctx, atProtoClient, &input); err != nil {
 		p.logger.Printf("Error clearing playing now status for DID %s: %v", did, err)
 		return fmt.Errorf("failed to clear playing now status for DID %s: %w", did, err)
 	}
@@ -243,12 +239,8 @@ func (p *PlayingNowService) trackToPlayView(track *models.Track) (*teal.AlphaFee
 // getStatusSwapRecord retrieves the current swap record (CID) for the actor status record.
 // Returns (nil, nil) if the record does not exist yet.
 func (p *PlayingNowService) getStatusSwapRecord(ctx context.Context, atApiClient *client.APIClient) (*string, error) {
-	getOutput := atproto.RepoGetRecord_Output{}
-	err := atApiClient.Get(ctx, "com.atproto.repo.getRecord", map[string]any{
-		"repo":       atApiClient.AccountDID.String(),
-		"collection": "fm.teal.alpha.actor.status",
-		"rkey":       "self",
-	}, getOutput)
+	result, err := comatproto.RepoGetRecord(ctx, atApiClient, "", "fm.teal.alpha.actor.status", atApiClient.AccountDID.String(), "self")
+
 	if err != nil {
 		xErr, ok := err.(*client.APIError)
 		if !ok {
@@ -261,5 +253,5 @@ func (p *PlayingNowService) getStatusSwapRecord(ctx context.Context, atApiClient
 		return nil, fmt.Errorf("error getting the record: %w", err)
 
 	}
-	return getOutput.Cid, nil
+	return result.Cid, nil
 }
