@@ -54,6 +54,22 @@ func (m *OAuthServiceManager) HandleLogin(serviceName string) http.HandlerFunc {
 	}
 }
 
+func (m *OAuthServiceManager) HandleLogout(serviceName string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		m.mu.RLock()
+		service, exists := m.services[serviceName]
+		m.mu.RUnlock()
+
+		if exists {
+			service.HandleLogout(w, r)
+			return
+		}
+
+		m.logger.Printf("Auth service '%s' not found for login request", serviceName)
+		http.Error(w, fmt.Sprintf("Auth service '%s' not found", serviceName), http.StatusNotFound)
+	}
+}
+
 func (m *OAuthServiceManager) HandleCallback(serviceName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		m.mu.RLock()

@@ -11,7 +11,6 @@ import (
 	"github.com/bluesky-social/indigo/api/atproto"
 	"github.com/bluesky-social/indigo/atproto/client"
 	lexutil "github.com/bluesky-social/indigo/lex/util"
-	"github.com/bluesky-social/indigo/xrpc"
 	"github.com/spf13/viper"
 
 	//oauth "github.com/haileyok/atproto-oauth-golang"
@@ -245,19 +244,22 @@ func (p *PlayingNowService) trackToPlayView(track *models.Track) (*teal.AlphaFee
 // Returns (nil, nil) if the record does not exist yet.
 func (p *PlayingNowService) getStatusSwapRecord(ctx context.Context, atApiClient *client.APIClient) (*string, error) {
 	getOutput := atproto.RepoGetRecord_Output{}
-	if err := atApiClient.Get(ctx, "com.atproto.repo.getRecord", map[string]any{
+	err := atApiClient.Get(ctx, "com.atproto.repo.getRecord", map[string]any{
 		"repo":       atApiClient.AccountDID.String(),
 		"collection": "fm.teal.alpha.actor.status",
 		"rkey":       "self",
-	}, nil); err != nil {
-		xErr, ok := err.(*xrpc.Error)
+	}, getOutput)
+	if err != nil {
+		xErr, ok := err.(*client.APIError)
 		if !ok {
-			return nil, fmt.Errorf("could not get record: %w", err)
+			return nil, fmt.Errorf("error getting the record: %w", err)
 		}
-		if xErr.StatusCode != 400 { // 400 means not found in this API
-			return nil, fmt.Errorf("could not get record: %w", err)
+		if xErr.StatusCode == 400 { // 400 means not found in this API, which would be the case if the record does not exist yet
+			return nil, nil
 		}
-		return nil, nil
+
+		return nil, fmt.Errorf("error getting the record: %w", err)
+
 	}
 	return getOutput.Cid, nil
 }

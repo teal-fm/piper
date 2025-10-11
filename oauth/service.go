@@ -10,6 +10,8 @@ type AuthService interface {
 	// handles the callback for the provider. is responsible for inserting
 	// sessions in the db
 	HandleCallback(w http.ResponseWriter, r *http.Request) (int64, error)
+
+	HandleLogout(w http.ResponseWriter, r *http.Request)
 }
 
 // optional but recommended

@@ -31,7 +31,7 @@ type ATprotoAuthService struct {
 func NewATprotoAuthService(db *db.DB, sessionManager *session.SessionManager, clientSecretKey string, clientId string, callbackUrl string, clientSecretId string) (*ATprotoAuthService, error) {
 	fmt.Println(clientId, callbackUrl)
 
-	scopes := []string{"atproto", "repo:fm.teal.*"}
+	scopes := []string{"atproto", "repo:fm.teal.alpha.feed.play", "repo:fm.teal.alpha.actor.status"}
 
 	var config oauth.ClientConfig
 	config = oauth.NewPublicConfig(clientId, callbackUrl, scopes)
@@ -47,15 +47,6 @@ func NewATprotoAuthService(db *db.DB, sessionManager *session.SessionManager, cl
 	//TODO write a sqlite store
 	oauthClient := oauth.NewClientApp(&config, oauth.NewMemStore())
 
-	//cli, err := oldoauth.NewClient(oldoauth.ClientArgs{
-	//	ClientJwk:   jwks,
-	//	ClientId:    clientId,
-	//	RedirectUri: callbackUrl,
-	//})
-	//if err != nil {
-	//	return nil, fmt.Errorf("failed to create atproto oldoauth client: %w", err)
-	//}
-
 	logger := log.New(os.Stdout, "ATProto oauth: ", log.LstdFlags|log.Lmsgprefix)
 
 	svc := &ATprotoAuthService{
@@ -66,7 +57,6 @@ func NewATprotoAuthService(db *db.DB, sessionManager *session.SessionManager, cl
 		clientId:       clientId,
 		logger:         logger,
 	}
-	//svc.NewXrpcClient()
 	return svc, nil
 }
 
@@ -102,6 +92,42 @@ func (a *ATprotoAuthService) HandleLogin(w http.ResponseWriter, r *http.Request)
 
 	a.logger.Printf("ATProto Login: Redirecting user %s to %s", handle, authUrl.String())
 	http.Redirect(w, r, authUrl.String(), http.StatusFound)
+}
+
+func (a *ATprotoAuthService) HandleLogout(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("session")
+	//TODO should we clear atproto oauth session as well?
+	if err == nil {
+		session, exists := a.sessionManager.GetSession(cookie.Value)
+		if !exists {
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+
+		dbUser, err := a.DB.GetUserByID(session.UserID)
+		if err != nil {
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+		did, err := syntax.ParseDID(*dbUser.ATProtoDID)
+
+		if err != nil {
+			a.logger.Printf("Should not happen: %s", err)
+			a.sessionManager.ClearSessionCookie(w)
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+		}
+
+		ctx := r.Context()
+		err = a.clientApp.Logout(ctx, did, session.ATProtoSessionID)
+		if err != nil {
+			a.logger.Printf("Error logging the user: %s out: %s", did, err)
+		}
+		a.sessionManager.DeleteSession(cookie.Value)
+	}
+
+	a.sessionManager.ClearSessionCookie(w)
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (a *ATprotoAuthService) getLoginUrlAndSaveState(ctx context.Context, handle string) (*url.URL, error) {
@@ -143,7 +169,8 @@ func (a *ATprotoAuthService) HandleCallback(w http.ResponseWriter, r *http.Reque
 	//This is piper's session for manging piper, not atproto sessions
 	createdSession := a.sessionManager.CreateSession(user.ID, sessData.SessionID)
 	a.sessionManager.SetSessionCookie(w, createdSession)
-	a.logger.Printf("Created session for user %d via service atproto", user)
+	a.logger.Printf("Created session for user %d via service atproto", user.ATProtoDID)
+
 	err = a.DB.SetLatestATProtoSessionId(sessData.AccountDID.String(), sessData.SessionID)
 	if err != nil {
 		a.logger.Printf("Failed to set latest atproto session id for user %d: %v", user.ID, err)

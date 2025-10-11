@@ -184,18 +184,6 @@ func (sm *SessionManager) ClearSessionCookie(w http.ResponseWriter) {
 	http.SetCookie(w, cookie)
 }
 
-func (sm *SessionManager) HandleLogout(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("session")
-	//TODO should we clear atproto oauth session as well?
-	if err == nil {
-		sm.DeleteSession(cookie.Value)
-	}
-
-	sm.ClearSessionCookie(w)
-
-	http.Redirect(w, r, "/", http.StatusSeeOther)
-}
-
 func (sm *SessionManager) GetAPIKeyManager() *apikey.ApiKeyManager {
 	return sm.apiKeyMgr
 }
