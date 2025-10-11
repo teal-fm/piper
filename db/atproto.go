@@ -1,10 +1,13 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
 
+	"github.com/bluesky-social/indigo/atproto/auth/oauth"
+	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/teal-fm/piper/models"
 )
 
@@ -135,152 +138,62 @@ func (db *DB) SetLatestATProtoSessionId(did string, atProtoSessionID string) err
 	return nil
 }
 
-//// create or update the current user's ATproto session data.
-//func (db *DB) SaveATprotoSession(tokenResp *oauth.TokenResponse, authserverIss string, dpopPrivateJWK jwk.Key, pdsUrl string) error {
-//	db.logger.Printf("Saving session with PDS url %s", pdsUrl)
-//	expiryTime := time.Now().UTC().Add(time.Second * time.Duration(tokenResp.ExpiresIn))
-//	now := time.Now().UTC()
-//
-//	dpopPrivateJWKBytes, err := json.Marshal(dpopPrivateJWK)
-//	if err != nil {
-//		return err
-//	}
-//
-//	result, err := db.Exec(`
-//		UPDATE users
-//		SET atproto_access_token = ?,
-//			atproto_refresh_token = ?,
-//			atproto_token_expiry = ?,
-//			atproto_scope = ?,
-//			atproto_sub = ?,
-//			atproto_authserver_issuer = ?,
-//			atproto_token_type = ?,
-//			atproto_authserver_nonce = ?,
-//			atproto_dpop_private_jwk = ?,
-//			atproto_pds_url = ?,
-//			atproto_pds_nonce = ?,
-//			updated_at = ?
-//		WHERE atproto_did = ?`,
-//		tokenResp.AccessToken,
-//		tokenResp.RefreshToken,
-//		expiryTime,
-//		tokenResp.Scope,
-//		tokenResp.Sub,
-//		authserverIss,
-//		tokenResp.TokenType,
-//		tokenResp.DpopAuthserverNonce,
-//		string(dpopPrivateJWKBytes),
-//		pdsUrl,
-//		// will get set later
-//		"",
-//		now,
-//		tokenResp.Sub,
-//	)
-//
-//	if err != nil {
-//		return fmt.Errorf("failed to update atproto session for did %s: %w", tokenResp.Sub, err)
-//	}
-//
-//	rowsAffected, err := result.RowsAffected()
-//	if err != nil {
-//		// it's possible the update succeeded here?
-//		return fmt.Errorf("failed to check rows affected after updating atproto session for did %s: %w", tokenResp.Sub, err)
-//	}
-//
-//	if rowsAffected == 0 {
-//		return fmt.Errorf("no user found with did %s to update session, creating new session", tokenResp.Sub)
-//	}
-//
-//	return nil
-//}
+type SqliteATProtoStore struct {
+	db *sql.DB
+}
 
-//func (db *DB) GetAtprotoSession(did string, ctx context.Context, oauthClient oauth.Client) (*models.ATprotoAuthSession, error) {
-//	var oauthSession models.ATprotoAuthSession
-//	var authserverIss string
-//	var jwkBytes string
-//
-//	err := db.QueryRow(
-//		`
-//		SELECT id,
-//		       atproto_did,
-//		       atproto_pds_url,
-//		       atproto_authserver_issuer,
-//		       atproto_access_token,
-//		       atproto_refresh_token,
-//		       atproto_pds_nonce,
-//		       atproto_authserver_nonce,
-//		       atproto_dpop_private_jwk,
-//		       atproto_token_expiry
-//		FROM users
-//		WHERE atproto_did = ?`,
-//		did,
-//	).Scan(
-//		&oauthSession.ID,
-//		&oauthSession.DID,
-//		&oauthSession.PDSUrl,
-//		&authserverIss,
-//		&oauthSession.AccessToken,
-//		&oauthSession.RefreshToken,
-//		&oauthSession.DpopPdsNonce,
-//		&oauthSession.DpopAuthServerNonce,
-//		&jwkBytes,
-//		&oauthSession.TokenExpiry,
-//	)
-//
-//	if err != nil {
-//		return nil, fmt.Errorf("failed to get atproto session for did %s: %w", did, err)
-//	}
-//
-//	privateJwk, err := helpers.ParseJWKFromBytes([]byte(jwkBytes))
-//	if err != nil {
-//		return nil, fmt.Errorf("failed to parse DPoPPrivateJWK: %w", err)
-//	} else {
-//		// add jwk to the struct
-//		oauthSession.DpopPrivateJWK = privateJwk
-//	}
-//
-//	// printout the session details
-//	db.logger.Printf("Getting session details for the did: %+v\n", oauthSession.DID)
-//
-//	// if token is expired, refresh it
-//	if time.Now().UTC().After(oauthSession.TokenExpiry) {
-//
-//		resp, err := oauthClient.RefreshTokenRequest(ctx, oauthSession.RefreshToken, authserverIss, oauthSession.DpopAuthServerNonce, privateJwk)
-//		if err != nil {
-//			return nil, err
-//		}
-//
-//		if err := db.SaveATprotoSession(resp, authserverIss, privateJwk, oauthSession.PDSUrl); err != nil {
-//			return nil, fmt.Errorf("failed to save refreshed token: %w", err)
-//		}
-//
-//		oauthSession = models.ATprotoAuthSession{
-//			ID:                  oauthSession.ID,
-//			DID:                 oauthSession.DID,
-//			PDSUrl:              oauthSession.PDSUrl,
-//			AuthServerIssuer:    authserverIss,
-//			AccessToken:         resp.AccessToken,
-//			RefreshToken:        resp.RefreshToken,
-//			DpopPdsNonce:        oauthSession.DpopPdsNonce,
-//			DpopAuthServerNonce: resp.DpopAuthserverNonce,
-//			DpopPrivateJWK:      privateJwk,
-//			TokenExpiry:         time.Now().UTC().Add(time.Duration(resp.ExpiresIn) * time.Second),
-//		}
-//
-//	}
-//
-//	return &oauthSession, nil
-//}
+var _ *oauth.ClientAuthStore = &SqliteATProtoStore{}
 
-//func AtpSessionToAuthArgs(sess *models.ATprotoAuthSession) *oauth.XrpcAuthedRequestArgs {
-//	//Commenting out so jwts and tokens are not in logs
-//	//fmt.Printf("DID: %s\nPDS URL: %s\nISS: %s\nAccess Token: %s\nNonce: %s\nPrivate JWK: %s\n", sess.DID, sess.PDSUrl, sess.AuthServerIssuer, sess.AccessToken, sess.DpopPdsNonce, sess.DpopPrivateJWK)
-//	return &oauth.XrpcAuthedRequestArgs{
-//		Did:            sess.DID,
-//		PdsUrl:         sess.PDSUrl,
-//		Issuer:         sess.AuthServerIssuer,
-//		AccessToken:    sess.AccessToken,
-//		DpopPdsNonce:   sess.DpopPdsNonce,
-//		DpopPrivateJwk: sess.DpopPrivateJWK,
-//	}
-//}
+func NewSqliteATProtoStore(db *sql.DB) *SqliteATProtoStore {
+	return &SqliteATProtoStore{
+		db: db,
+	}
+}
+
+func sessionKey(did syntax.DID, sessionID string) string {
+	return fmt.Sprintf("%s/%s", did, sessionID)
+}
+
+func (s *SqliteATProtoStore) GetSession(ctx context.Context, did syntax.DID, sessionID string) (*oauth.ClientSessionData, error) {
+	lookUpKey := sessionKey(did, sessionID)
+	session := oauth.ClientSessionData{}
+	err := s.db.QueryRow(`
+	SELECT *	
+		account_did,
+	    look_up_key,
+		session_id,
+		host_url,
+		authserver_url,
+		authserver_token_endpoint,
+		authserver_revocation_endpoint,
+		scopes,
+		access_token,
+		refresh_token,
+		dpop_authserver_nonce,
+		dpop_host_nonce,
+		dpop_privatekey_multibase,
+	FROM atproto_sessions 
+	WHERE look_up_key = ?`, lookUpKey).Scan(
+		session.AccountDID,
+		session.SessionID,
+		session.HostURL,
+		session.AuthServerURL,
+		session.AuthServerTokenEndpoint,
+		session.AuthServerRevocationEndpoint,
+		session.Scopes,
+		session.AccessToken,
+		session.RefreshToken,
+		session.DPoPAuthServerNonce,
+		session.DPoPHostNonce,
+		session.DPoPPrivateKeyMultibase)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &session, nil
+}

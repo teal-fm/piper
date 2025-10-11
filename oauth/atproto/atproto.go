@@ -45,6 +45,7 @@ func NewATprotoAuthService(db *db.DB, sessionManager *session.SessionManager, cl
 	}
 
 	//TODO write a sqlite store
+
 	oauthClient := oauth.NewClientApp(&config, oauth.NewMemStore())
 
 	logger := log.New(os.Stdout, "ATProto oauth: ", log.LstdFlags|log.Lmsgprefix)
@@ -82,12 +83,14 @@ func (a *ATprotoAuthService) HandleLogin(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "handle query parameter is required", http.StatusBadRequest)
 		return
 	}
-
-	authUrl, err := a.getLoginUrlAndSaveState(r.Context(), handle)
+	ctx := r.Context()
+	redirectURL, err := a.clientApp.StartAuthFlow(ctx, handle)
 	if err != nil {
-		a.logger.Printf("ATProto Login Error: Failed to get login URL for handle %s: %v", handle, err)
 		http.Error(w, fmt.Sprintf("Error initiating login: %v", err), http.StatusInternalServerError)
-		return
+	}
+	authUrl, err := url.Parse(redirectURL)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error initiating login: %v", err), http.StatusInternalServerError)
 	}
 
 	a.logger.Printf("ATProto Login: Redirecting user %s to %s", handle, authUrl.String())
@@ -128,19 +131,6 @@ func (a *ATprotoAuthService) HandleLogout(w http.ResponseWriter, r *http.Request
 	a.sessionManager.ClearSessionCookie(w)
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
-}
-
-func (a *ATprotoAuthService) getLoginUrlAndSaveState(ctx context.Context, handle string) (*url.URL, error) {
-
-	redirectURL, err := a.clientApp.StartAuthFlow(ctx, handle)
-	if err != nil {
-		return nil, fmt.Errorf("error creating oauth redirect url: %w", err)
-	}
-	parsedRedirectURL, err := url.Parse(redirectURL)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing oauth redirect url: %w", err)
-	}
-	return parsedRedirectURL, nil
 }
 
 func (a *ATprotoAuthService) HandleCallback(w http.ResponseWriter, r *http.Request) (int64, error) {

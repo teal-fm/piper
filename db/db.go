@@ -81,17 +81,47 @@ func (db *DB) Initialize() error {
 	}
 
 	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS atproto_auth_data (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		state TEXT NOT NULL,
-		did TEXT,
-		pds_url TEXT NOT NULL,
-		authserver_issuer TEXT NOT NULL,
-		pkce_verifier TEXT NOT NULL,
-		dpop_authserver_nonce TEXT NOT NULL,
-		dpop_private_jwk TEXT NOT NULL,
-		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-	)`)
+		CREATE TABLE IF NOT EXISTS atproto_state (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			state TEXT NOT NULL,
+			authserver_url TEXT,
+			account_did TEXT,
+			scopes TEXT,
+			request_uri TEXT,
+			authserver_token_endpoint TEXT,
+			authserver_revocation_endpoint TEXT,
+			pkce_verifier TEXT,
+			dpop_authserver_nonce TEXT,
+			dpop_privatekey_multibase TEXT,
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+	  CREATE INDEX IF NOT EXISTS atproto_state_state ON atproto_state(state);
+
+`)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS atproto_sessions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			look_up_key TEXT NOT NULL,
+			account_did TEXT,
+			session_id TEXT,
+			host_url TEXT,
+			authserver_url TEXT,
+			authserver_token_endpoint TEXT,
+			authserver_revocation_endpoint TEXT,
+			scopes TEXT,
+			access_token TEXT,
+			refresh_token TEXT,
+			dpop_authserver_nonce TEXT,
+			dpop_host_nonce TEXT,
+			dpop_privatekey_multibase TEXT,
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+	CREATE INDEX IF NOT EXISTS idx_atproto_sessions_look_up_key ON atproto_sessions(look_up_key);
+`)
 	if err != nil {
 		return err
 	}
@@ -473,3 +503,5 @@ func (db *DB) GetLastKnownTimestamp(userID int64) (*time.Time, error) {
 
 	return &lastTimestamp, nil
 }
+
+//
