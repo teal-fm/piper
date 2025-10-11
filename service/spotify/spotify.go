@@ -16,14 +16,14 @@ import (
 
 	"context" // Added for context.Context
 
-	"github.com/bluesky-social/indigo/api/atproto"      // Added for atproto.RepoCreateRecord_Input
-	lexutil "github.com/bluesky-social/indigo/lex/util" // Added for lexutil.LexiconTypeDecoder
-	"github.com/bluesky-social/indigo/xrpc"             // Added for xrpc.Client
-	"github.com/spf13/viper"
-	"github.com/teal-fm/piper/api/teal" // Added for teal.AlphaFeedPlay
+	// Added for atproto.RepoCreateRecord_Input
+	// Added for lexutil.LexiconTypeDecoder
+	// Added for xrpc.Client
+	"github.com/spf13/viper" // Added for teal.AlphaFeedPlay
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
 	atprotoauth "github.com/teal-fm/piper/oauth/atproto"
+	atprotoservice "github.com/teal-fm/piper/service/atproto"
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"github.com/teal-fm/piper/session"
 )
@@ -60,81 +60,14 @@ func NewSpotifyService(database *db.DB, atprotoService *atprotoauth.ATprotoAuthS
 }
 
 func (s *SpotifyService) SubmitTrackToPDS(did string, track *models.Track, ctx context.Context) error {
-	client, err := s.atprotoService.GetATProtoClient()
-	if err != nil || client == nil {
-		s.logger.Printf("Error getting ATProto client: %v", err)
-		return fmt.Errorf("failed to get ATProto client: %w", err)
-	}
-
-	xrpcClient := s.atprotoService.GetXrpcClient()
-	if xrpcClient == nil {
-		return errors.New("xrpc client is not available")
-	}
-
-	sess, err := s.DB.GetAtprotoSession(did, ctx, *client)
-	if err != nil {
-		return fmt.Errorf("couldn't get Atproto session for DID %s: %w", did, err)
-	}
-
-	artists := make([]*teal.AlphaFeedDefs_Artist, 0, len(track.Artist))
-	for _, a := range track.Artist {
-		artist := &teal.AlphaFeedDefs_Artist{
-			ArtistName: a.Name,
-			ArtistMbId: a.MBID,
-		}
-		artists = append(artists, artist)
-	}
-
-	var durationPtr *int64
-	if track.DurationMs > 0 {
-		durationSeconds := track.DurationMs / 1000
-		durationPtr = &durationSeconds
-	}
-
-	playedTimeStr := track.Timestamp.Format(time.RFC3339)
-	submissionAgent := viper.GetString("app.submission_agent")
-	if submissionAgent == "" {
-		submissionAgent = "piper/v0.0.1" // Default if not configured
-	}
-
 	//Had a empty feed.play get submitted not sure why. Tracking here
 	if track.Name == "" {
 		s.logger.Println("Track name is empty. Skipping submission. Please record the logs before and send to the teal.fm Discord")
 		return nil
 	}
 
-	tfmTrack := teal.AlphaFeedPlay{
-		LexiconTypeID: "fm.teal.alpha.feed.play",
-		Duration:      durationPtr,
-		TrackName:     track.Name,
-		PlayedTime:    &playedTimeStr,
-		Artists:       artists,
-		ReleaseMbId:   track.ReleaseMBID,
-		ReleaseName:   &track.Album,
-		RecordingMbId: track.RecordingMBID,
-		// Optional: Spotify specific data if your lexicon supports it
-		// SpotifyTrackID: &track.ServiceID,
-		// SpotifyAlbumID: &track.ServiceAlbumID,
-		// SpotifyArtistIDs: track.ServiceArtistIDs, // Assuming this is a []string
-		SubmissionClientAgent: &submissionAgent,
-	}
-
-	input := atproto.RepoCreateRecord_Input{
-		Collection: "fm.teal.alpha.feed.play", // Ensure this collection is correct
-		Repo:       sess.DID,
-		Record:     &lexutil.LexiconTypeDecoder{Val: &tfmTrack},
-	}
-
-	authArgs := db.AtpSessionToAuthArgs(sess)
-
-	var out atproto.RepoCreateRecord_Output
-	if err := xrpcClient.Do(ctx, authArgs, xrpc.Procedure, "application/json", "com.atproto.repo.createRecord", nil, input, &out); err != nil {
-		s.logger.Printf("Error creating record for DID %s: %v. Input: %+v", did, err, input)
-		return fmt.Errorf("failed to create record on PDS for DID %s: %w", did, err)
-	}
-
-	s.logger.Printf("Successfully submitted track '%s' to PDS for DID %s. Record URI: %s", track.Name, did, out.Uri)
-	return nil
+	// Use shared atproto service for submission
+	return atprotoservice.SubmitPlayToPDS(ctx, did, track, s.atprotoService)
 }
 
 func (s *SpotifyService) SetAccessToken(token string, refreshToken string, userId int64, hasSession bool) (int64, error) {
