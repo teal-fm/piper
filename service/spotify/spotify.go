@@ -59,7 +59,7 @@ func NewSpotifyService(database *db.DB, atprotoService *atprotoauth.ATprotoAuthS
 	}
 }
 
-func (s *SpotifyService) SubmitTrackToPDS(did string, track *models.Track, ctx context.Context) error {
+func (s *SpotifyService) SubmitTrackToPDS(did string, mostRecentAtProtoSessionID string, track *models.Track, ctx context.Context) error {
 	//Had a empty feed.play get submitted not sure why. Tracking here
 	if track.Name == "" {
 		s.logger.Println("Track name is empty. Skipping submission. Please record the logs before and send to the teal.fm Discord")
@@ -67,7 +67,7 @@ func (s *SpotifyService) SubmitTrackToPDS(did string, track *models.Track, ctx c
 	}
 
 	// Use shared atproto service for submission
-	return atprotoservice.SubmitPlayToPDS(ctx, did, track, s.atprotoService)
+	return atprotoservice.SubmitPlayToPDS(ctx, did, mostRecentAtProtoSessionID, track, s.atprotoService)
 }
 
 func (s *SpotifyService) SetAccessToken(token string, refreshToken string, userId int64, hasSession bool) (int64, error) {

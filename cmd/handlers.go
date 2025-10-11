@@ -425,7 +425,7 @@ func apiSubmitListensHandler(database *db.DB, atprotoService *atprotoauth.ATprot
 
 			// Submit to PDS as feed.play record
 			if user.ATProtoDID != nil && atprotoService != nil {
-				if err := atprotoservice.SubmitPlayToPDS(r.Context(), *user.ATProtoDID, &track, atprotoService); err != nil {
+				if err := atprotoservice.SubmitPlayToPDS(r.Context(), *user.ATProtoDID, *user.MostRecentAtProtoSessionID, &track, atprotoService); err != nil {
 					log.Printf("apiSubmitListensHandler: Error submitting play to PDS for user %d: %v", userID, err)
 					// Don't fail the request, just log the error
 				}
