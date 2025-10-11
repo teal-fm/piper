@@ -38,5 +38,4 @@ FROM --platform=${TARGETPLATFORM:-linux/amd64} alpine:3.21
 WORKDIR /db
 WORKDIR /app
 COPY --from=builder /app/main /app/main
-COPY --from=builder /app/jwks.json /app/jwks.json
 ENTRYPOINT ["/app/main"]
