@@ -48,7 +48,7 @@ func (db *DB) GetUserByLastFM(lastfmUsername string) (*models.User, error) {
 
 	user := &models.User{}
 	err := row.Scan(
-		&user.ID, &user.MostRecentAtProtoSessionID, &user.Username, &user.Email, &user.ATProtoDID,
+		&user.ID, &user.Username, &user.Email, &user.ATProtoDID, &user.MostRecentAtProtoSessionID,
 		&user.CreatedAt, &user.UpdatedAt, &user.LastFMUsername)
 	if err != nil {
 		return nil, err
