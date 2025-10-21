@@ -31,7 +31,7 @@ type Session struct {
 type SessionManager struct {
 	db        *db.DB
 	sessions  map[string]*Session // use in memory cache if necessary
-	apiKeyMgr *apikey.ApiKeyManager
+	ApiKeyMgr *apikey.ApiKeyManager
 	mu        sync.RWMutex
 }
 
@@ -56,7 +56,7 @@ func NewSessionManager(database *db.DB) *SessionManager {
 	return &SessionManager{
 		db:        database,
 		sessions:  make(map[string]*Session),
-		apiKeyMgr: apiKeyMgr,
+		ApiKeyMgr: apiKeyMgr,
 	}
 }
 
@@ -185,11 +185,11 @@ func (sm *SessionManager) ClearSessionCookie(w http.ResponseWriter) {
 }
 
 func (sm *SessionManager) GetAPIKeyManager() *apikey.ApiKeyManager {
-	return sm.apiKeyMgr
+	return sm.ApiKeyMgr
 }
 
 func (sm *SessionManager) CreateAPIKey(userID int64, name string, validityDays int) (*apikey.ApiKey, error) {
-	return sm.apiKeyMgr.CreateApiKey(userID, name, validityDays)
+	return sm.ApiKeyMgr.CreateApiKey(userID, name, validityDays)
 }
 
 // middleware that checks if a user is authenticated via cookies or API key
@@ -198,7 +198,7 @@ func WithAuth(handler http.HandlerFunc, sm *SessionManager) http.HandlerFunc {
 		// first: check API keys
 		apiKeyStr, apiKeyErr := apikey.ExtractApiKey(r)
 		if apiKeyErr == nil && apiKeyStr != "" {
-			apiKey, valid := sm.apiKeyMgr.GetApiKey(apiKeyStr)
+			apiKey, valid := sm.ApiKeyMgr.GetApiKey(apiKeyStr)
 			if valid {
 				ctx := WithUserID(r.Context(), apiKey.UserID)
 				r = r.WithContext(ctx)
@@ -240,7 +240,7 @@ func WithPossibleAuth(handler http.HandlerFunc, sm *SessionManager) http.Handler
 
 		apiKeyStr, apiKeyErr := apikey.ExtractApiKey(r)
 		if apiKeyErr == nil && apiKeyStr != "" {
-			apiKey, valid := sm.apiKeyMgr.GetApiKey(apiKeyStr)
+			apiKey, valid := sm.ApiKeyMgr.GetApiKey(apiKeyStr)
 			if valid {
 				ctx = WithUserID(ctx, apiKey.UserID)
 				ctx = WithAPIRequest(ctx, true)
@@ -278,7 +278,7 @@ func WithAPIAuth(handler http.HandlerFunc, sm *SessionManager) http.HandlerFunc 
 			return
 		}
 
-		apiKey, valid := sm.apiKeyMgr.GetApiKey(apiKeyStr)
+		apiKey, valid := sm.ApiKeyMgr.GetApiKey(apiKeyStr)
 		if !valid {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)

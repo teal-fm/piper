@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/teal-fm/piper/db"
+	"github.com/teal-fm/piper/db/apikey"
 	"github.com/teal-fm/piper/models"
 	atprotoauth "github.com/teal-fm/piper/oauth/atproto"
 	pages "github.com/teal-fm/piper/pages"
@@ -452,5 +453,38 @@ func apiSubmitListensHandler(database *db.DB, atprotoService *atprotoauth.ATprot
 			len(processedTracks), userID, submission.ListenType)
 
 		jsonResponse(w, http.StatusOK, response)
+	}
+}
+
+// apiMbTokenValidateHandler handles ListenBrainz token validation requests
+func apiMbTokenValidateHandler(sm *session.SessionManager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		apiKeyStr, apiKeyErr := apikey.ExtractApiKey(r)
+
+		if apiKeyErr != nil || apiKeyStr == "" {
+			jsonResponse(w, http.StatusBadRequest, map[string]any{
+				"code":    400,
+				"message": "you need to specify a token",
+				"valid":   false,
+			})
+			return
+		}
+
+		key, valid := sm.ApiKeyMgr.GetApiKey(apiKeyStr)
+		if !valid {
+			jsonResponse(w, http.StatusUnauthorized, map[string]any{
+				"code":    401,
+				"message": "invalid token",
+				"valid":   false,
+			})
+			return
+		}
+
+		jsonResponse(w, http.StatusOK, map[string]any{
+			"code":      200,
+			"message":   "token valid",
+			"valid":     true,
+			"user_name": key.Name, // this is required to be set for pano scrobbler
+		})
 	}
 }
