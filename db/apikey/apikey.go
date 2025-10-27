@@ -179,7 +179,7 @@ func ExtractApiKey(r *http.Request) (string, error) {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader != "" {
 		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+		if len(parts) == 2 && (strings.ToLower(parts[0]) == "bearer" || strings.ToLower(parts[0]) == "token") {
 			return parts[1], nil
 		}
 	}

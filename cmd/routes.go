@@ -41,6 +41,7 @@ func (app *application) routes() http.Handler {
 
 	// ListenBrainz-compatible endpoint
 	mux.HandleFunc("/1/submit-listens", session.WithAPIAuth(apiSubmitListensHandler(app.database, app.atprotoService, app.playingNowService, app.mbService), app.sessionManager))
+	mux.HandleFunc("/1/validate-token", apiMbTokenValidateHandler(app.sessionManager))
 
 	serverUrlRoot := viper.GetString("server.root_url")
 	atpClientId := viper.GetString("atproto.client_id")
