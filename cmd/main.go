@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/teal-fm/piper/service/applemusic"
 	"github.com/teal-fm/piper/service/lastfm"
 	"github.com/teal-fm/piper/service/playingnow"
 
@@ -31,6 +32,7 @@ type application struct {
 	mbService         *musicbrainz.MusicBrainzService
 	atprotoService    *atproto.ATprotoAuthService
 	playingNowService *playingnow.PlayingNowService
+	appleMusicService *applemusic.Service
 	pages             *pages.Pages
 }
 
@@ -87,6 +89,32 @@ func main() {
 	playingNowService := playingnow.NewPlayingNowService(database, atprotoService)
 	spotifyService := spotify.NewSpotifyService(database, atprotoService, mbService, playingNowService)
 	lastfmService := lastfm.NewLastFMService(database, viper.GetString("lastfm.api_key"), mbService, atprotoService, playingNowService)
+    // Read Apple Music settings with env fallbacks
+    teamID := viper.GetString("applemusic.team_id")
+    if teamID == "" {
+        teamID = viper.GetString("APPLE_MUSIC_TEAM_ID")
+    }
+    keyID := viper.GetString("applemusic.key_id")
+    if keyID == "" {
+        keyID = viper.GetString("APPLE_MUSIC_KEY_ID")
+    }
+    keyPath := viper.GetString("applemusic.private_key_path")
+    if keyPath == "" {
+        keyPath = viper.GetString("APPLE_MUSIC_PRIVATE_KEY_PATH")
+    }
+
+    appleMusicService := applemusic.NewService(
+        teamID,
+        keyID,
+        keyPath,
+    ).WithPersistence(
+        func() (string, time.Time, bool, error) {
+            return database.GetAppleMusicDeveloperToken()
+        },
+        func(token string, exp time.Time) error {
+            return database.SaveAppleMusicDeveloperToken(token, exp)
+        },
+    ).WithDeps(database, atprotoService, mbService)
 
 	oauthManager := oauth.NewOAuthServiceManager()
 
@@ -112,6 +140,7 @@ func main() {
 		spotifyService:    spotifyService,
 		atprotoService:    atprotoService,
 		playingNowService: playingNowService,
+		appleMusicService: appleMusicService,
 		pages:             pages.NewPages(),
 	}
 
@@ -123,7 +152,9 @@ func main() {
 
 	go spotifyService.StartListeningTracker(trackerInterval)
 
-	go lastfmService.StartListeningTracker(lastfmInterval)
+    go lastfmService.StartListeningTracker(lastfmInterval)
+    // Apple Music tracker uses same tracker.interval as Spotify for now
+    go appleMusicService.StartListeningTracker(trackerInterval)
 
 	serverAddr := fmt.Sprintf("%s:%s", viper.GetString("server.host"), viper.GetString("server.port"))
 	server := &http.Server{
