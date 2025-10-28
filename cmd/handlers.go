@@ -12,6 +12,7 @@ import (
 	"github.com/teal-fm/piper/models"
 	atprotoauth "github.com/teal-fm/piper/oauth/atproto"
 	pages "github.com/teal-fm/piper/pages"
+	"github.com/teal-fm/piper/service/applemusic"
 	atprotoservice "github.com/teal-fm/piper/service/atproto"
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"github.com/teal-fm/piper/service/playingnow"
@@ -137,10 +138,20 @@ func handleLinkLastfmSubmit(database *db.DB) http.HandlerFunc {
 	}
 }
 
-func handleAppleMusicLink(pg *pages.Pages) http.HandlerFunc {
+func handleAppleMusicLink(pg *pages.Pages, am *applemusic.Service) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
         w.Header().Set("Content-Type", "text/html")
-        err := pg.Execute("applemusic_link", w, struct{ NavBar pages.NavBar }{})
+        devToken, _, errTok := am.GenerateDeveloperToken()
+        if errTok != nil {
+            log.Printf("Error generating Apple Music developer token: %v", errTok)
+            http.Error(w, "Failed to prepare Apple Music", http.StatusInternalServerError)
+            return
+        }
+        data := struct{
+            NavBar   pages.NavBar
+            DevToken string
+        }{DevToken: devToken}
+        err := pg.Execute("applemusic_link", w, data)
         if err != nil {
             log.Printf("Error executing template: %v", err)
         }

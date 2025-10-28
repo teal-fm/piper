@@ -36,27 +36,6 @@
       <pre id="status" style="margin-top: 1rem"></pre>
     </main>
     <script>
-      async function fetchDeveloperToken() {
-        const res = await fetch("/api/v1/applemusic/developer-token");
-        if (!res.ok) {
-          const text = await res.text().catch(() => "");
-          console.error("Developer token fetch failed", {
-            status: res.status,
-            body: text,
-          });
-          throw new Error(
-            `Failed to get developer token (status ${res.status})`
-          );
-        }
-        const data = await res.json();
-        if (!data || !data.token) {
-          console.error("Developer token response malformed", { data });
-          throw new Error("Developer token missing in response");
-        }
-        console.debug("Fetched developer token (length)", data.token.length);
-        return data.token;
-      }
-
       async function saveUserToken(userToken) {
         const res = await fetch("/api/v1/applemusic/authorize", {
           method: "POST",
@@ -77,8 +56,8 @@
       async function setup() {
         const status = document.getElementById("status");
         try {
-          // Use JavaScript configuration flow exclusively
-          const devToken = await fetchDeveloperToken();
+          // Use server-provided developer token (not user-facing)
+          const devToken = "{{.DevToken}}";
           // wait for musickit to be loaded
           if (!window.MusicKit) {
             await new Promise((resolve) => {
@@ -97,18 +76,6 @@
             throw cfgErr;
           }
           const music = window.MusicKit.getInstance();
-          window.musicInstance = music; // Make available globally for handleUnlink
-
-          const toggleUnlinkVisibility = () => {
-            const form = document.getElementById("unlinkForm");
-            if (!form) return;
-            if (music.isAuthorized) {
-              form.style.display = "inline-block";
-            } else {
-              form.style.display = "none";
-            }
-          };
-
           async function handleUnlink(event) {
             event.preventDefault();
             if (!confirm("Unlink Apple Music from your account?")) {
@@ -131,7 +98,6 @@
                 "authorizationStatusDidChange",
                 e && e.authorizationStatus
               );
-              toggleUnlinkVisibility();
             });
             music.addEventListener("userTokenDidChange", (e) => {
               console.debug("userTokenDidChange", !!(e && e.userToken));
@@ -148,7 +114,6 @@
               evtErr
             );
           }
-          toggleUnlinkVisibility();
           document
             .getElementById("authorizeBtn")
             .addEventListener("click", async () => {
@@ -157,7 +122,6 @@
                 const userToken = await music.authorize();
                 await saveUserToken(userToken);
                 status.textContent = "Authorized and saved.";
-                toggleUnlinkVisibility();
               } catch (e) {
                 console.error("Authorization failed", e);
                 status.textContent =
