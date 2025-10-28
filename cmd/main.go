@@ -103,18 +103,24 @@ func main() {
         keyPath = viper.GetString("APPLE_MUSIC_PRIVATE_KEY_PATH")
     }
 
-    appleMusicService := applemusic.NewService(
-        teamID,
-        keyID,
-        keyPath,
-    ).WithPersistence(
-        func() (string, time.Time, bool, error) {
-            return database.GetAppleMusicDeveloperToken()
-        },
-        func(token string, exp time.Time) error {
-            return database.SaveAppleMusicDeveloperToken(token, exp)
-        },
-    ).WithDeps(database, atprotoService, mbService)
+    var appleMusicService *applemusic.Service
+    // Only initialize Apple Music service if all required credentials are present
+    if teamID != "" && keyID != "" && keyPath != "" {
+        appleMusicService = applemusic.NewService(
+            teamID,
+            keyID,
+            keyPath,
+        ).WithPersistence(
+            func() (string, time.Time, bool, error) {
+                return database.GetAppleMusicDeveloperToken()
+            },
+            func(token string, exp time.Time) error {
+                return database.SaveAppleMusicDeveloperToken(token, exp)
+            },
+        ).WithDeps(database, atprotoService, mbService)
+    } else {
+        log.Println("Apple Music credentials not configured (missing team_id, key_id, or private_key_path). Apple Music features will be disabled.")
+    }
 
 	oauthManager := oauth.NewOAuthServiceManager()
 
@@ -154,7 +160,10 @@ func main() {
 
     go lastfmService.StartListeningTracker(lastfmInterval)
     // Apple Music tracker uses same tracker.interval as Spotify for now
-    go appleMusicService.StartListeningTracker(trackerInterval)
+    // Only start if Apple Music service is configured
+    if appleMusicService != nil {
+        go appleMusicService.StartListeningTracker(trackerInterval)
+    }
 
 	serverAddr := fmt.Sprintf("%s:%s", viper.GetString("server.host"), viper.GetString("server.port"))
 	server := &http.Server{
