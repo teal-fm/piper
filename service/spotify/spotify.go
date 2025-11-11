@@ -557,6 +557,11 @@ func (s *SpotifyService) FetchCurrentTrack(userID int64) (*models.Track, error) 
 		})
 	}
 
+	// ignore tracks with no artists (podcasts, audiobooks, etc)
+	if len(artists) == 0 {
+		return nil, nil
+	}
+
 	// assemble Track
 	track := &models.Track{
 		Name:           response.Item.Name,
