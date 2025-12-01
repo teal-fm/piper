@@ -31,12 +31,18 @@ func home(database *db.DB, pg *pages.Pages) http.HandlerFunc {
 		userID, authenticated := session.GetUserID(r.Context())
 		isLoggedIn := authenticated
 		lastfmUsername := ""
+		plyrfmHandle := ""
 
 		if isLoggedIn {
 			user, err := database.GetUserByID(userID)
 			fmt.Printf("User: %+v\n", user)
-			if err == nil && user != nil && user.LastFMUsername != nil {
-				lastfmUsername = *user.LastFMUsername
+			if err == nil && user != nil {
+				if user.LastFMUsername != nil {
+					lastfmUsername = *user.LastFMUsername
+				}
+				if user.PlyrFMHandle != nil {
+					plyrfmHandle = *user.PlyrFMHandle
+				}
 			} else if err != nil {
 				log.Printf("Error fetching user %d details for home page: %v", userID, err)
 			}
@@ -45,6 +51,7 @@ func home(database *db.DB, pg *pages.Pages) http.HandlerFunc {
 			NavBar: pages.NavBar{
 				IsLoggedIn:     isLoggedIn,
 				LastFMUsername: lastfmUsername,
+				PlyrFMHandle:   plyrfmHandle,
 			},
 		}
 		err := pg.Execute("home", w, params)
@@ -486,5 +493,156 @@ func apiMbTokenValidateHandler(sm *session.SessionManager) http.HandlerFunc {
 			"valid":     true,
 			"user_name": key.Name, // this is required to be set for pano scrobbler
 		})
+	}
+}
+
+// plyr.fm linking handlers
+
+func handleLinkPlyrfmForm(database *db.DB, pg *pages.Pages) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, authenticated := session.GetUserID(r.Context())
+		if r.Method == http.MethodPost {
+			if err := r.ParseForm(); err != nil {
+				http.Error(w, "Failed to parse form", http.StatusBadRequest)
+				return
+			}
+
+			plyrfmHandle := r.FormValue("plyrfm_handle")
+			if plyrfmHandle == "" {
+				http.Error(w, "plyr.fm handle cannot be empty", http.StatusBadRequest)
+				return
+			}
+
+			err := database.AddPlyrFMHandle(userID, plyrfmHandle)
+			if err != nil {
+				log.Printf("Error saving plyr.fm handle for user %d: %v", userID, err)
+				http.Error(w, "Failed to save plyr.fm handle", http.StatusInternalServerError)
+				return
+			}
+
+			log.Printf("Successfully linked plyr.fm handle '%s' for user ID %d", plyrfmHandle, userID)
+
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+
+		currentUser, err := database.GetUserByID(userID)
+		currentHandle := ""
+		if err == nil && currentUser != nil && currentUser.PlyrFMHandle != nil {
+			currentHandle = *currentUser.PlyrFMHandle
+		} else if err != nil {
+			log.Printf("Error fetching user %d for plyr.fm form: %v", userID, err)
+		}
+
+		w.Header().Set("Content-Type", "text/html")
+
+		pageParams := struct {
+			NavBar        pages.NavBar
+			CurrentHandle string
+		}{
+			NavBar: pages.NavBar{
+				IsLoggedIn:     authenticated,
+				LastFMUsername: "",
+				PlyrFMHandle:   currentHandle,
+			},
+			CurrentHandle: currentHandle,
+		}
+		err = pg.Execute("plyrFMForm", w, pageParams)
+		if err != nil {
+			log.Printf("Error executing template: %v", err)
+		}
+	}
+}
+
+func handleLinkPlyrfmSubmit(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, _ := session.GetUserID(r.Context())
+
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Failed to parse form", http.StatusBadRequest)
+			return
+		}
+
+		plyrfmHandle := r.FormValue("plyrfm_handle")
+		if plyrfmHandle == "" {
+			http.Error(w, "plyr.fm handle cannot be empty", http.StatusBadRequest)
+			return
+		}
+
+		err := database.AddPlyrFMHandle(userID, plyrfmHandle)
+		if err != nil {
+			log.Printf("Error saving plyr.fm handle for user %d: %v", userID, err)
+			http.Error(w, "Failed to save plyr.fm handle", http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("Successfully linked plyr.fm handle '%s' for user ID %d", plyrfmHandle, userID)
+
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	}
+}
+
+func apiGetPlyrfmHandler(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, _ := session.GetUserID(r.Context())
+		user, err := database.GetUserByID(userID)
+		if err != nil {
+			log.Printf("apiGetPlyrfmHandler: Error fetching user %d: %v", userID, err)
+			jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve user information"})
+			return
+		}
+		if user == nil {
+			jsonResponse(w, http.StatusNotFound, map[string]string{"error": "User not found"})
+			return
+		}
+
+		var plyrfmHandle *string
+		if user.PlyrFMHandle != nil {
+			plyrfmHandle = user.PlyrFMHandle
+		}
+		jsonResponse(w, http.StatusOK, map[string]*string{"plyrfm_handle": plyrfmHandle})
+	}
+}
+
+func apiLinkPlyrfmHandler(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, _ := session.GetUserID(r.Context())
+
+		var reqBody struct {
+			PlyrFMHandle string `json:"plyrfm_handle"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body: " + err.Error()})
+			return
+		}
+
+		if reqBody.PlyrFMHandle == "" {
+			jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "plyr.fm handle cannot be empty"})
+			return
+		}
+
+		err := database.AddPlyrFMHandle(userID, reqBody.PlyrFMHandle)
+		if err != nil {
+			log.Printf("apiLinkPlyrfmHandler: Error saving plyr.fm handle for user %d: %v", userID, err)
+			jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": "Failed to save plyr.fm handle"})
+			return
+		}
+		log.Printf("API: Successfully linked plyr.fm handle '%s' for user ID %d", reqBody.PlyrFMHandle, userID)
+		jsonResponse(w, http.StatusOK, map[string]string{"message": "plyr.fm handle updated successfully"})
+	}
+}
+
+func apiUnlinkPlyrfmHandler(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, _ := session.GetUserID(r.Context())
+
+		err := database.AddPlyrFMHandle(userID, "")
+		if err != nil {
+			log.Printf("apiUnlinkPlyrfmHandler: Error unlinking plyr.fm handle for user %d: %v", userID, err)
+			jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": "Failed to unlink plyr.fm handle"})
+			return
+		}
+		log.Printf("API: Successfully unlinked plyr.fm handle for user ID %d", userID)
+		jsonResponse(w, http.StatusOK, map[string]string{"message": "plyr.fm handle unlinked successfully"})
 	}
 }

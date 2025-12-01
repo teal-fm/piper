@@ -9,6 +9,7 @@ import (
 
 	"github.com/teal-fm/piper/service/lastfm"
 	"github.com/teal-fm/piper/service/playingnow"
+	"github.com/teal-fm/piper/service/plyrfm"
 
 	"github.com/spf13/viper"
 	"github.com/teal-fm/piper/config"
@@ -27,6 +28,7 @@ type application struct {
 	sessionManager    *session.SessionManager
 	oauthManager      *oauth.OAuthServiceManager
 	spotifyService    *spotify.SpotifyService
+	plyrfmService     *plyrfm.PlyrFMService
 	apiKeyService     *apikeyService.Service
 	mbService         *musicbrainz.MusicBrainzService
 	atprotoService    *atproto.ATprotoAuthService
@@ -87,6 +89,7 @@ func main() {
 	playingNowService := playingnow.NewPlayingNowService(database, atprotoService)
 	spotifyService := spotify.NewSpotifyService(database, atprotoService, mbService, playingNowService)
 	lastfmService := lastfm.NewLastFMService(database, viper.GetString("lastfm.api_key"), mbService, atprotoService, playingNowService)
+	plyrfmService := plyrfm.NewPlyrFMService(database, viper.GetString("plyrfm.api_url"), mbService, atprotoService, playingNowService)
 
 	oauthManager := oauth.NewOAuthServiceManager()
 
@@ -110,6 +113,7 @@ func main() {
 		apiKeyService:     apiKeyService,
 		mbService:         mbService,
 		spotifyService:    spotifyService,
+		plyrfmService:     plyrfmService,
 		atprotoService:    atprotoService,
 		playingNowService: playingNowService,
 		pages:             pages.NewPages(),
@@ -124,6 +128,13 @@ func main() {
 	go spotifyService.StartListeningTracker(trackerInterval)
 
 	go lastfmService.StartListeningTracker(lastfmInterval)
+
+	// plyr.fm tracker uses same interval as spotify by default
+	plyrfmInterval := time.Duration(viper.GetInt("plyrfm.interval_seconds")) * time.Second
+	if plyrfmInterval <= 0 {
+		plyrfmInterval = trackerInterval
+	}
+	go plyrfmService.StartListeningTracker(plyrfmInterval)
 
 	serverAddr := fmt.Sprintf("%s:%s", viper.GetString("server.host"), viper.GetString("server.port"))
 	server := &http.Server{

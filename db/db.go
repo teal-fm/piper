@@ -138,6 +138,12 @@ func (db *DB) Initialize() error {
 		return err
 	}
 
+	// Add plyrfm_handle column for plyr.fm integration
+	_, err = db.Exec(`ALTER TABLE users ADD COLUMN plyrfm_handle TEXT`)
+	if err != nil && err.Error() != "duplicate column name: plyrfm_handle" {
+		return err
+	}
+
 	return nil
 }
 

@@ -1,0 +1,14 @@
+{{ define "content" }}
+    {{ template "components/navBar" .NavBar }}
+
+    <div class="max-w-[600px] mx-auto my-5 p-5 border border-gray-300 rounded-lg">
+        <h2 class="text-xl font-semibold mb-2">Link Your plyr.fm Account</h2>
+        <p class="mb-3">Enter your plyr.fm handle to track what you're listening to.</p>
+        <form class="space-y-2" method="post" action="/link-plyrfm">
+            <label class="block" for="plyrfm_handle">plyr.fm Handle:</label>
+            <input class="block w-[95%] p-2 border border-gray-300 rounded" type="text" id="plyrfm_handle" name="plyrfm_handle" value="{{.CurrentHandle}}" placeholder="your-handle" required>
+            <input class="bg-[#6366f1] text-white px-4 py-2.5 rounded cursor-pointer hover:opacity-90" type="submit" value="Save Handle">
+        </form>
+    </div>
+
+{{ end }}

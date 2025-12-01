@@ -17,6 +17,9 @@ type User struct {
 	// lfm information
 	LastFMUsername *string
 
+	// plyr.fm information
+	PlyrFMHandle *string
+
 	// atp info
 	ATProtoDID *string
 	//This is meant to only be used by the automated music stamping service. If the user ever does an

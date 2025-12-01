@@ -28,6 +28,8 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("/api-keys", session.WithAuth(app.apiKeyService.HandleAPIKeyManagement(app.database, app.pages), app.sessionManager))
 	mux.HandleFunc("/link-lastfm", session.WithAuth(handleLinkLastfmForm(app.database, app.pages), app.sessionManager)) // GET form
 	mux.HandleFunc("/link-lastfm/submit", session.WithAuth(handleLinkLastfmSubmit(app.database), app.sessionManager))   // POST submit - Changed route slightly
+	mux.HandleFunc("/link-plyrfm", session.WithAuth(handleLinkPlyrfmForm(app.database, app.pages), app.sessionManager)) // GET form + POST submit
+	mux.HandleFunc("/link-plyrfm/submit", session.WithAuth(handleLinkPlyrfmSubmit(app.database), app.sessionManager))   // POST submit
 	mux.HandleFunc("/logout", app.oauthManager.HandleLogout("atproto"))
 	mux.HandleFunc("/debug/", session.WithAuth(app.sessionManager.HandleDebug, app.sessionManager))
 
@@ -35,6 +37,9 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("/api/v1/lastfm", session.WithAPIAuth(apiGetLastfmUserHandler(app.database), app.sessionManager))
 	mux.HandleFunc("/api/v1/lastfm/set", session.WithAPIAuth(apiLinkLastfmHandler(app.database), app.sessionManager))
 	mux.HandleFunc("/api/v1/lastfm/unset", session.WithAPIAuth(apiUnlinkLastfmHandler(app.database), app.sessionManager))
+	mux.HandleFunc("/api/v1/plyrfm", session.WithAPIAuth(apiGetPlyrfmHandler(app.database), app.sessionManager))
+	mux.HandleFunc("/api/v1/plyrfm/set", session.WithAPIAuth(apiLinkPlyrfmHandler(app.database), app.sessionManager))
+	mux.HandleFunc("/api/v1/plyrfm/unset", session.WithAPIAuth(apiUnlinkPlyrfmHandler(app.database), app.sessionManager))
 	mux.HandleFunc("/api/v1/current-track", session.WithAPIAuth(apiCurrentTrack(app.spotifyService), app.sessionManager)) // Spotify Current
 	mux.HandleFunc("/api/v1/history", session.WithAPIAuth(apiTrackHistory(app.spotifyService), app.sessionManager))       // Spotify History
 	mux.HandleFunc("/api/v1/musicbrainz/search", apiMusicBrainzSearch(app.mbService))                                     // MusicBrainz (public?)

@@ -23,6 +23,10 @@ func Load() {
 	viper.SetDefault("tracker.interval", 30)
 	viper.SetDefault("db.path", "./data/piper.db")
 
+	// plyr.fm defaults
+	viper.SetDefault("plyrfm.api_url", "https://api.plyr.fm")
+	viper.SetDefault("plyrfm.interval_seconds", 30)
+
 	// server metadata
 	viper.SetDefault("server.root_url", "http://localhost:8080")
 	viper.SetDefault("atproto.metadata_url", "http://localhost:8080/metadata")

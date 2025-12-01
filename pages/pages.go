@@ -157,4 +157,5 @@ func (p *Pages) Execute(name string, w io.Writer, params any) error {
 type NavBar struct {
 	IsLoggedIn     bool
 	LastFMUsername string
+	PlyrFMHandle   string
 }
