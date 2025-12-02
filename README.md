@@ -41,8 +41,8 @@ You now have to bring your own private key to run piper. Can do this via goat `g
 - `SPOTIFY_SCOPES` - most likely `user-read-currently-playing user-read-email`
 - `CALLBACK_SPOTIFY` - The first part is your publicly accessible domain. So will something like this `https://piper.teal.fm/callback/spotify`
 
-- `ATPROTO_CLIENT_ID` - The first part is your publicly accessible domain. So will something like this `https://piper.teal.fm/.well-known/client-metadata.json`
-- `ATPROTO_METADATA_URL` - The first part is your publicly accessible domain. So will something like this `https://piper.teal.fm/.well-known/client-metadata.json`
+- `ATPROTO_CLIENT_ID` - The first part is your publicly accessible domain. So will something like this `https://piper.teal.fm/oauth-client-metadata.json`
+- `ATPROTO_METADATA_URL` - The first part is your publicly accessible domain. So will something like this `https://piper.teal.fm/oauth-client-metadata.json`
 - `ATPROTO_CALLBACK_URL` - The first part is your publicly accessible domain. So will something like this `https://piper.teal.fm/callback/atproto`
 
 - `LASTFM_API_KEY` - Your lastfm api key. Can find out how to setup [here](https://www.last.fm/api)
