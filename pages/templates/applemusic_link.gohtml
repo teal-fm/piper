@@ -1,0 +1,150 @@
+{{ define "applemusic_link" }}
+{{ template "layouts/base" . }}
+{{ end }}
+
+{{ define "layouts/base" }}
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Link Apple Music</title>
+    <link rel="stylesheet" href="/static/main.css" />
+    <script
+      src="https://js-cdn.music.apple.com/musickit/v3/musickit.js"
+      data-web-components
+      async
+    ></script>
+  </head>
+  <body>
+    <main style="max-width: 720px; margin: 2rem auto">
+      <h1>Link Apple Music</h1>
+      <p>Authorize with Apple Music to enable MusicKit features.</p>
+      <div
+        style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap"
+      >
+        <button id="authorizeBtn">Authorize Apple Music</button>
+        <br />
+        <form
+          id="unlinkForm"
+          method="post"
+          action="/api/v1/applemusic/unlink"
+          onsubmit="handleUnlink(event)"
+        >
+          <button type="submit">Unlink Apple Music</button>
+        </form>
+      </div>
+      <pre id="status" style="margin-top: 1rem"></pre>
+    </main>
+    <script>
+      async function saveUserToken(userToken) {
+        const res = await fetch("/api/v1/applemusic/authorize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ userToken }),
+        });
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          console.error("Saving user token failed", {
+            status: res.status,
+            body: text,
+          });
+          throw new Error(`Failed to save user token (status ${res.status})`);
+        }
+      }
+
+      async function setup() {
+        const status = document.getElementById("status");
+        try {
+          // Use server-provided developer token (not user-facing)
+          const devToken = "{{.DevToken}}";
+          // wait for musickit to be loaded
+          if (!window.MusicKit) {
+            await new Promise((resolve) => {
+              document.addEventListener("musickitloaded", resolve, {
+                once: true,
+              });
+            });
+          }
+          try {
+            window.MusicKit.configure({
+              developerToken: devToken,
+              app: { name: "Piper", build: "1.0.0" },
+            });
+          } catch (cfgErr) {
+            console.error("MusicKit.configure failed", cfgErr);
+            throw cfgErr;
+          }
+          const music = window.MusicKit.getInstance();
+          async function handleUnlink(event) {
+            event.preventDefault();
+            if (!confirm("Unlink Apple Music from your account?")) {
+              return;
+            }
+            try {
+              const music = window.MusicKit.getInstance();
+              await music.unauthorize();
+              document.getElementById("unlinkForm").submit();
+            } catch (e) {
+              console.error("Error unauthorizing:", e);
+              status.textContent =
+                "Error unauthorizing: " +
+                (e && e.message ? e.message : String(e));
+            }
+          }
+          try {
+            music.addEventListener("authorizationStatusDidChange", (e) => {
+              console.debug(
+                "authorizationStatusDidChange",
+                e && e.authorizationStatus
+              );
+            });
+            music.addEventListener("userTokenDidChange", (e) => {
+              console.debug("userTokenDidChange", !!(e && e.userToken));
+            });
+            music.addEventListener("playbackStateDidChange", (e) => {
+              console.debug("playbackStateDidChange", e && e.state);
+            });
+            music.addEventListener("mediaPlayerPlaybackError", (e) => {
+              console.error("mediaPlayerPlaybackError", e);
+            });
+          } catch (evtErr) {
+            console.warn(
+              "Failed to attach some MusicKit event listeners",
+              evtErr
+            );
+          }
+          document
+            .getElementById("authorizeBtn")
+            .addEventListener("click", async () => {
+              try {
+                const music = window.MusicKit.getInstance();
+                const userToken = await music.authorize();
+                await saveUserToken(userToken);
+                status.textContent = "Authorized and saved.";
+              } catch (e) {
+                console.error("Authorization failed", e);
+                status.textContent =
+                  "Authorization failed: " +
+                  (e && e.message ? e.message : String(e));
+              }
+            });
+        } catch (e) {
+          console.error("MusicKit setup failed", e);
+          status.textContent =
+            "Setup failed: " + (e && e.message ? e.message : String(e));
+        }
+      }
+      // Global error hooks for extra diagnostics
+      window.addEventListener("error", (ev) => {
+        console.error("Window error", ev && ev.error ? ev.error : ev);
+      });
+      window.addEventListener("unhandledrejection", (ev) => {
+        console.error("Unhandled rejection", ev && ev.reason ? ev.reason : ev);
+      });
+
+      setup();
+    </script>
+  </body>
+</html>
+{{ end }}
