@@ -117,7 +117,7 @@ func main() {
             func(token string, exp time.Time) error {
                 return database.SaveAppleMusicDeveloperToken(token, exp)
             },
-        ).WithDeps(database, atprotoService, mbService)
+        ).WithDeps(database, atprotoService, mbService, playingNowService)
     } else {
         log.Println("Apple Music credentials not configured (missing team_id, key_id, or private_key_path). Apple Music features will be disabled.")
     }

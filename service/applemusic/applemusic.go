@@ -44,6 +44,10 @@ type Service struct {
     DB             *db.DB
     atprotoService *atprotoauth.ATprotoAuthService
     mbService      *musicbrainz.MusicBrainzService
+    playingNowService interface {
+        PublishPlayingNow(ctx context.Context, userID int64, track *models.Track) error
+        ClearPlayingNow(ctx context.Context, userID int64) error
+    }
     httpClient     *http.Client
     logger         *log.Logger
 }
@@ -69,10 +73,14 @@ func (s *Service) WithPersistence(
 }
 
 // WithDeps wires services needed for ingestion
-func (s *Service) WithDeps(database *db.DB, atproto *atprotoauth.ATprotoAuthService, mb *musicbrainz.MusicBrainzService) *Service {
+func (s *Service) WithDeps(database *db.DB, atproto *atprotoauth.ATprotoAuthService, mb *musicbrainz.MusicBrainzService, playingNowService interface {
+    PublishPlayingNow(ctx context.Context, userID int64, track *models.Track) error
+    ClearPlayingNow(ctx context.Context, userID int64) error
+}) *Service {
     s.DB = database
     s.atprotoService = atproto
     s.mbService = mb
+    s.playingNowService = playingNowService
     return s
 }
 
@@ -392,6 +400,12 @@ func (s *Service) ProcessUser(ctx context.Context, user *models.User) error {
     
     if currentAppleTrack == nil {
         s.logger.Printf("no current Apple Music track for user %d", user.ID)
+        // Clear playing now status if no track is playing
+        if s.playingNowService != nil {
+            if err := s.playingNowService.ClearPlayingNow(ctx, user.ID); err != nil {
+                s.logger.Printf("Error clearing playing now for user %d: %v", user.ID, err)
+            }
+        }
         return nil
     }
     
@@ -427,6 +441,13 @@ func (s *Service) ProcessUser(ctx context.Context, user *models.User) error {
     }
     
     s.logger.Printf("saved new track for user %d: %s by %s", user.ID, track.Name, track.Artist[0].Name)
+    
+    // Publish playing now status
+    if s.playingNowService != nil {
+        if err := s.playingNowService.PublishPlayingNow(ctx, user.ID, track); err != nil {
+            s.logger.Printf("Error publishing playing now for user %d: %v", user.ID, err)
+        }
+    }
     
     // Submit to PDS
     if user.ATProtoDID != nil && user.MostRecentAtProtoSessionID != nil && s.atprotoService != nil {
