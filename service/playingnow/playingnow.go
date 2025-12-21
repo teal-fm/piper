@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/bluesky-social/indigo/atproto/client"
@@ -24,6 +25,8 @@ type PlayingNowService struct {
 	db             *db.DB
 	atprotoService *atprotoauth.ATprotoAuthService
 	logger         *log.Logger
+	mu             sync.RWMutex
+	clearedStatus  map[int64]bool // tracks if a user's status has been cleared on their repo
 }
 
 // NewPlayingNowService creates a new playing now service
@@ -34,6 +37,7 @@ func NewPlayingNowService(database *db.DB, atprotoService *atprotoauth.ATprotoAu
 		db:             database,
 		atprotoService: atprotoService,
 		logger:         logger,
+		clearedStatus:  make(map[int64]bool),
 	}
 }
 
@@ -103,14 +107,26 @@ func (p *PlayingNowService) PublishPlayingNow(ctx context.Context, userID int64,
 		return fmt.Errorf("failed to create playing now status for DID %s: %w", did, err)
 	}
 
-	p.logger.Printf("Successfully published playing now status for user %d (DID: %s): %s - %s",
-		userID, did, track.Artist[0].Name, track.Name)
+	// Resets clear to false since there is a song playing. The publish playing state is kept in the services from
+	// if a song has changed/stamped
+	p.mu.Lock()
+	p.clearedStatus[userID] = false
+	p.mu.Unlock()
 
 	return nil
 }
 
 // ClearPlayingNow removes the current playing status by setting an expired status
 func (p *PlayingNowService) ClearPlayingNow(ctx context.Context, userID int64) error {
+	// Check if status is already cleared to avoid clearing on the users repo over and over
+	p.mu.RLock()
+	alreadyCleared := p.clearedStatus[userID]
+	p.mu.RUnlock()
+
+	if alreadyCleared {
+		return nil
+	}
+
 	// Get user information
 	user, err := p.db.GetUserByID(userID)
 	if err != nil {
@@ -168,14 +184,18 @@ func (p *PlayingNowService) ClearPlayingNow(ctx context.Context, userID int64) e
 		SwapRecord: swapCid,
 	}
 
-	p.logger.Printf("CLEARING A playing now status for user %d (DID: %s)", userID, did)
-
 	if _, err := comatproto.RepoPutRecord(ctx, atProtoClient, &input); err != nil {
 		p.logger.Printf("Error clearing playing now status for DID %s: %v", did, err)
 		return fmt.Errorf("failed to clear playing now status for DID %s: %w", did, err)
 	}
 
 	p.logger.Printf("Successfully cleared playing now status for user %d (DID: %s)", userID, did)
+
+	// Mark status as cleared so we don't clear again until user starts playing a song again
+	p.mu.Lock()
+	p.clearedStatus[userID] = true
+	p.mu.Unlock()
+
 	return nil
 }
 
