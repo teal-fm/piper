@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/bluesky-social/indigo/atproto/client"
@@ -24,6 +25,8 @@ type PlayingNowService struct {
 	db             *db.DB
 	atprotoService *atprotoauth.ATprotoAuthService
 	logger         *log.Logger
+	mu             sync.RWMutex
+	clearedStatus  map[int64]bool // tracks if a user's status has been cleared on their repo
 }
 
 // NewPlayingNowService creates a new playing now service
@@ -34,6 +37,7 @@ func NewPlayingNowService(database *db.DB, atprotoService *atprotoauth.ATprotoAu
 		db:             database,
 		atprotoService: atprotoService,
 		logger:         logger,
+		clearedStatus:  make(map[int64]bool),
 	}
 }
 
@@ -75,11 +79,18 @@ func (p *PlayingNowService) PublishPlayingNow(ctx context.Context, userID int64,
 		Item:          playView,
 	}
 
-	var swapRecord *string
+	var swapRecord *comatproto.RepoGetRecord_Output
 	swapRecord, err = p.getStatusSwapRecord(ctx, atProtoClient)
 	if err != nil {
 		return err
 	}
+
+	var swapCid *string
+	if swapRecord != nil {
+		swapCid = swapRecord.Cid
+	}
+
+	p.logger.Printf("Publishing playing now status for user %d (DID: %s): %s - %s", userID, did, track.Artist[0].Name, track.Name)
 
 	// Create the record input
 	input := comatproto.RepoPutRecord_Input{
@@ -87,7 +98,7 @@ func (p *PlayingNowService) PublishPlayingNow(ctx context.Context, userID int64,
 		Repo:       atProtoClient.AccountDID.String(),
 		Rkey:       "self", // Use "self" as the record key for current status
 		Record:     &lexutil.LexiconTypeDecoder{Val: status},
-		SwapRecord: swapRecord,
+		SwapRecord: swapCid,
 	}
 
 	// Submit to PDS
@@ -96,14 +107,26 @@ func (p *PlayingNowService) PublishPlayingNow(ctx context.Context, userID int64,
 		return fmt.Errorf("failed to create playing now status for DID %s: %w", did, err)
 	}
 
-	p.logger.Printf("Successfully published playing now status for user %d (DID: %s): %s - %s",
-		userID, did, track.Artist[0].Name, track.Name)
+	// Resets clear to false since there is a song playing. The publish playing state is kept in the services from
+	// if a song has changed/stamped
+	p.mu.Lock()
+	p.clearedStatus[userID] = false
+	p.mu.Unlock()
 
 	return nil
 }
 
 // ClearPlayingNow removes the current playing status by setting an expired status
 func (p *PlayingNowService) ClearPlayingNow(ctx context.Context, userID int64) error {
+	// Check if status is already cleared to avoid clearing on the users repo over and over
+	p.mu.RLock()
+	alreadyCleared := p.clearedStatus[userID]
+	p.mu.RUnlock()
+
+	if alreadyCleared {
+		return nil
+	}
+
 	// Get user information
 	user, err := p.db.GetUserByID(userID)
 	if err != nil {
@@ -140,10 +163,16 @@ func (p *PlayingNowService) ClearPlayingNow(ctx context.Context, userID int64) e
 		Item:          emptyPlayView,
 	}
 
-	var swapRecord *string
+	var swapRecord *comatproto.RepoGetRecord_Output
 	swapRecord, err = p.getStatusSwapRecord(ctx, atProtoClient)
+
 	if err != nil {
 		return err
+	}
+
+	var swapCid *string
+	if swapRecord != nil {
+		swapCid = swapRecord.Cid
 	}
 
 	// Update the record
@@ -152,7 +181,7 @@ func (p *PlayingNowService) ClearPlayingNow(ctx context.Context, userID int64) e
 		Repo:       atProtoClient.AccountDID.String(),
 		Rkey:       "self",
 		Record:     &lexutil.LexiconTypeDecoder{Val: status},
-		SwapRecord: swapRecord,
+		SwapRecord: swapCid,
 	}
 
 	if _, err := comatproto.RepoPutRecord(ctx, atProtoClient, &input); err != nil {
@@ -161,6 +190,12 @@ func (p *PlayingNowService) ClearPlayingNow(ctx context.Context, userID int64) e
 	}
 
 	p.logger.Printf("Successfully cleared playing now status for user %d (DID: %s)", userID, did)
+
+	// Mark status as cleared so we don't clear again until user starts playing a song again
+	p.mu.Lock()
+	p.clearedStatus[userID] = true
+	p.mu.Unlock()
+
 	return nil
 }
 
@@ -216,7 +251,7 @@ func (p *PlayingNowService) trackToPlayView(track *models.Track) (*teal.AlphaFee
 	// Get submission client agent
 	submissionAgent := viper.GetString("app.submission_agent")
 	if submissionAgent == "" {
-		submissionAgent = "piper/v0.0.2"
+		submissionAgent = models.SubmissionAgent
 	}
 
 	playView := &teal.AlphaFeedDefs_PlayView{
@@ -238,7 +273,7 @@ func (p *PlayingNowService) trackToPlayView(track *models.Track) (*teal.AlphaFee
 
 // getStatusSwapRecord retrieves the current swap record (CID) for the actor status record.
 // Returns (nil, nil) if the record does not exist yet.
-func (p *PlayingNowService) getStatusSwapRecord(ctx context.Context, atApiClient *client.APIClient) (*string, error) {
+func (p *PlayingNowService) getStatusSwapRecord(ctx context.Context, atApiClient *client.APIClient) (*comatproto.RepoGetRecord_Output, error) {
 	result, err := comatproto.RepoGetRecord(ctx, atApiClient, "", "fm.teal.alpha.actor.status", atApiClient.AccountDID.String(), "self")
 
 	if err != nil {
@@ -253,5 +288,6 @@ func (p *PlayingNowService) getStatusSwapRecord(ctx context.Context, atApiClient
 		return nil, fmt.Errorf("error getting the record: %w", err)
 
 	}
-	return result.Cid, nil
+
+	return result, nil
 }
