@@ -28,6 +28,7 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("/api-keys", session.WithAuth(app.apiKeyService.HandleAPIKeyManagement(app.database, app.pages), app.sessionManager))
 	mux.HandleFunc("/link-lastfm", session.WithAuth(handleLinkLastfmForm(app.database, app.pages), app.sessionManager)) // GET form
 	mux.HandleFunc("/link-lastfm/submit", session.WithAuth(handleLinkLastfmSubmit(app.database), app.sessionManager))   // POST submit - Changed route slightly
+    mux.HandleFunc("/link-applemusic", session.WithAuth(handleAppleMusicLink(app.pages, app.appleMusicService), app.sessionManager))
 	mux.HandleFunc("/logout", app.oauthManager.HandleLogout("atproto"))
 	mux.HandleFunc("/debug/", session.WithAuth(app.sessionManager.HandleDebug, app.sessionManager))
 
@@ -38,6 +39,10 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("/api/v1/current-track", session.WithAPIAuth(apiCurrentTrack(app.spotifyService), app.sessionManager)) // Spotify Current
 	mux.HandleFunc("/api/v1/history", session.WithAPIAuth(apiTrackHistory(app.spotifyService), app.sessionManager))       // Spotify History
 	mux.HandleFunc("/api/v1/musicbrainz/search", apiMusicBrainzSearch(app.mbService))                                     // MusicBrainz (public?)
+
+    // Apple Music user authorization (protected with session auth)
+    mux.HandleFunc("/api/v1/applemusic/authorize", session.WithAuth(apiAppleMusicAuthorize(app.database), app.sessionManager))
+    mux.HandleFunc("/api/v1/applemusic/unlink", session.WithAuth(apiAppleMusicUnlink(app.database), app.sessionManager))
 
 	// ListenBrainz-compatible endpoint
 	mux.HandleFunc("/1/submit-listens", session.WithAPIAuth(apiSubmitListensHandler(app.database, app.atprotoService, app.playingNowService, app.mbService), app.sessionManager))

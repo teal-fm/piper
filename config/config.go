@@ -23,12 +23,22 @@ func Load() {
 	viper.SetDefault("tracker.interval", 30)
 	viper.SetDefault("db.path", "./data/piper.db")
 
+	// Apple Music defaults
+	viper.SetDefault("applemusic.team_id", "")
+	viper.SetDefault("applemusic.key_id", "")
+	viper.SetDefault("applemusic.private_key_path", "./AM_AUTHKEY.p8")
+
 	// server metadata
 	viper.SetDefault("server.root_url", "http://localhost:8080")
 	viper.SetDefault("atproto.metadata_url", "http://localhost:8080/metadata")
 	viper.SetDefault("atproto.callback_url", "/metadata")
 
 	viper.AutomaticEnv()
+
+	// Support APPLE_MUSIC_* env var aliases
+	_ = viper.BindEnv("applemusic.team_id", "APPLE_MUSIC_TEAM_ID")
+	_ = viper.BindEnv("applemusic.key_id", "APPLE_MUSIC_KEY_ID")
+	_ = viper.BindEnv("applemusic.private_key_path", "APPLE_MUSIC_PRIVATE_KEY_PATH")
 
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 

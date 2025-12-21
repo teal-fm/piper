@@ -12,6 +12,7 @@ import (
 	"github.com/teal-fm/piper/models"
 	atprotoauth "github.com/teal-fm/piper/oauth/atproto"
 	pages "github.com/teal-fm/piper/pages"
+	"github.com/teal-fm/piper/service/applemusic"
 	atprotoservice "github.com/teal-fm/piper/service/atproto"
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"github.com/teal-fm/piper/service/playingnow"
@@ -137,6 +138,26 @@ func handleLinkLastfmSubmit(database *db.DB) http.HandlerFunc {
 	}
 }
 
+func handleAppleMusicLink(pg *pages.Pages, am *applemusic.Service) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        w.Header().Set("Content-Type", "text/html")
+        devToken, _, errTok := am.GenerateDeveloperToken()
+        if errTok != nil {
+            log.Printf("Error generating Apple Music developer token: %v", errTok)
+            http.Error(w, "Failed to prepare Apple Music", http.StatusInternalServerError)
+            return
+        }
+        data := struct{
+            NavBar   pages.NavBar
+            DevToken string
+        }{DevToken: devToken}
+        err := pg.Execute("applemusic_link", w, data)
+        if err != nil {
+            log.Printf("Error executing template: %v", err)
+        }
+    }
+}
+
 func apiCurrentTrack(spotifyService *spotify.SpotifyService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID, ok := session.GetUserID(r.Context())
@@ -251,6 +272,8 @@ func apiMeHandler(database *db.DB) http.HandlerFunc {
 			"lastfm_username":   lastfmUsername,
 			"spotify_connected": spotifyConnected,
 		}
+		// do not send Apple token value; just whether present
+		response["applemusic_linked"] = (user.AppleMusicUserToken != nil && *user.AppleMusicUserToken != "")
 		if user.LastFMUsername == nil {
 			response["lastfm_username"] = nil
 		}
@@ -323,6 +346,64 @@ func apiUnlinkLastfmHandler(database *db.DB) http.HandlerFunc {
 		log.Printf("API: Successfully unlinked Last.fm username for user ID %d", userID)
 		jsonResponse(w, http.StatusOK, map[string]string{"message": "Last.fm username unlinked successfully"})
 	}
+}
+
+// apiAppleMusicAuthorize stores a MusicKit user token for the current user
+func apiAppleMusicAuthorize(database *db.DB) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        userID, authenticated := session.GetUserID(r.Context())
+        if !authenticated {
+            jsonResponse(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+            return
+        }
+        if r.Method != http.MethodPost {
+            jsonResponse(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
+            return
+        }
+
+        var req struct {
+            UserToken string `json:"userToken"`
+        }
+        if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+            jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+            return
+        }
+        if req.UserToken == "" {
+            jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "userToken is required"})
+            return
+        }
+
+        if err := database.UpdateAppleMusicUserToken(userID, req.UserToken); err != nil {
+            log.Printf("apiAppleMusicAuthorize: failed to save token for user %d: %v", userID, err)
+            jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": "Failed to save token"})
+            return
+        }
+
+        jsonResponse(w, http.StatusOK, map[string]any{"status": "ok"})
+    }
+}
+
+// apiAppleMusicUnlink clears the MusicKit user token for the current user
+func apiAppleMusicUnlink(database *db.DB) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        userID, authenticated := session.GetUserID(r.Context())
+        if !authenticated {
+            jsonResponse(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+            return
+        }
+        if r.Method != http.MethodPost {
+            jsonResponse(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
+            return
+        }
+
+        if err := database.ClearAppleMusicUserToken(userID); err != nil {
+            log.Printf("apiAppleMusicUnlink: failed to clear token for user %d: %v", userID, err)
+            jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": "Failed to unlink Apple Music"})
+            return
+        }
+
+        jsonResponse(w, http.StatusOK, map[string]any{"status": "ok"})
+    }
 }
 
 // apiSubmitListensHandler handles ListenBrainz-compatible submissions

@@ -4,3 +4,4 @@ tmp/
 jwk*.json
 **.bak
 .idea
+AM_AUTHKEY.p8
