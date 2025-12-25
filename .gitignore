@@ -5,3 +5,4 @@ jwk*.json
 **.bak
 .idea
 AM_AUTHKEY.p8
+.DS_Store

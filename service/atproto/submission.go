@@ -99,7 +99,7 @@ func TrackToPlayRecord(track *models.Track) (*teal.AlphaFeedPlay, error) {
 	// Get submission client agent
 	submissionAgent := viper.GetString("app.submission_agent")
 	if submissionAgent == "" {
-		submissionAgent = "piper/v0.0.1"
+		submissionAgent = models.SubmissionAgent
 	}
 
 	playRecord := &teal.AlphaFeedPlay{

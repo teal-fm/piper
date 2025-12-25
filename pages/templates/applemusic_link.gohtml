@@ -16,23 +16,73 @@
     ></script>
   </head>
   <body>
-    <main style="max-width: 720px; margin: 2rem auto">
-      <h1>Link Apple Music</h1>
-      <p>Authorize with Apple Music to enable MusicKit features.</p>
+    <main style="max-width: 720px; margin: 4rem auto; padding: 0 1.5rem;">
+      <h1 style="font-size: 2.5rem; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 0.75rem; background: linear-gradient(135deg, #fa2d48, #fc5c7d); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">Link Apple Music</h1>
+      <p style="font-size: 1.125rem; color: #8e8e93; max-width: 480px;">Authorize with Apple Music to enable MusicKit features and sync your library.</p>
       <div
-        style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap"
+        style="display: flex; gap: 1.5rem; align-items: center; flex-wrap: wrap; margin-top: 2rem;"
       >
-        <button id="authorizeBtn">Authorize Apple Music</button>
-        <br />
+        <button id="authorizeBtn" class="am-btn am-btn-primary">
+          🎵 Authorize Apple Music
+        </button>
         <form
           id="unlinkForm"
           method="post"
           action="/api/v1/applemusic/unlink"
           onsubmit="handleUnlink(event)"
         >
-          <button type="submit">Unlink Apple Music</button>
+          <button type="submit" class="am-btn am-btn-danger">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;">
+              <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+            Unlink Apple Music
+          </button>
         </form>
       </div>
+      <style>
+        .am-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.875rem;
+          padding: 1.25rem 2.5rem;
+          font-size: 1.25rem;
+          font-weight: 600;
+          border-radius: 9999px;
+          border: none;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          box-shadow: 0 4px 14px 0 rgba(0, 0, 0, 0.25);
+          text-transform: none;
+          letter-spacing: -0.01em;
+        }
+        .am-btn-primary {
+          background: linear-gradient(135deg, #fa2d48 0%, #fc5c7d 50%, #fa2d48 100%);
+          background-size: 200% 200%;
+          color: white;
+        }
+        .am-btn-primary:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 6px 20px 0 rgba(250, 45, 72, 0.45);
+          background-position: 100% 0;
+        }
+        .am-btn-primary:active {
+          transform: translateY(0);
+          box-shadow: 0 2px 10px 0 rgba(250, 45, 72, 0.35);
+        }
+        .am-btn-danger {
+          background: linear-gradient(135deg, #3a3a3c 0%, #48484a 100%);
+          color: #ff453a;
+          border: 2px solid #48484a;
+        }
+        .am-btn-danger:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 6px 20px 0 rgba(0, 0, 0, 0.35);
+          background: linear-gradient(135deg, #48484a 0%, #5a5a5c 100%);
+        }
+        .am-btn-danger:active {
+          transform: translateY(0);
+        }
+      </style>
       <pre id="status" style="margin-top: 1rem"></pre>
     </main>
     <script>
