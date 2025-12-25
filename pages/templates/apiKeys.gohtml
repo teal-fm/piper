@@ -34,7 +34,6 @@
             <thead>
             <tr class="text-left border-b border-gray-300">
                 <th class="p-2">Name</th>
-                <th class="p-2">Prefix</th>
                 <th class="p-2">Created</th>
                 <th class="p-2">Expires</th>
                 <th class="p-2">Actions</th>
@@ -44,7 +43,6 @@
             {{range .Keys}}
                 <tr class="border-b border-gray-200">
                     <td class="p-2">{{.Name}}</td>
-                    <td class="p-2">{{.KeyPrefix}}</td> <!-- Added KeyPrefix for better identification -->
                     <td class="p-2">{{formatTime .CreatedAt}}</td>
                     <td class="p-2">{{formatTime .ExpiresAt}}</td>
                     <td class="p-2">
