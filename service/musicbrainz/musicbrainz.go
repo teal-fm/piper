@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -175,7 +176,12 @@ func (s *Service) SearchMusicBrainz(ctx context.Context, params SearchParams) ([
 		}
 		return nil, fmt.Errorf("failed to execute request to %s: %w", endpoint, err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			s.logger.Printf("Error closing response body for %s: %v", endpoint, err)
+		}
+	}(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		// TODO: read body for detailed error message

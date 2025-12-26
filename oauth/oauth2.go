@@ -26,6 +26,7 @@ type Service struct {
 
 func GenerateRandomState() string {
 	b := make([]byte, 16)
+	//This probably should panic
 	rand.Read(b)
 	return base64.URLEncoding.EncodeToString(b)
 }
@@ -66,6 +67,7 @@ func NewOAuth2Service(clientID, clientSecret, redirectURI string, scopes []strin
 // GenerateCodeVerifier generate a random code verifier, for PKCE
 func GenerateCodeVerifier() string {
 	b := make([]byte, 64)
+	//This probably should panic
 	rand.Read(b)
 	return base64.RawURLEncoding.EncodeToString(b)
 }

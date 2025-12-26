@@ -94,7 +94,10 @@ func (s *Service) HandleDeveloperToken(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(fmt.Sprintf(`{"token":"%s","expiresAt":"%s"}`, token, exp.UTC().Format(time.RFC3339))))
+	_, err = w.Write([]byte(fmt.Sprintf(`{"token":"%s","expiresAt":"%s"}`, token, exp.UTC().Format(time.RFC3339))))
+	if err != nil {
+		s.logger.Printf("failed to write response: %v", err)
+	}
 }
 
 // GenerateDeveloperTokenWithForce allows bypassing caches when force is true.
@@ -311,7 +314,12 @@ func (s *Service) FetchRecentPlayedTracks(ctx context.Context, userToken string,
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			s.logger.Printf("failed to close response body: %v", err)
+		}
+	}(resp.Body)
 
 	// Read the full response body to log it
 	bodyBytes, err := io.ReadAll(resp.Body)

@@ -2,8 +2,10 @@ package apikey
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -101,7 +103,11 @@ func (am *Manager) GetApiKey(apiKeyID string) (*ApiKey, bool) {
 	if exists {
 		// Check if API key is expired
 		if time.Now().UTC().After(apiKey.ExpiresAt) {
-			am.DeleteApiKey(apiKeyID)
+			err := am.DeleteApiKey(apiKeyID)
+			fmt.Println("Error deleting an expired API key: %w", err)
+			if err != nil {
+				return nil, false
+			}
 			return nil, false
 		}
 		return apiKey, true
@@ -119,7 +125,11 @@ func (am *Manager) GetApiKey(apiKeyID string) (*ApiKey, bool) {
 	}
 
 	if time.Now().UTC().After(apiKey.ExpiresAt) {
-		am.DeleteApiKey(apiKeyID)
+		err := am.DeleteApiKey(apiKeyID)
+		fmt.Println("Error deleting an expired API key: %w", err)
+		if err != nil {
+			return nil, false
+		}
 		return nil, false
 	}
 
@@ -152,7 +162,12 @@ func (am *Manager) GetUserApiKeys(userID int64) ([]*ApiKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		err := rows.Close()
+		if err != nil {
+			fmt.Println("Error closing API keys rows: %w", err)
+		}
+	}(rows)
 
 	var apiKeys []*ApiKey
 	for rows.Next() {

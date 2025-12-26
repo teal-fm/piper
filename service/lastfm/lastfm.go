@@ -125,7 +125,12 @@ func (l *Service) getRecentTracks(ctx context.Context, username string, limit in
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch recent tracks for %s: %w", username, err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			l.logger.Printf("Error closing response body for %s: %v", username, err)
+		}
+	}(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
@@ -387,7 +392,10 @@ func (l *Service) processTracks(ctx context.Context, username string, tracks []T
 			// we can use the track without MBIDs, it's still valid
 			hydratedTrack = &baseTrack
 		}
-		l.db.SaveTrack(user.ID, hydratedTrack)
+		_, err = l.db.SaveTrack(user.ID, hydratedTrack)
+		if err != nil {
+			return err
+		}
 		l.logger.Printf("Submitting track")
 		err = l.SubmitTrackToPDS(*user.ATProtoDID, *user.MostRecentAtProtoSessionID, hydratedTrack, ctx)
 		if err != nil {

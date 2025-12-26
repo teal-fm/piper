@@ -35,7 +35,12 @@ func (s *Service) getUserPlaylists(userID int64) (*PlaylistResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user playlists: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			log.Fatal("failed to close resp.Body")
+		}
+	}(resp.Body)
 
 	if resp.Response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("error response from Spotify: %s", resp.Response.Status)

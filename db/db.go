@@ -330,7 +330,12 @@ func (db *DB) GetAllAppleMusicLinkedUsers() ([]*models.User, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		err := rows.Close()
+		if err != nil {
+			log.Println(err)
+		}
+	}(rows)
 
 	var users []*models.User
 	for rows.Next() {
@@ -419,7 +424,12 @@ func (db *DB) GetRecentTracks(userID int64, limit int) ([]*models.Track, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		err := rows.Close()
+		if err != nil {
+			log.Println(err)
+		}
+	}(rows)
 
 	var tracks []*models.Track
 
@@ -490,7 +500,12 @@ func (db *DB) GetUsersWithExpiredTokens() ([]*models.User, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		err := rows.Close()
+		if err != nil {
+
+		}
+	}(rows)
 
 	return SpotifyQueryMapping(rows)
 
@@ -506,7 +521,12 @@ func (db *DB) GetAllActiveUsers() ([]*models.User, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		err := rows.Close()
+		if err != nil {
+
+		}
+	}(rows)
 
 	return SpotifyQueryMapping(rows)
 }
@@ -521,7 +541,12 @@ func (db *DB) GetAllActiveUsersWithUnExpiredTokens() ([]*models.User, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		err := rows.Close()
+		if err != nil {
+
+		}
+	}(rows)
 
 	return SpotifyQueryMapping(rows)
 }
@@ -537,7 +562,12 @@ func (db *DB) DebugViewUserInformation(userID int64) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query failed: %w", err)
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		err := rows.Close()
+		if err != nil {
+
+		}
+	}(rows)
 
 	// Get column names
 	cols, err := rows.Columns()

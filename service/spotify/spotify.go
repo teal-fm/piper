@@ -225,7 +225,12 @@ func (s *Service) refreshTokenInner(userID int64) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to execute refresh request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			s.logger.Printf("Failed to close refresh response body: %v", err)
+		}
+	}(resp.Body)
 
 	body, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
@@ -327,7 +332,12 @@ func (s *Service) fetchSpotifyProfile(token string) (*spotifyProfile, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			s.logger.Printf("Failed to close spotify profile response body: %v", err)
+		}
+	}(resp.Body)
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
@@ -354,12 +364,20 @@ func (s *Service) HandleCurrentTrack(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	if !exists || track == nil {
-		fmt.Fprintf(w, "No track currently playing")
+		_, err := fmt.Fprintf(w, "No track currently playing")
+		if err != nil {
+			s.logger.Printf("Error writing response: %v", err)
+			return
+		}
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(track)
+	err := json.NewEncoder(w).Encode(track)
+	if err != nil {
+		s.logger.Printf("Error encoding response: %v", err)
+		return
+	}
 }
 
 func (s *Service) HandleTrackHistory(w http.ResponseWriter, r *http.Request) {
@@ -377,7 +395,11 @@ func (s *Service) HandleTrackHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tracks)
+	err = json.NewEncoder(w).Encode(tracks)
+	if err != nil {
+		s.logger.Printf("Error encoding response: %v", err)
+		return
+	}
 }
 
 func (s *Service) FetchCurrentTrack(userID int64) (*models.Track, error) {
@@ -439,7 +461,12 @@ func (s *Service) FetchCurrentTrack(userID int64) (*models.Track, error) {
 
 	// Ensure body is closed regardless of loop outcome
 	if resp != nil && resp.Body != nil {
-		defer resp.Body.Close()
+		defer func(Body io.ReadCloser) {
+			err := Body.Close()
+			if err != nil {
+				s.logger.Printf("Failed to close spotify response body: %v", err)
+			}
+		}(resp.Body)
 	}
 
 	// Handle final response after loop

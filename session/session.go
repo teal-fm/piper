@@ -63,6 +63,7 @@ func (sm *Manager) CreateSession(userID int64, atProtoSessionId string) *Session
 
 	// random session id
 	b := make([]byte, 32)
+	//This probably should panic
 	rand.Read(b)
 	sessionID := base64.URLEncoding.EncodeToString(b)
 
@@ -270,7 +271,11 @@ func WithAPIAuth(handler http.HandlerFunc, sm *Manager) http.HandlerFunc {
 		if apiKeyErr != nil || apiKeyStr == "" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"error": "API key is required"}`))
+			_, err := w.Write([]byte(`{"error": "API key is required"}`))
+			if err != nil {
+				log.Printf("Error writing error response: %v", err)
+				return
+			}
 			return
 		}
 
@@ -278,7 +283,11 @@ func WithAPIAuth(handler http.HandlerFunc, sm *Manager) http.HandlerFunc {
 		if !valid {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"error": "Invalid or expired API key"}`))
+			_, err := w.Write([]byte(`{"error": "Invalid or expired API key"}`))
+			if err != nil {
+				log.Printf("Error writing error response: %v", err)
+				return
+			}
 			return
 		}
 
@@ -296,7 +305,11 @@ func (sm *Manager) HandleDebug(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte(`{"error": "User ID not found in context"}`))
+		_, err := w.Write([]byte(`{"error": "User ID not found in context"}`))
+		if err != nil {
+			log.Printf("Error writing error response: %v", err)
+			return
+		}
 		return
 	}
 
@@ -304,13 +317,21 @@ func (sm *Manager) HandleDebug(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(fmt.Sprintf(`{"error": "Failed to retrieve user information: %v"}`, err)))
+		_, err := w.Write([]byte(fmt.Sprintf(`{"error": "Failed to retrieve user information: %v"}`, err)))
+		if err != nil {
+			log.Printf("Error writing error response: %v", err)
+			return
+		}
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(res)
+	err = json.NewEncoder(w).Encode(res)
+	if err != nil {
+		log.Printf("Error encoding JSON response: %v", err)
+		return
+	}
 }
 
 type contextKey int
