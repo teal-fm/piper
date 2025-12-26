@@ -7,7 +7,7 @@ package teal
 import (
 	"context"
 
-	"github.com/bluesky-social/indigo/xrpc"
+	"github.com/bluesky-social/indigo/lex/util"
 )
 
 // AlphaFeedGetPlay_Output is the output of a fm.teal.alpha.feed.getPlay call.
@@ -19,14 +19,13 @@ type AlphaFeedGetPlay_Output struct {
 //
 // authorDID: The author's DID for the play
 // rkey: The record key of the play
-func AlphaFeedGetPlay(ctx context.Context, c *xrpc.Client, authorDID string, rkey string) (*AlphaFeedGetPlay_Output, error) {
+func AlphaFeedGetPlay(ctx context.Context, c util.LexClient, authorDID string, rkey string) (*AlphaFeedGetPlay_Output, error) {
 	var out AlphaFeedGetPlay_Output
 
-	params := map[string]interface{}{
-		"authorDID": authorDID,
-		"rkey":      rkey,
-	}
-	if err := c.Do(ctx, xrpc.Query, "", "fm.teal.alpha.feed.getPlay", params, nil, &out); err != nil {
+	params := map[string]interface{}{}
+	params["authorDID"] = authorDID
+	params["rkey"] = rkey
+	if err := c.LexDo(ctx, util.Query, "", "fm.teal.alpha.feed.getPlay", params, nil, &out); err != nil {
 		return nil, err
 	}
 
