@@ -42,8 +42,8 @@ type Service struct {
 
 	// ingestion deps
 	DB                *db.DB
-	atprotoService    *atprotoauth.ATprotoAuthService
-	mbService         *musicbrainz.MusicBrainzService
+	atprotoService    *atprotoauth.AuthService
+	mbService         *musicbrainz.Service
 	playingNowService interface {
 		PublishPlayingNow(ctx context.Context, userID int64, track *models.Track) error
 		ClearPlayingNow(ctx context.Context, userID int64) error
@@ -73,7 +73,7 @@ func (s *Service) WithPersistence(
 }
 
 // WithDeps wires services needed for ingestion
-func (s *Service) WithDeps(database *db.DB, atproto *atprotoauth.ATprotoAuthService, mb *musicbrainz.MusicBrainzService, playingNowService interface {
+func (s *Service) WithDeps(database *db.DB, atproto *atprotoauth.AuthService, mb *musicbrainz.Service, playingNowService interface {
 	PublishPlayingNow(ctx context.Context, userID int64, track *models.Track) error
 	ClearPlayingNow(ctx context.Context, userID int64) error
 }) *Service {
@@ -331,7 +331,7 @@ func (s *Service) FetchRecentPlayedTracks(ctx context.Context, userToken string,
 }
 
 // toTrack converts appleRecentTrack to internal models.Track
-func (s *Service) toTrack(t appleRecentTrack, userID int64) *models.Track {
+func (s *Service) toTrack(t appleRecentTrack) *models.Track {
 	var duration int64
 	if t.Attributes.DurationInMillis != nil {
 		duration = *t.Attributes.DurationInMillis
@@ -427,7 +427,7 @@ func (s *Service) ProcessUser(ctx context.Context, user *models.User) error {
 	}
 
 	// Convert to internal track format
-	track := s.toTrack(*currentAppleTrack, user.ID)
+	track := s.toTrack(*currentAppleTrack)
 	if track == nil || strings.TrimSpace(track.Name) == "" || len(track.Artist) == 0 {
 		s.logger.Printf("invalid track data for user %d", user.ID)
 		return nil

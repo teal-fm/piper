@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -20,9 +21,13 @@ type DB struct {
 
 func New(dbPath string) (*DB, error) {
 	dir := filepath.Dir(dbPath)
-    if dir != "." && dir != "/" {
-        os.MkdirAll(dir, 0755)
-    }
+	if dir != "." && dir != "/" {
+		err := os.MkdirAll(dir, 0755)
+		if err != nil {
+			fmt.Println("Failed to create directory for database:", err)
+			return nil, err
+		}
+	}
 
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
@@ -150,44 +155,44 @@ func (db *DB) Initialize() error {
 
 // Apple Music developer token persistence
 func (db *DB) ensureAppleMusicTokenTable() error {
-    _, err := db.Exec(`
+	_, err := db.Exec(`
         CREATE TABLE IF NOT EXISTS applemusic_token (
             token TEXT,
             expires_at TIMESTAMP
         )`)
-    return err
+	return err
 }
 
 func (db *DB) GetAppleMusicDeveloperToken() (string, time.Time, bool, error) {
-    if err := db.ensureAppleMusicTokenTable(); err != nil {
-        return "", time.Time{}, false, err
-    }
-    var token string
-    var exp time.Time
-    err := db.QueryRow(`SELECT token, expires_at FROM applemusic_token LIMIT 1`).Scan(&token, &exp)
-    if err == sql.ErrNoRows {
-        return "", time.Time{}, false, nil
-    }
-    if err != nil {
-        return "", time.Time{}, false, err
-    }
-    return token, exp, true, nil
+	if err := db.ensureAppleMusicTokenTable(); err != nil {
+		return "", time.Time{}, false, err
+	}
+	var token string
+	var exp time.Time
+	err := db.QueryRow(`SELECT token, expires_at FROM applemusic_token LIMIT 1`).Scan(&token, &exp)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", time.Time{}, false, nil
+	}
+	if err != nil {
+		return "", time.Time{}, false, err
+	}
+	return token, exp, true, nil
 }
 
 func (db *DB) SaveAppleMusicDeveloperToken(token string, exp time.Time) error {
-    if err := db.ensureAppleMusicTokenTable(); err != nil {
-        return err
-    }
-    // Replace existing single row
-    _, err := db.Exec(`DELETE FROM applemusic_token`)
-    if err != nil {
-        return err
-    }
-    _, err = db.Exec(`INSERT INTO applemusic_token (token, expires_at) VALUES (?, ?)`, token, exp)
-    return err
+	if err := db.ensureAppleMusicTokenTable(); err != nil {
+		return err
+	}
+	// Replace existing single row
+	_, err := db.Exec(`DELETE FROM applemusic_token`)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(`INSERT INTO applemusic_token (token, expires_at) VALUES (?, ?)`, token, exp)
+	return err
 }
 
-// create user without spotify id
+// CreateUser create user without spotify id
 func (db *DB) CreateUser(user *models.User) (int64, error) {
 	now := time.Now().UTC()
 
@@ -203,7 +208,7 @@ func (db *DB) CreateUser(user *models.User) (int64, error) {
 	return result.LastInsertId()
 }
 
-// add spotify session to user, returning the updated user
+// AddSpotifySession add spotify session to user, returning the updated user
 func (db *DB) AddSpotifySession(userID int64, username, email, spotifyId, accessToken, refreshToken string, tokenExpiry time.Time) (*models.User, error) {
 	now := time.Now().UTC()
 
@@ -227,7 +232,7 @@ func (db *DB) AddSpotifySession(userID int64, username, email, spotifyId, access
 func (db *DB) GetUserByID(ID int64) (*models.User, error) {
 	user := &models.User{}
 
-    err := db.QueryRow(`
+	err := db.QueryRow(`
     SELECT id, 
            username,
            email,
@@ -242,12 +247,12 @@ func (db *DB) GetUserByID(ID int64) (*models.User, error) {
            created_at,
            updated_at
     FROM users WHERE id = ?`, ID).Scan(
-        &user.ID, &user.Username, &user.Email, &user.ATProtoDID, &user.MostRecentAtProtoSessionID, &user.SpotifyID,
-        &user.AccessToken, &user.RefreshToken, &user.TokenExpiry,
-        &user.LastFMUsername, &user.AppleMusicUserToken,
-        &user.CreatedAt, &user.UpdatedAt)
+		&user.ID, &user.Username, &user.Email, &user.ATProtoDID, &user.MostRecentAtProtoSessionID, &user.SpotifyID,
+		&user.AccessToken, &user.RefreshToken, &user.TokenExpiry,
+		&user.LastFMUsername, &user.AppleMusicUserToken,
+		&user.CreatedAt, &user.UpdatedAt)
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 
@@ -261,15 +266,15 @@ func (db *DB) GetUserByID(ID int64) (*models.User, error) {
 func (db *DB) GetUserBySpotifyID(spotifyID string) (*models.User, error) {
 	user := &models.User{}
 
-    err := db.QueryRow(`
+	err := db.QueryRow(`
     SELECT id, username, email, spotify_id, access_token, refresh_token, token_expiry, lastfm_username, applemusic_user_token, created_at, updated_at
     FROM users WHERE spotify_id = ?`, spotifyID).Scan(
-        &user.ID, &user.Username, &user.Email, &user.SpotifyID,
-        &user.AccessToken, &user.RefreshToken, &user.TokenExpiry,
-        &user.LastFMUsername, &user.AppleMusicUserToken,
-        &user.CreatedAt, &user.UpdatedAt)
+		&user.ID, &user.Username, &user.Email, &user.SpotifyID,
+		&user.AccessToken, &user.RefreshToken, &user.TokenExpiry,
+		&user.LastFMUsername, &user.AppleMusicUserToken,
+		&user.CreatedAt, &user.UpdatedAt)
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 
@@ -293,56 +298,56 @@ func (db *DB) UpdateUserToken(userID int64, accessToken, refreshToken string, ex
 }
 
 func (db *DB) UpdateAppleMusicUserToken(userID int64, userToken string) error {
-    now := time.Now().UTC()
-    _, err := db.Exec(`
+	now := time.Now().UTC()
+	_, err := db.Exec(`
     UPDATE users
     SET applemusic_user_token = ?, updated_at = ?
     WHERE id = ?`,
-        userToken, now, userID)
-    return err
+		userToken, now, userID)
+	return err
 }
 
 // ClearAppleMusicUserToken removes the stored Apple Music user token for a user
 func (db *DB) ClearAppleMusicUserToken(userID int64) error {
-    now := time.Now().UTC()
-    _, err := db.Exec(`
+	now := time.Now().UTC()
+	_, err := db.Exec(`
         UPDATE users
         SET applemusic_user_token = NULL, updated_at = ?
         WHERE id = ?`,
-        now, userID)
-    return err
+		now, userID)
+	return err
 }
 
 // GetAllAppleMusicLinkedUsers returns users who have an Apple Music user token set
 func (db *DB) GetAllAppleMusicLinkedUsers() ([]*models.User, error) {
-    rows, err := db.Query(`
+	rows, err := db.Query(`
         SELECT id, username, email, atproto_did, most_recent_at_session_id,
                spotify_id, access_token, refresh_token, token_expiry,
                lastfm_username, applemusic_user_token, created_at, updated_at
         FROM users
         WHERE applemusic_user_token IS NOT NULL AND applemusic_user_token != ''
         ORDER BY id`)
-    if err != nil {
-        return nil, err
-    }
-    defer rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 
-    var users []*models.User
-    for rows.Next() {
-        u := &models.User{}
-        if err := rows.Scan(
-            &u.ID, &u.Username, &u.Email, &u.ATProtoDID, &u.MostRecentAtProtoSessionID,
-            &u.SpotifyID, &u.AccessToken, &u.RefreshToken, &u.TokenExpiry,
-            &u.LastFMUsername, &u.AppleMusicUserToken, &u.CreatedAt, &u.UpdatedAt,
-        ); err != nil {
-            return nil, err
-        }
-        users = append(users, u)
-    }
-    if err := rows.Err(); err != nil {
-        return nil, err
-    }
-    return users, nil
+	var users []*models.User
+	for rows.Next() {
+		u := &models.User{}
+		if err := rows.Scan(
+			&u.ID, &u.Username, &u.Email, &u.ATProtoDID, &u.MostRecentAtProtoSessionID,
+			&u.SpotifyID, &u.AccessToken, &u.RefreshToken, &u.TokenExpiry,
+			&u.LastFMUsername, &u.AppleMusicUserToken, &u.CreatedAt, &u.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return users, nil
 }
 
 func (db *DB) SaveTrack(userID int64, track *models.Track) (int64, error) {
@@ -352,9 +357,9 @@ func (db *DB) SaveTrack(userID int64, track *models.Track) (int64, error) {
 		bytes, err := json.Marshal(track.Artist)
 		if err != nil {
 			return 0, err
-		} else {
-			artistString = string(bytes)
 		}
+
+		artistString = string(bytes)
 	}
 
 	var trackID int64
@@ -376,9 +381,9 @@ func (db *DB) UpdateTrack(trackID int64, track *models.Track) error {
 		bytes, err := json.Marshal(track.Artist)
 		if err != nil {
 			return err
-		} else {
-			artistString = string(bytes)
 		}
+
+		artistString = string(bytes)
 	}
 
 	_, err := db.Exec(`
@@ -521,7 +526,7 @@ func (db *DB) GetAllActiveUsersWithUnExpiredTokens() ([]*models.User, error) {
 	return SpotifyQueryMapping(rows)
 }
 
-// debug to view current user's information
+// DebugViewUserInformation debug to view current user's information
 // put everything in an 'any' type
 func (db *DB) DebugViewUserInformation(userID int64) (map[string]any, error) {
 	// Use Query instead of QueryRow to get access to column names and ensure only one row is processed
@@ -595,7 +600,7 @@ func (db *DB) GetLastKnownTimestamp(userID int64) (*time.Time, error) {
 		LIMIT 1`, userID).Scan(&lastTimestamp)
 
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to query last scrobble timestamp for user %d: %w", userID, err)

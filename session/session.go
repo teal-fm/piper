@@ -15,12 +15,8 @@ import (
 	"github.com/teal-fm/piper/db/apikey"
 )
 
-// session/session.go
+// Session session/session.go. Web session for Piper
 type Session struct {
-
-	//need to re work this. May add onto it for atproto oauth. But need to be careful about that expiresd
-	//Maybe a speerate oauth session store table and it has a created date? yeah do that then can look it up by session id from this table for user actions
-
 	ID               string
 	UserID           int64
 	ATProtoSessionID string
@@ -28,14 +24,14 @@ type Session struct {
 	ExpiresAt        time.Time
 }
 
-type SessionManager struct {
+type Manager struct {
 	db        *db.DB
 	sessions  map[string]*Session // use in memory cache if necessary
-	ApiKeyMgr *apikey.ApiKeyManager
+	ApiKeyMgr *apikey.Manager
 	mu        sync.RWMutex
 }
 
-func NewSessionManager(database *db.DB) *SessionManager {
+func NewSessionManager(database *db.DB) *Manager {
 
 	_, err := database.Exec(`
 	CREATE TABLE IF NOT EXISTS sessions (
@@ -53,15 +49,15 @@ func NewSessionManager(database *db.DB) *SessionManager {
 
 	apiKeyMgr := apikey.NewApiKeyManager(database)
 
-	return &SessionManager{
+	return &Manager{
 		db:        database,
 		sessions:  make(map[string]*Session),
 		ApiKeyMgr: apiKeyMgr,
 	}
 }
 
-// create a new session for a user
-func (sm *SessionManager) CreateSession(userID int64, atProtoSessionId string) *Session {
+// CreateSession create a new session for a user
+func (sm *Manager) CreateSession(userID int64, atProtoSessionId string) *Session {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -99,8 +95,8 @@ func (sm *SessionManager) CreateSession(userID int64, atProtoSessionId string) *
 	return session
 }
 
-// retrieve a session by ID
-func (sm *SessionManager) GetSession(sessionID string) (*Session, bool) {
+// GetSession retrieve a session by ID
+func (sm *Manager) GetSession(sessionID string) (*Session, bool) {
 	// First check in-memory cache
 	sm.mu.RLock()
 	session, exists := sm.sessions[sessionID]
@@ -144,8 +140,8 @@ func (sm *SessionManager) GetSession(sessionID string) (*Session, bool) {
 	return nil, false
 }
 
-// remove a session
-func (sm *SessionManager) DeleteSession(sessionID string) {
+// DeleteSession remove a session
+func (sm *Manager) DeleteSession(sessionID string) {
 	sm.mu.Lock()
 	delete(sm.sessions, sessionID)
 	sm.mu.Unlock()
@@ -158,8 +154,8 @@ func (sm *SessionManager) DeleteSession(sessionID string) {
 	}
 }
 
-// set a session cookie for the user
-func (sm *SessionManager) SetSessionCookie(w http.ResponseWriter, session *Session) {
+// SetSessionCookie set a session cookie for the user
+func (sm *Manager) SetSessionCookie(w http.ResponseWriter, session *Session) {
 	cookie := &http.Cookie{
 		Name:     "session",
 		Value:    session.ID,
@@ -172,7 +168,7 @@ func (sm *SessionManager) SetSessionCookie(w http.ResponseWriter, session *Sessi
 }
 
 // ClearSessionCookie clears the session cookie
-func (sm *SessionManager) ClearSessionCookie(w http.ResponseWriter) {
+func (sm *Manager) ClearSessionCookie(w http.ResponseWriter) {
 	cookie := &http.Cookie{
 		Name:     "session",
 		Value:    "",
@@ -184,16 +180,16 @@ func (sm *SessionManager) ClearSessionCookie(w http.ResponseWriter) {
 	http.SetCookie(w, cookie)
 }
 
-func (sm *SessionManager) GetAPIKeyManager() *apikey.ApiKeyManager {
+func (sm *Manager) GetAPIKeyManager() *apikey.Manager {
 	return sm.ApiKeyMgr
 }
 
-func (sm *SessionManager) CreateAPIKey(userID int64, name string, validityDays int) (*apikey.ApiKey, error) {
+func (sm *Manager) CreateAPIKey(userID int64, name string, validityDays int) (*apikey.ApiKey, error) {
 	return sm.ApiKeyMgr.CreateApiKey(userID, name, validityDays)
 }
 
-// middleware that checks if a user is authenticated via cookies or API key
-func WithAuth(handler http.HandlerFunc, sm *SessionManager) http.HandlerFunc {
+// WithAuth middleware that checks if a user is authenticated via cookies or API key
+func WithAuth(handler http.HandlerFunc, sm *Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// first: check API keys
 		apiKeyStr, apiKeyErr := apikey.ExtractApiKey(r)
@@ -232,8 +228,8 @@ func WithAuth(handler http.HandlerFunc, sm *SessionManager) http.HandlerFunc {
 	}
 }
 
-// middleware that checks if a user is authenticated but doesn't error out if not
-func WithPossibleAuth(handler http.HandlerFunc, sm *SessionManager) http.HandlerFunc {
+// WithPossibleAuth middleware that checks if a user is authenticated but doesn't error out if not
+func WithPossibleAuth(handler http.HandlerFunc, sm *Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		authenticated := false
@@ -267,8 +263,8 @@ func WithPossibleAuth(handler http.HandlerFunc, sm *SessionManager) http.Handler
 	}
 }
 
-// middleware that only accepts API keys
-func WithAPIAuth(handler http.HandlerFunc, sm *SessionManager) http.HandlerFunc {
+// WithAPIAuth middleware that only accepts API keys
+func WithAPIAuth(handler http.HandlerFunc, sm *Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		apiKeyStr, apiKeyErr := apikey.ExtractApiKey(r)
 		if apiKeyErr != nil || apiKeyStr == "" {
@@ -294,7 +290,7 @@ func WithAPIAuth(handler http.HandlerFunc, sm *SessionManager) http.HandlerFunc 
 	}
 }
 
-func (sm *SessionManager) HandleDebug(w http.ResponseWriter, r *http.Request) {
+func (sm *Manager) HandleDebug(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID, ok := GetUserID(ctx)
 	if !ok {

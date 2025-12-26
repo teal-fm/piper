@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// Structs to represent the Last.fm API response for user.getrecenttracks
+// RecentTracksResponse Structs to represent the Last.fm API response for user.getrecenttracks
 type RecentTracksResponse struct {
 	RecentTracks RecentTracks `json:"recenttracks"`
 }
@@ -25,7 +25,7 @@ type Track struct {
 	Name       string     `json:"name"`
 	URL        string     `json:"url"`
 	Date       *TrackDate `json:"date,omitempty"` // Use pointer for optional fields
-	Attr       *struct { // Custom handling for @attr.nowplaying
+	Attr       *struct {  // Custom handling for @attr.nowplaying
 		NowPlaying string `json:"nowplaying"` // Field name corrected to match struct tag
 	} `json:"@attr,omitempty"` // This captures the @attr object within the track
 }

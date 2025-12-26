@@ -19,8 +19,8 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// MusicBrainz API Types
-type MusicBrainzArtistCredit struct {
+// ArtistCredit API Types
+type ArtistCredit struct {
 	Artist struct {
 		ID       string `json:"id"`
 		Name     string `json:"name"`
@@ -30,7 +30,7 @@ type MusicBrainzArtistCredit struct {
 	Name       string `json:"name"`
 }
 
-type MusicBrainzRelease struct {
+type Release struct {
 	ID             string `json:"id"`
 	Title          string `json:"title"`
 	Status         string `json:"status,omitempty"`
@@ -40,20 +40,20 @@ type MusicBrainzRelease struct {
 	TrackCount     int    `json:"track-count,omitempty"`
 }
 
-type MusicBrainzRecording struct {
-	ID           string                    `json:"id"`
-	Title        string                    `json:"title"`
-	Length       int                       `json:"length,omitempty"` // milliseconds
-	ISRCs        []string                  `json:"isrcs,omitempty"`
-	ArtistCredit []MusicBrainzArtistCredit `json:"artist-credit,omitempty"`
-	Releases     []MusicBrainzRelease      `json:"releases,omitempty"`
+type Recording struct {
+	ID           string         `json:"id"`
+	Title        string         `json:"title"`
+	Length       int            `json:"length,omitempty"` // milliseconds
+	ISRCs        []string       `json:"isrcs,omitempty"`
+	ArtistCredit []ArtistCredit `json:"artist-credit,omitempty"`
+	Releases     []Release      `json:"releases,omitempty"`
 }
 
-type MusicBrainzSearchResponse struct {
-	Created    time.Time              `json:"created"`
-	Count      int                    `json:"count"`
-	Offset     int                    `json:"offset"`
-	Recordings []MusicBrainzRecording `json:"recordings"`
+type SearchResponse struct {
+	Created    time.Time   `json:"created"`
+	Count      int         `json:"count"`
+	Offset     int         `json:"offset"`
+	Recordings []Recording `json:"recordings"`
 }
 
 type SearchParams struct {
@@ -64,11 +64,11 @@ type SearchParams struct {
 
 // cacheEntry holds the cached data and its expiration time.
 type cacheEntry struct {
-	recordings []MusicBrainzRecording
+	recordings []Recording
 	expiresAt  time.Time
 }
 
-type MusicBrainzService struct {
+type Service struct {
 	db          *db.DB
 	httpClient  *http.Client
 	limiter     *rate.Limiter
@@ -80,13 +80,13 @@ type MusicBrainzService struct {
 }
 
 // NewMusicBrainzService creates a new service instance with rate limiting and caching.
-func NewMusicBrainzService(db *db.DB) *MusicBrainzService {
+func NewMusicBrainzService(db *db.DB) *Service {
 	// MusicBrainz allows 1 request per second
 	limiter := rate.NewLimiter(rate.Every(time.Second), 1)
 	// Set a default cache TTL (e.g., 1 hour)
 	defaultCacheTTL := 1 * time.Hour
 	logger := log.New(os.Stdout, "musicbrainz: ", log.LstdFlags|log.Lmsgprefix)
-	return &MusicBrainzService{
+	return &Service{
 		db: db,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
@@ -111,7 +111,7 @@ func generateCacheKey(params SearchParams) string {
 }
 
 // SearchMusicBrainz searches the MusicBrainz API for recordings, using an in-memory cache.
-func (s *MusicBrainzService) SearchMusicBrainz(ctx context.Context, params SearchParams) ([]MusicBrainzRecording, error) {
+func (s *Service) SearchMusicBrainz(ctx context.Context, params SearchParams) ([]Recording, error) {
 	// Validate parameters first
 	if params.Track == "" && params.Artist == "" && params.Release == "" {
 		return nil, fmt.Errorf("at least one search parameter (Track, Artist, Release) must be provided")
@@ -142,7 +142,7 @@ func (s *MusicBrainzService) SearchMusicBrainz(ctx context.Context, params Searc
 	}
 
 	// --- Proceed with API call ---
-	queryParts := []string{}
+	var queryParts []string
 	if params.Track != "" {
 		queryParts = append(queryParts, fmt.Sprintf(`recording:"%s"`, params.Track))
 	}
@@ -182,7 +182,7 @@ func (s *MusicBrainzService) SearchMusicBrainz(ctx context.Context, params Searc
 		return nil, fmt.Errorf("MusicBrainz API request to %s returned status %d", endpoint, resp.StatusCode)
 	}
 
-	var result MusicBrainzSearchResponse
+	var result SearchResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode response from %s: %w", endpoint, err)
 	}
@@ -201,7 +201,7 @@ func (s *MusicBrainzService) SearchMusicBrainz(ctx context.Context, params Searc
 }
 
 // GetBestRelease selects the 'best' release from a list based on specific criteria.
-func (s *MusicBrainzService) GetBestRelease(releases []MusicBrainzRelease, trackTitle string) *MusicBrainzRelease {
+func (s *Service) GetBestRelease(releases []Release, trackTitle string) *Release {
 	if len(releases) == 0 {
 		return nil
 	}
@@ -259,7 +259,7 @@ func (s *MusicBrainzService) GetBestRelease(releases []MusicBrainzRelease, track
 	return &r
 }
 
-func HydrateTrack(mb *MusicBrainzService, track models.Track) (*models.Track, error) {
+func HydrateTrack(mb *Service, track models.Track) (*models.Track, error) {
 	ctx := context.Background()
 	// array of strings
 	artistArray := make([]string, len(track.Artist)) // Assuming Name is string type

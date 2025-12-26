@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -20,7 +21,7 @@ func (db *DB) FindOrCreateUserByDID(did string) (*models.User, error) {
 	WHERE atproto_did = ?`,
 		did).Scan(&user.ID, &user.ATProtoDID, &user.CreatedAt, &user.UpdatedAt)
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		now := time.Now().UTC()
 		// create user!
 		result, insertErr := db.Exec(`
@@ -162,7 +163,7 @@ func (s *SqliteATProtoStore) GetSession(ctx context.Context, did syntax.DID, ses
 		&dpopPrivateKeyMultibase,
 	)
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("session not found: %s", lookUpKey)
 	}
 	if err != nil {
@@ -271,7 +272,7 @@ func (s *SqliteATProtoStore) GetAuthRequestInfo(ctx context.Context, state strin
 		&dpopAuthServerNonce,
 		&dpopPrivateKeyMultibase,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("request info not found: %s", state)
 	}
 	if err != nil {
@@ -307,7 +308,7 @@ func (s *SqliteATProtoStore) SaveAuthRequestInfo(ctx context.Context, info oauth
 	if err == nil {
 		return fmt.Errorf("auth request already saved for state %s", info.State)
 	}
-	if err != nil && err != sql.ErrNoRows {
+	if !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
 	var accountDIDStr interface{}

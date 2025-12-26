@@ -16,7 +16,7 @@ import (
 	"golang.org/x/oauth2/spotify"
 )
 
-type OAuth2Service struct {
+type Service struct {
 	config        oauth2.Config
 	state         string
 	codeVerifier  string
@@ -30,7 +30,7 @@ func GenerateRandomState() string {
 	return base64.URLEncoding.EncodeToString(b)
 }
 
-func NewOAuth2Service(clientID, clientSecret, redirectURI string, scopes []string, provider string, tokenReceiver TokenReceiver) *OAuth2Service {
+func NewOAuth2Service(clientID, clientSecret, redirectURI string, scopes []string, provider string, tokenReceiver TokenReceiver) *Service {
 	var endpoint oauth2.Endpoint
 
 	switch strings.ToLower(provider) {
@@ -48,7 +48,7 @@ func NewOAuth2Service(clientID, clientSecret, redirectURI string, scopes []strin
 	codeVerifier := GenerateCodeVerifier()
 	codeChallenge := GenerateCodeChallenge(codeVerifier)
 
-	return &OAuth2Service{
+	return &Service{
 		config: oauth2.Config{
 			ClientID:     clientID,
 			ClientSecret: clientSecret,
@@ -63,21 +63,21 @@ func NewOAuth2Service(clientID, clientSecret, redirectURI string, scopes []strin
 	}
 }
 
-// generate a random code verifier, for PKCE
+// GenerateCodeVerifier generate a random code verifier, for PKCE
 func GenerateCodeVerifier() string {
 	b := make([]byte, 64)
 	rand.Read(b)
 	return base64.RawURLEncoding.EncodeToString(b)
 }
 
-// generate a code challenge for verification later
+// GenerateCodeChallenge generate a code challenge for verification later
 func GenerateCodeChallenge(verifier string) string {
 	h := sha256.New()
 	h.Write([]byte(verifier))
 	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 }
 
-func (o *OAuth2Service) HandleLogin(w http.ResponseWriter, r *http.Request) {
+func (o *Service) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	opts := []oauth2.AuthCodeOption{
 		oauth2.SetAuthURLParam("code_challenge", o.codeChallenge),
 		oauth2.SetAuthURLParam("code_challenge_method", "S256"),
@@ -86,12 +86,12 @@ func (o *OAuth2Service) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, authURL, http.StatusSeeOther)
 }
 
-func (o *OAuth2Service) HandleLogout(w http.ResponseWriter, r *http.Request) {
+func (o *Service) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	//TODO not implemented yet. not sure what the api call is for this package
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-func (o *OAuth2Service) HandleCallback(w http.ResponseWriter, r *http.Request) (int64, error) {
+func (o *Service) HandleCallback(w http.ResponseWriter, r *http.Request) (int64, error) {
 	state := r.URL.Query().Get("state")
 	if state != o.state {
 		log.Printf("OAuth2 Callback Error: State mismatch. Expected '%s', got '%s'", o.state, state)
@@ -131,30 +131,30 @@ func (o *OAuth2Service) HandleCallback(w http.ResponseWriter, r *http.Request) (
 	// store token and get uid
 	userID, err := o.tokenReceiver.SetAccessToken(token.AccessToken, token.RefreshToken, userId, hasSession)
 	if err != nil {
-		log.Printf("OAuth2 Callback Info: TokenReceiver did not return a valid user ID for token: %s...", token.AccessToken[:min(10, len(token.AccessToken))])
+		log.Printf("OAuth2 Callback Info: TokenReceiver did not return a valid user ID for token: %s...", token.AccessToken[:customMin(10, len(token.AccessToken))])
 	}
 
 	log.Printf("OAuth2 Callback Success: Exchanged code for token, UserID: %d", userID)
 	return userID, nil
 }
 
-func (o *OAuth2Service) GetToken(code string) (*oauth2.Token, error) {
+func (o *Service) GetToken(code string) (*oauth2.Token, error) {
 	opts := []oauth2.AuthCodeOption{
 		oauth2.SetAuthURLParam("code_verifier", o.codeVerifier),
 	}
 	return o.config.Exchange(context.Background(), code, opts...)
 }
 
-func (o *OAuth2Service) GetClient(token *oauth2.Token) *http.Client {
+func (o *Service) GetClient(token *oauth2.Token) *http.Client {
 	return o.config.Client(context.Background(), token)
 }
 
-func (o *OAuth2Service) RefreshToken(token *oauth2.Token) (*oauth2.Token, error) {
+func (o *Service) RefreshToken(token *oauth2.Token) (*oauth2.Token, error) {
 	source := o.config.TokenSource(context.Background(), token)
 	return oauth2.ReuseTokenSource(token, source).Token()
 }
 
-func min(a, b int) int {
+func customMin(a, b int) int {
 	if a < b {
 		return a
 	}

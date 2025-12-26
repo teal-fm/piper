@@ -22,15 +22,15 @@ type ApiKey struct {
 	ExpiresAt time.Time
 }
 
-// ApiKeyManager manages API keys
-type ApiKeyManager struct {
+// Manager ApiKeyManager manages API keys
+type Manager struct {
 	db      *db.DB
 	apiKeys map[string]*ApiKey
 	mu      sync.RWMutex
 }
 
 // NewApiKeyManager creates a new API key manager
-func NewApiKeyManager(database *db.DB) *ApiKeyManager {
+func NewApiKeyManager(database *db.DB) *Manager {
 	// Initialize API keys table if it doesn't exist
 	_, err := database.Exec(`
 	CREATE TABLE IF NOT EXISTS api_keys (
@@ -46,14 +46,14 @@ func NewApiKeyManager(database *db.DB) *ApiKeyManager {
 		log.Printf("Error creating api_keys table: %v", err)
 	}
 
-	return &ApiKeyManager{
+	return &Manager{
 		db:      database,
 		apiKeys: make(map[string]*ApiKey),
 	}
 }
 
 // CreateApiKey creates a new API key for a user
-func (am *ApiKeyManager) CreateApiKey(userID int64, name string, validityDays int) (*ApiKey, error) {
+func (am *Manager) CreateApiKey(userID int64, name string, validityDays int) (*ApiKey, error) {
 	am.mu.Lock()
 	defer am.mu.Unlock()
 
@@ -92,7 +92,7 @@ func (am *ApiKeyManager) CreateApiKey(userID int64, name string, validityDays in
 }
 
 // GetApiKey retrieves an API key by ID
-func (am *ApiKeyManager) GetApiKey(apiKeyID string) (*ApiKey, bool) {
+func (am *Manager) GetApiKey(apiKeyID string) (*ApiKey, bool) {
 	// First check in-memory cache
 	am.mu.RLock()
 	apiKey, exists := am.apiKeys[apiKeyID]
@@ -132,7 +132,7 @@ func (am *ApiKeyManager) GetApiKey(apiKeyID string) (*ApiKey, bool) {
 }
 
 // DeleteApiKey removes an API key
-func (am *ApiKeyManager) DeleteApiKey(apiKeyID string) error {
+func (am *Manager) DeleteApiKey(apiKeyID string) error {
 	am.mu.Lock()
 	delete(am.apiKeys, apiKeyID)
 	am.mu.Unlock()
@@ -142,7 +142,7 @@ func (am *ApiKeyManager) DeleteApiKey(apiKeyID string) error {
 }
 
 // GetUserApiKeys retrieves all API keys for a user
-func (am *ApiKeyManager) GetUserApiKeys(userID int64) ([]*ApiKey, error) {
+func (am *Manager) GetUserApiKeys(userID int64) ([]*ApiKey, error) {
 	rows, err := am.db.Query(`
 	SELECT id, user_id, name, created_at, expires_at
 	FROM api_keys 
