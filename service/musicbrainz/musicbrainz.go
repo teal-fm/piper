@@ -307,13 +307,18 @@ func HydrateTrack(mb *MusicBrainzService, track models.Track) (*models.Track, er
 		URL:            track.URL,
 		ServiceBaseUrl: track.ServiceBaseUrl,
 		RecordingMBID:  &firstResult.ID,
-		Album:          firstResultAlbum.Title,
-		ReleaseMBID:    &firstResultAlbum.ID,
 		ISRC:           bestISRC,
 		Timestamp:      track.Timestamp,
 		ProgressMs:     track.ProgressMs,
 		DurationMs:     int64(firstResult.Length),
 		Artist:         artists,
+	}
+
+	if firstResultAlbum != nil {
+		resTrack.Album = firstResultAlbum.Title
+		resTrack.ReleaseMBID = &firstResultAlbum.ID
+	} else {
+		resTrack.Album = track.Album
 	}
 
 	return &resTrack, nil

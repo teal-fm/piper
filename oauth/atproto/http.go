@@ -31,7 +31,7 @@ func (a *ATprotoAuthService) HandleClientMetadata(w http.ResponseWriter, r *http
 
 	// internal consistency check
 	if err := meta.Validate(a.clientApp.Config.ClientID); err != nil {
-		a.logger.Printf("validating client metadata", "err", err)
+		a.logger.Printf("validating client metadata: %s", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

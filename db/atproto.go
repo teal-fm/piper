@@ -65,13 +65,13 @@ func (db *DB) SetLatestATProtoSessionId(did string, atProtoSessionID string) err
 	)
 	if err != nil {
 		db.logger.Printf("%v", err)
-		return fmt.Errorf("failed to update atproto session for did %s: %w", did, atProtoSessionID)
+		return fmt.Errorf("failed to update atproto session for did %s: %s", did, atProtoSessionID)
 	}
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		// it's possible the update succeeded here?
-		return fmt.Errorf("failed to check rows affected after updating atproto session for did %s: %w", did, atProtoSessionID)
+		return fmt.Errorf("failed to check rows affected after updating atproto session for did %s: %s", did, atProtoSessionID)
 	}
 
 	if rowsAffected == 0 {
