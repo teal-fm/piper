@@ -265,8 +265,8 @@ func (s *Service) loadPrivateKey() (*ecdsa.PrivateKey, error) {
 
 // ------- Recent Played Tracks ingestion -------
 
-// appleRecentTrack models a subset of Apple Music API track response
-type appleRecentTrack struct {
+// AppleRecentTrack models a subset of Apple Music API track response
+type AppleRecentTrack struct {
 	ID         string `json:"id"`
 	Attributes struct {
 		Name             string  `json:"name"`
@@ -283,11 +283,11 @@ type appleRecentTrack struct {
 }
 
 type recentPlayedResponse struct {
-	Data []appleRecentTrack `json:"data"`
+	Data []AppleRecentTrack `json:"data"`
 }
 
 // FetchRecentPlayedTracks calls Apple Music API for a user token
-func (s *Service) FetchRecentPlayedTracks(ctx context.Context, userToken string, limit int) ([]appleRecentTrack, error) {
+func (s *Service) FetchRecentPlayedTracks(ctx context.Context, userToken string, limit int) ([]AppleRecentTrack, error) {
 	if limit <= 0 || limit > 50 {
 		limit = 25
 	}
@@ -330,8 +330,8 @@ func (s *Service) FetchRecentPlayedTracks(ctx context.Context, userToken string,
 	return parsed.Data, nil
 }
 
-// toTrack converts appleRecentTrack to internal models.Track
-func (s *Service) toTrack(t appleRecentTrack) *models.Track {
+// toTrack converts AppleRecentTrack to internal models.Track
+func (s *Service) toTrack(t AppleRecentTrack) *models.Track {
 	var duration int64
 	if t.Attributes.DurationInMillis != nil {
 		duration = *t.Attributes.DurationInMillis
@@ -368,7 +368,7 @@ func (s *Service) toTrack(t appleRecentTrack) *models.Track {
 }
 
 // GetCurrentAppleMusicTrack fetches the most recent Apple Music track for a user
-func (s *Service) GetCurrentAppleMusicTrack(ctx context.Context, user *models.User) (*appleRecentTrack, error) {
+func (s *Service) GetCurrentAppleMusicTrack(ctx context.Context, user *models.User) (*AppleRecentTrack, error) {
 	if user.AppleMusicUserToken == nil || *user.AppleMusicUserToken == "" {
 		return nil, nil
 	}

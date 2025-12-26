@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/bluesky-social/indigo/atproto/auth/oauth"
-	_ "github.com/bluesky-social/indigo/atproto/auth/oauth"
 	"github.com/bluesky-social/indigo/atproto/client"
 	"github.com/bluesky-social/indigo/atproto/crypto"
 	"github.com/bluesky-social/indigo/atproto/syntax"

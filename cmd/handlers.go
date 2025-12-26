@@ -273,7 +273,7 @@ func apiMeHandler(database *db.DB) http.HandlerFunc {
 			"spotify_connected": spotifyConnected,
 		}
 		// do not send Apple token value; just whether present
-		response["applemusic_linked"] = (user.AppleMusicUserToken != nil && *user.AppleMusicUserToken != "")
+		response["applemusic_linked"] = user.AppleMusicUserToken != nil && *user.AppleMusicUserToken != ""
 		if user.LastFMUsername == nil {
 			response["lastfm_username"] = nil
 		}
