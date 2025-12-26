@@ -1,4 +1,4 @@
-// Modify piper/oauth/oauth_manager.go
+// Package oauth Modify piper/oauth/oauth_manager.go
 package oauth
 
 import (
@@ -8,37 +8,37 @@ import (
 	"sync"
 )
 
-// manages multiple oauth client services
-type OAuthServiceManager struct {
+// ServiceManager OAuthServiceManager manages multiple oauth client services
+type ServiceManager struct {
 	services map[string]AuthService
 	mu       sync.RWMutex
 	logger   *log.Logger
 }
 
-func NewOAuthServiceManager() *OAuthServiceManager {
-	return &OAuthServiceManager{
+func NewOAuthServiceManager() *ServiceManager {
+	return &ServiceManager{
 		services: make(map[string]AuthService),
 		logger:   log.New(log.Writer(), "oauth: ", log.LstdFlags|log.Lmsgprefix),
 	}
 }
 
-// registers any service that impls AuthService
-func (m *OAuthServiceManager) RegisterService(name string, service AuthService) {
+// RegisterService registers any service that impls AuthService
+func (m *ServiceManager) RegisterService(name string, service AuthService) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.services[name] = service
 	m.logger.Printf("Registered auth service: %s", name)
 }
 
-// get an AuthService by registered name
-func (m *OAuthServiceManager) GetService(name string) (AuthService, bool) {
+// GetService get an AuthService by registered name
+func (m *ServiceManager) GetService(name string) (AuthService, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	service, exists := m.services[name]
 	return service, exists
 }
 
-func (m *OAuthServiceManager) HandleLogin(serviceName string) http.HandlerFunc {
+func (m *ServiceManager) HandleLogin(serviceName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		m.mu.RLock()
 		service, exists := m.services[serviceName]
@@ -54,7 +54,7 @@ func (m *OAuthServiceManager) HandleLogin(serviceName string) http.HandlerFunc {
 	}
 }
 
-func (m *OAuthServiceManager) HandleLogout(serviceName string) http.HandlerFunc {
+func (m *ServiceManager) HandleLogout(serviceName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		m.mu.RLock()
 		service, exists := m.services[serviceName]
@@ -70,7 +70,7 @@ func (m *OAuthServiceManager) HandleLogout(serviceName string) http.HandlerFunc 
 	}
 }
 
-func (m *OAuthServiceManager) HandleCallback(serviceName string) http.HandlerFunc {
+func (m *ServiceManager) HandleCallback(serviceName string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		m.mu.RLock()
 		service, exists := m.services[serviceName]

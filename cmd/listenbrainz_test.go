@@ -490,7 +490,7 @@ func TestListenBrainzDataConversion(t *testing.T) {
 		},
 	}
 
-	track := payload.ConvertToTrack(123)
+	track := payload.ConvertToTrack()
 
 	// Verify conversion
 	if track.Name != "Test Track" {

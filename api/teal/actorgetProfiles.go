@@ -7,7 +7,7 @@ package teal
 import (
 	"context"
 
-	"github.com/bluesky-social/indigo/xrpc"
+	"github.com/bluesky-social/indigo/lex/util"
 )
 
 // AlphaActorGetProfiles_Output is the output of a fm.teal.alpha.actor.getProfiles call.
@@ -18,13 +18,12 @@ type AlphaActorGetProfiles_Output struct {
 // AlphaActorGetProfiles calls the XRPC method "fm.teal.alpha.actor.getProfiles".
 //
 // actors: Array of actor DIDs
-func AlphaActorGetProfiles(ctx context.Context, c *xrpc.Client, actors []string) (*AlphaActorGetProfiles_Output, error) {
+func AlphaActorGetProfiles(ctx context.Context, c util.LexClient, actors []string) (*AlphaActorGetProfiles_Output, error) {
 	var out AlphaActorGetProfiles_Output
 
-	params := map[string]interface{}{
-		"actors": actors,
-	}
-	if err := c.Do(ctx, xrpc.Query, "", "fm.teal.alpha.actor.getProfiles", params, nil, &out); err != nil {
+	params := map[string]interface{}{}
+	params["actors"] = actors
+	if err := c.LexDo(ctx, util.Query, "", "fm.teal.alpha.actor.getProfiles", params, nil, &out); err != nil {
 		return nil, err
 	}
 

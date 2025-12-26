@@ -1,6 +1,8 @@
 package db
 
 import (
+	"database/sql"
+
 	"github.com/teal-fm/piper/models"
 )
 
@@ -23,7 +25,12 @@ func (db *DB) GetAllUsersWithLastFM() ([]*models.User, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		err := rows.Close()
+		if err != nil {
+			db.logger.Printf("Error closing rows: %s", err)
+		}
+	}(rows)
 
 	var users []*models.User
 

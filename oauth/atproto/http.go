@@ -1,4 +1,4 @@
-// oauth/atproto/http.go
+// Package atproto oauth/atproto/http.go
 package atproto
 
 import (
@@ -11,7 +11,7 @@ func strPtr(raw string) *string {
 	return &raw
 }
 
-func (a *ATprotoAuthService) HandleJwks(w http.ResponseWriter, r *http.Request) {
+func (a *AuthService) HandleJwks(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	body := a.clientApp.Config.PublicJWKS()
 	if err := json.NewEncoder(w).Encode(body); err != nil {
@@ -20,7 +20,7 @@ func (a *ATprotoAuthService) HandleJwks(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-func (a *ATprotoAuthService) HandleClientMetadata(w http.ResponseWriter, r *http.Request, serverUrlRoot, serverMetadataUrl, serverCallbackUrl string) {
+func (a *AuthService) HandleClientMetadata(w http.ResponseWriter, r *http.Request, serverUrlRoot string) {
 
 	meta := a.clientApp.Config.ClientMetadata()
 	if a.clientApp.Config.IsConfidential() {
@@ -31,7 +31,7 @@ func (a *ATprotoAuthService) HandleClientMetadata(w http.ResponseWriter, r *http
 
 	// internal consistency check
 	if err := meta.Validate(a.clientApp.Config.ClientID); err != nil {
-		a.logger.Printf("validating client metadata", "err", err)
+		a.logger.Printf("validating client metadata: %s", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

@@ -2,6 +2,7 @@ package playingnow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -20,20 +21,20 @@ import (
 	atprotoauth "github.com/teal-fm/piper/oauth/atproto"
 )
 
-// PlayingNowService handles publishing current playing status to ATProto
-type PlayingNowService struct {
+// Service handles publishing current playing status to ATProto
+type Service struct {
 	db             *db.DB
-	atprotoService *atprotoauth.ATprotoAuthService
+	atprotoService *atprotoauth.AuthService
 	logger         *log.Logger
 	mu             sync.RWMutex
 	clearedStatus  map[int64]bool // tracks if a user's status has been cleared on their repo
 }
 
 // NewPlayingNowService creates a new playing now service
-func NewPlayingNowService(database *db.DB, atprotoService *atprotoauth.ATprotoAuthService) *PlayingNowService {
+func NewPlayingNowService(database *db.DB, atprotoService *atprotoauth.AuthService) *Service {
 	logger := log.New(os.Stdout, "playingnow: ", log.LstdFlags|log.Lmsgprefix)
 
-	return &PlayingNowService{
+	return &Service{
 		db:             database,
 		atprotoService: atprotoService,
 		logger:         logger,
@@ -42,11 +43,14 @@ func NewPlayingNowService(database *db.DB, atprotoService *atprotoauth.ATprotoAu
 }
 
 // PublishPlayingNow publishes a currently playing track as actor status
-func (p *PlayingNowService) PublishPlayingNow(ctx context.Context, userID int64, track *models.Track) error {
+func (p *Service) PublishPlayingNow(ctx context.Context, userID int64, track *models.Track) error {
 	// Get user information to find their DID
 	user, err := p.db.GetUserByID(userID)
 	if err != nil {
 		return fmt.Errorf("failed to get user: %w", err)
+	}
+	if user == nil {
+		return fmt.Errorf("user not found user ID: %d", userID)
 	}
 
 	if user.ATProtoDID == nil {
@@ -117,7 +121,7 @@ func (p *PlayingNowService) PublishPlayingNow(ctx context.Context, userID int64,
 }
 
 // ClearPlayingNow removes the current playing status by setting an expired status
-func (p *PlayingNowService) ClearPlayingNow(ctx context.Context, userID int64) error {
+func (p *Service) ClearPlayingNow(ctx context.Context, userID int64) error {
 	// Check if status is already cleared to avoid clearing on the users repo over and over
 	p.mu.RLock()
 	alreadyCleared := p.clearedStatus[userID]
@@ -131,6 +135,10 @@ func (p *PlayingNowService) ClearPlayingNow(ctx context.Context, userID int64) e
 	user, err := p.db.GetUserByID(userID)
 	if err != nil {
 		return fmt.Errorf("failed to get user: %w", err)
+	}
+
+	if user == nil {
+		return fmt.Errorf("user not found user ID: %d", userID)
 	}
 
 	if user.ATProtoDID == nil {
@@ -200,7 +208,7 @@ func (p *PlayingNowService) ClearPlayingNow(ctx context.Context, userID int64) e
 }
 
 // trackToPlayView converts a models.Track to teal.AlphaFeedDefs_PlayView
-func (p *PlayingNowService) trackToPlayView(track *models.Track) (*teal.AlphaFeedDefs_PlayView, error) {
+func (p *Service) trackToPlayView(track *models.Track) (*teal.AlphaFeedDefs_PlayView, error) {
 	if track.Name == "" {
 		return nil, fmt.Errorf("track name cannot be empty")
 	}
@@ -273,11 +281,12 @@ func (p *PlayingNowService) trackToPlayView(track *models.Track) (*teal.AlphaFee
 
 // getStatusSwapRecord retrieves the current swap record (CID) for the actor status record.
 // Returns (nil, nil) if the record does not exist yet.
-func (p *PlayingNowService) getStatusSwapRecord(ctx context.Context, atApiClient *client.APIClient) (*comatproto.RepoGetRecord_Output, error) {
+func (p *Service) getStatusSwapRecord(ctx context.Context, atApiClient *client.APIClient) (*comatproto.RepoGetRecord_Output, error) {
 	result, err := comatproto.RepoGetRecord(ctx, atApiClient, "", "fm.teal.alpha.actor.status", atApiClient.AccountDID.String(), "self")
 
 	if err != nil {
-		xErr, ok := err.(*client.APIError)
+		var xErr *client.APIError
+		ok := errors.As(err, &xErr)
 		if !ok {
 			return nil, fmt.Errorf("error getting the record: %w", err)
 		}

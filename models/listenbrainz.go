@@ -47,7 +47,7 @@ type ListenBrainzAdditionalInfo struct {
 }
 
 // ConvertToTrack converts ListenBrainz format to internal Track format
-func (lbp *ListenBrainzPayload) ConvertToTrack(userID int64) Track {
+func (lbp *ListenBrainzPayload) ConvertToTrack() Track {
 	track := Track{
 		Name:   lbp.TrackMetadata.TrackName,
 		Artist: []Artist{{Name: lbp.TrackMetadata.ArtistName}},

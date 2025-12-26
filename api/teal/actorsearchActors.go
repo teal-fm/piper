@@ -7,7 +7,7 @@ package teal
 import (
 	"context"
 
-	"github.com/bluesky-social/indigo/xrpc"
+	"github.com/bluesky-social/indigo/lex/util"
 )
 
 // AlphaActorSearchActors_Output is the output of a fm.teal.alpha.actor.searchActors call.
@@ -22,15 +22,18 @@ type AlphaActorSearchActors_Output struct {
 // cursor: Cursor for pagination
 // limit: The maximum number of actors to return
 // q: The search query
-func AlphaActorSearchActors(ctx context.Context, c *xrpc.Client, cursor string, limit int64, q string) (*AlphaActorSearchActors_Output, error) {
+func AlphaActorSearchActors(ctx context.Context, c util.LexClient, cursor string, limit int64, q string) (*AlphaActorSearchActors_Output, error) {
 	var out AlphaActorSearchActors_Output
 
-	params := map[string]interface{}{
-		"cursor": cursor,
-		"limit":  limit,
-		"q":      q,
+	params := map[string]interface{}{}
+	if cursor != "" {
+		params["cursor"] = cursor
 	}
-	if err := c.Do(ctx, xrpc.Query, "", "fm.teal.alpha.actor.searchActors", params, nil, &out); err != nil {
+	if limit != 0 {
+		params["limit"] = limit
+	}
+	params["q"] = q
+	if err := c.LexDo(ctx, util.Query, "", "fm.teal.alpha.actor.searchActors", params, nil, &out); err != nil {
 		return nil, err
 	}
 
