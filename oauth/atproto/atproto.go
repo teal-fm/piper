@@ -29,7 +29,7 @@ type AuthService struct {
 	allowedDids    []string
 }
 
-func NewATprotoAuthService(database *db.DB, sessionManager *session.SessionManager, clientSecretKey string, clientId string, callbackUrl string, clientSecretId string, allowedDids []string) (*ATprotoAuthService, error) {
+func NewATprotoAuthService(database *db.DB, sessionManager *session.Manager, clientSecretKey string, clientId string, callbackUrl string, clientSecretId string, allowedDids []string) (*AuthService, error) {
 	fmt.Println(clientId, callbackUrl)
 
 	scopes := []string{"atproto", "repo:fm.teal.alpha.feed.play", "repo:fm.teal.alpha.actor.status"}
