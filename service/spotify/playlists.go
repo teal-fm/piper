@@ -22,7 +22,7 @@ type PlaylistResponse struct {
 	Items    []Playlist `json:"items"`
 }
 
-func (s *SpotifyService) getUserPlaylists(userID int64) (*PlaylistResponse, error) {
+func (s *Service) getUserPlaylists(userID int64) (*PlaylistResponse, error) {
 	s.mu.RLock()
 	token, exists := s.userTokens[userID]
 	s.mu.RUnlock()
@@ -35,7 +35,12 @@ func (s *SpotifyService) getUserPlaylists(userID int64) (*PlaylistResponse, erro
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user playlists: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			log.Fatal("failed to close resp.Body")
+		}
+	}(resp.Body)
 
 	if resp.Response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("error response from Spotify: %s", resp.Response.Status)

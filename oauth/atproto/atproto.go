@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/bluesky-social/indigo/atproto/auth/oauth"
-	_ "github.com/bluesky-social/indigo/atproto/auth/oauth"
 	"github.com/bluesky-social/indigo/atproto/client"
 	"github.com/bluesky-social/indigo/atproto/crypto"
 	"github.com/bluesky-social/indigo/atproto/syntax"
@@ -20,16 +19,17 @@ import (
 	"slices"
 )
 
-type ATprotoAuthService struct {
+type AuthService struct {
 	clientApp      *oauth.ClientApp
 	DB             *db.DB
-	sessionManager *session.SessionManager
+	sessionManager *session.Manager
 	clientId       string
 	callbackUrl    string
 	logger         *log.Logger
+	allowedDids    []string
 }
 
-func NewATprotoAuthService(database *db.DB, sessionManager *session.SessionManager, clientSecretKey string, clientId string, callbackUrl string, clientSecretId string) (*ATprotoAuthService, error) {
+func NewATprotoAuthService(database *db.DB, sessionManager *session.Manager, clientSecretKey string, clientId string, callbackUrl string, clientSecretId string, allowedDids []string) (*AuthService, error) {
 	fmt.Println(clientId, callbackUrl)
 
 	scopes := []string{"atproto", "repo:fm.teal.alpha.feed.play", "repo:fm.teal.alpha.actor.status"}
@@ -49,18 +49,19 @@ func NewATprotoAuthService(database *db.DB, sessionManager *session.SessionManag
 
 	logger := log.New(os.Stdout, "ATProto oauth: ", log.LstdFlags|log.Lmsgprefix)
 
-	svc := &ATprotoAuthService{
+	svc := &AuthService{
 		clientApp:      oauthClient,
 		callbackUrl:    callbackUrl,
 		DB:             database,
 		sessionManager: sessionManager,
 		clientId:       clientId,
 		logger:         logger,
+		allowedDids:    allowedDids,
 	}
 	return svc, nil
 }
 
-func (a *ATprotoAuthService) GetATProtoClient(accountDID string, sessionID string, ctx context.Context) (*client.APIClient, error) {
+func (a *AuthService) GetATProtoClient(accountDID string, sessionID string, ctx context.Context) (*client.APIClient, error) {
 	did, err := syntax.ParseDID(accountDID)
 	if err != nil {
 		return nil, err
@@ -75,7 +76,7 @@ func (a *ATprotoAuthService) GetATProtoClient(accountDID string, sessionID strin
 
 }
 
-func (a *ATprotoAuthService) HandleLogin(w http.ResponseWriter, r *http.Request) {
+func (a *AuthService) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	handle := r.URL.Query().Get("handle")
 	if handle == "" {
 		a.logger.Printf("ATProto Login Error: handle is required")
@@ -83,34 +84,62 @@ func (a *ATprotoAuthService) HandleLogin(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	ctx := r.Context()
-	redirectURL, err := a.clientApp.StartAuthFlow(ctx, handle)
+
+	a.logger.Printf("Attempting login for handle %s", handle)
+
+	atid, err := syntax.ParseAtIdentifier(handle)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error parsing AT Identifier (%s): %v", handle, err), http.StatusInternalServerError)
+		return
+	}
+	ident, err := a.clientApp.Dir.Lookup(ctx, *atid)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error resolving DID for AT Identifier (%s): %v", handle, err), http.StatusInternalServerError)
+		return
+	}
+	accountDid := ident.DID.String()
+
+	if len(a.allowedDids) > 0 && !slices.Contains(a.allowedDids, accountDid) {
+		a.logger.Printf("ATProto Login Error: DID %s for handle %s is not in the allowed list", accountDid, handle)
+		http.Error(w, "Unauthorized", http.StatusForbidden)
+		return
+	}
+
+	redirectURL, err := a.clientApp.StartAuthFlow(ctx, accountDid)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error initiating login: %v", err), http.StatusInternalServerError)
+		return
 	}
 	authUrl, err := url.Parse(redirectURL)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error initiating login: %v", err), http.StatusInternalServerError)
+		return
 	}
 
 	a.logger.Printf("ATProto Login: Redirecting user %s to %s", handle, authUrl.String())
 	http.Redirect(w, r, authUrl.String(), http.StatusFound)
 }
 
-func (a *ATprotoAuthService) HandleLogout(w http.ResponseWriter, r *http.Request) {
+func (a *AuthService) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("session")
 
 	if err == nil {
-		session, exists := a.sessionManager.GetSession(cookie.Value)
+		webSession, exists := a.sessionManager.GetSession(cookie.Value)
 		if !exists {
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
 
-		dbUser, err := a.DB.GetUserByID(session.UserID)
+		dbUser, err := a.DB.GetUserByID(webSession.UserID)
 		if err != nil {
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
+		if dbUser == nil {
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+
 		did, err := syntax.ParseDID(*dbUser.ATProtoDID)
 
 		if err != nil {
@@ -120,7 +149,7 @@ func (a *ATprotoAuthService) HandleLogout(w http.ResponseWriter, r *http.Request
 		}
 
 		ctx := r.Context()
-		err = a.clientApp.Logout(ctx, did, session.ATProtoSessionID)
+		err = a.clientApp.Logout(ctx, did, webSession.ATProtoSessionID)
 		if err != nil {
 			a.logger.Printf("Error logging the user: %s out: %s", did, err)
 		}
@@ -132,7 +161,7 @@ func (a *ATprotoAuthService) HandleLogout(w http.ResponseWriter, r *http.Request
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-func (a *ATprotoAuthService) HandleCallback(w http.ResponseWriter, r *http.Request) (int64, error) {
+func (a *AuthService) HandleCallback(w http.ResponseWriter, r *http.Request) (int64, error) {
 	ctx := r.Context()
 
 	sessData, err := a.clientApp.ProcessCallback(ctx, r.URL.Query())
@@ -165,6 +194,6 @@ func (a *ATprotoAuthService) HandleCallback(w http.ResponseWriter, r *http.Reque
 		a.logger.Printf("Failed to set latest atproto session id for user %d: %v", user.ID, err)
 	}
 
-	a.logger.Printf("ATProto Callback Success: User %d (DID: %s) authenticated.", user.ID, user.ATProtoDID)
+	a.logger.Printf("ATProto Callback Success: User %d (DID: %v) authenticated.", user.ID, user.ATProtoDID)
 	return user.ID, nil
 }

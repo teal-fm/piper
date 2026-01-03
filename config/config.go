@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"log"
 	"strings"
 
@@ -48,7 +49,8 @@ func Load() {
 	viper.AddConfigPath(".")
 
 	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+		var configFileNotFoundError viper.ConfigFileNotFoundError
+		if !errors.As(err, &configFileNotFoundError) {
 			log.Fatalf("Error reading config file: %v", err)
 		}
 		log.Println("Config file not found, using default values and environment variables")
@@ -58,7 +60,7 @@ func Load() {
 
 	// check for required settings
 	requiredVars := []string{"spotify.client_id", "spotify.client_secret"}
-	missingVars := []string{}
+	var missingVars []string
 
 	for _, v := range requiredVars {
 		if !viper.IsSet(v) {

@@ -21,7 +21,7 @@ func TestTrackToPlayView(t *testing.T) {
 	}
 
 	// Mock ATProto service (we'll just test the conversion, not the actual submission)
-	service := &PlayingNowService{
+	service := &Service{
 		db:     database,
 		logger: nil, // We'll skip logging in tests
 	}
@@ -97,7 +97,7 @@ func TestTrackToPlayView(t *testing.T) {
 }
 
 func TestTrackToPlayViewEmptyTrack(t *testing.T) {
-	service := &PlayingNowService{}
+	service := &Service{}
 
 	// Test with empty track name (should fail)
 	track := &models.Track{
@@ -112,7 +112,7 @@ func TestTrackToPlayViewEmptyTrack(t *testing.T) {
 }
 
 func TestTrackToPlayViewMinimal(t *testing.T) {
-	service := &PlayingNowService{}
+	service := &Service{}
 
 	// Test with minimal track data
 	track := &models.Track{

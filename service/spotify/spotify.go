@@ -28,10 +28,10 @@ import (
 	"github.com/teal-fm/piper/session"
 )
 
-type SpotifyService struct {
+type Service struct {
 	DB                *db.DB
-	atprotoService    *atprotoauth.ATprotoAuthService // Added field
-	mb                *musicbrainz.MusicBrainzService // Added field
+	atprotoService    *atprotoauth.AuthService // Added field
+	mb                *musicbrainz.Service     // Added field
 	playingNowService interface {
 		PublishPlayingNow(ctx context.Context, userID int64, track *models.Track) error
 		ClearPlayingNow(ctx context.Context, userID int64) error
@@ -42,13 +42,13 @@ type SpotifyService struct {
 	logger     *log.Logger
 }
 
-func NewSpotifyService(database *db.DB, atprotoService *atprotoauth.ATprotoAuthService, musicBrainzService *musicbrainz.MusicBrainzService, playingNowService interface {
+func NewSpotifyService(database *db.DB, atprotoService *atprotoauth.AuthService, musicBrainzService *musicbrainz.Service, playingNowService interface {
 	PublishPlayingNow(ctx context.Context, userID int64, track *models.Track) error
 	ClearPlayingNow(ctx context.Context, userID int64) error
-}) *SpotifyService {
+}) *Service {
 	logger := log.New(os.Stdout, "spotify: ", log.LstdFlags|log.Lmsgprefix)
 
-	return &SpotifyService{
+	return &Service{
 		DB:                database,
 		atprotoService:    atprotoService,
 		mb:                musicBrainzService,
@@ -59,7 +59,7 @@ func NewSpotifyService(database *db.DB, atprotoService *atprotoauth.ATprotoAuthS
 	}
 }
 
-func (s *SpotifyService) SubmitTrackToPDS(did string, mostRecentAtProtoSessionID string, track *models.Track, ctx context.Context) error {
+func (s *Service) SubmitTrackToPDS(did string, mostRecentAtProtoSessionID string, track *models.Track, ctx context.Context) error {
 	//Had a empty feed.play get submitted not sure why. Tracking here
 	if track.Name == "" {
 		s.logger.Println("Track name is empty. Skipping submission. Please record the logs before and send to the teal.fm Discord")
@@ -70,7 +70,7 @@ func (s *SpotifyService) SubmitTrackToPDS(did string, mostRecentAtProtoSessionID
 	return atprotoservice.SubmitPlayToPDS(ctx, did, mostRecentAtProtoSessionID, track, s.atprotoService)
 }
 
-func (s *SpotifyService) SetAccessToken(token string, refreshToken string, userId int64, hasSession bool) (int64, error) {
+func (s *Service) SetAccessToken(token string, refreshToken string, userId int64, hasSession bool) (int64, error) {
 	userID, err := s.identifyAndStoreUser(token, refreshToken, userId, hasSession)
 	if err != nil {
 		s.logger.Printf("Error identifying and storing user: %v", err)
@@ -79,7 +79,7 @@ func (s *SpotifyService) SetAccessToken(token string, refreshToken string, userI
 	return userID, nil
 }
 
-func (s *SpotifyService) identifyAndStoreUser(token string, refreshToken string, userId int64, hasSession bool) (int64, error) {
+func (s *Service) identifyAndStoreUser(token string, refreshToken string, userId int64, hasSession bool) (int64, error) {
 	userProfile, err := s.fetchSpotifyProfile(token)
 	if err != nil {
 		s.logger.Printf("Error fetching Spotify profile: %v", err)
@@ -102,13 +102,13 @@ func (s *SpotifyService) identifyAndStoreUser(token string, refreshToken string,
 		if !hasSession {
 			s.logger.Printf("User does not seem to exist")
 			return 0, fmt.Errorf("user does not seem to exist")
-		} else {
-			// overwrite prev user
-			user, err = s.DB.AddSpotifySession(userId, userProfile.DisplayName, userProfile.Email, userProfile.ID, token, refreshToken, tokenExpiryTime)
-			if err != nil {
-				s.logger.Printf("Error adding Spotify session for user ID %d: %v", userId, err)
-				return 0, err
-			}
+		}
+
+		// overwrite prev user
+		user, err = s.DB.AddSpotifySession(userId, userProfile.DisplayName, userProfile.Email, userProfile.ID, token, refreshToken, tokenExpiryTime)
+		if err != nil {
+			s.logger.Printf("Error adding Spotify session for user ID %d: %v", userId, err)
+			return 0, err
 		}
 	} else {
 		err = s.DB.UpdateUserToken(user.ID, token, refreshToken, tokenExpiryTime)
@@ -119,6 +119,10 @@ func (s *SpotifyService) identifyAndStoreUser(token string, refreshToken string,
 			s.logger.Printf("Updated token for existing user: %s (ID: %d)", *user.Username, user.ID)
 		}
 	}
+	if user == nil {
+		return 0, fmt.Errorf("user does not seem to exist")
+	}
+
 	user.AccessToken = &token
 	user.TokenExpiry = &tokenExpiryTime
 
@@ -136,7 +140,7 @@ type spotifyProfile struct {
 	Email       string `json:"email"`
 }
 
-func (s *SpotifyService) LoadAllUsers() error {
+func (s *Service) LoadAllUsers() error {
 	users, err := s.DB.GetAllActiveUsers()
 	if err != nil {
 		return fmt.Errorf("error loading users: %v", err)
@@ -170,7 +174,7 @@ func (s *SpotifyService) LoadAllUsers() error {
 	return nil
 }
 
-func (s *SpotifyService) UnloadAllUsers() error {
+func (s *Service) UnloadAllUsers() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.userTokens = make(map[int64]string)
@@ -179,7 +183,7 @@ func (s *SpotifyService) UnloadAllUsers() error {
 
 // refreshTokenInner handles the actual Spotify token refresh logic.
 // It returns the new access token or an error.
-func (s *SpotifyService) refreshTokenInner(userID int64) (string, error) {
+func (s *Service) refreshTokenInner(userID int64) (string, error) {
 	user, err := s.DB.GetUserByID(userID)
 	if err != nil {
 		return "", fmt.Errorf("error loading user %d for refresh: %w", userID, err)
@@ -221,7 +225,12 @@ func (s *SpotifyService) refreshTokenInner(userID int64) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to execute refresh request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			s.logger.Printf("Failed to close refresh response body: %v", err)
+		}
+	}(resp.Body)
 
 	body, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
@@ -276,13 +285,13 @@ func (s *SpotifyService) refreshTokenInner(userID int64) (string, error) {
 
 // RefreshToken attempts to refresh the token for a given user ID.
 // It's less commonly needed now refreshTokenInner handles fetching the user.
-func (s *SpotifyService) RefreshToken(userID int64) error {
+func (s *Service) RefreshToken(userID int64) error {
 	_, err := s.refreshTokenInner(userID)
 	return err
 }
 
-// attempt to refresh expired tokens
-func (s *SpotifyService) RefreshExpiredTokens() {
+// RefreshExpiredTokens attempt to refresh expired tokens
+func (s *Service) RefreshExpiredTokens() {
 	users, err := s.DB.GetUsersWithExpiredTokens()
 	if err != nil {
 		s.logger.Printf("Error fetching users with expired tokens: %v", err)
@@ -311,7 +320,7 @@ func (s *SpotifyService) RefreshExpiredTokens() {
 	}
 }
 
-func (s *SpotifyService) fetchSpotifyProfile(token string) (*spotifyProfile, error) {
+func (s *Service) fetchSpotifyProfile(token string) (*spotifyProfile, error) {
 	req, err := http.NewRequest("GET", "https://api.spotify.com/v1/me", nil)
 	if err != nil {
 		return nil, err
@@ -323,7 +332,12 @@ func (s *SpotifyService) fetchSpotifyProfile(token string) (*spotifyProfile, err
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			s.logger.Printf("Failed to close spotify profile response body: %v", err)
+		}
+	}(resp.Body)
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
@@ -338,7 +352,7 @@ func (s *SpotifyService) fetchSpotifyProfile(token string) (*spotifyProfile, err
 	return &profile, nil
 }
 
-func (s *SpotifyService) HandleCurrentTrack(w http.ResponseWriter, r *http.Request) {
+func (s *Service) HandleCurrentTrack(w http.ResponseWriter, r *http.Request) {
 	userID, ok := session.GetUserID(r.Context())
 	if !ok {
 		http.Error(w, "User not authenticated", http.StatusUnauthorized)
@@ -350,15 +364,23 @@ func (s *SpotifyService) HandleCurrentTrack(w http.ResponseWriter, r *http.Reque
 	s.mu.RUnlock()
 
 	if !exists || track == nil {
-		fmt.Fprintf(w, "No track currently playing")
+		_, err := fmt.Fprintf(w, "No track currently playing")
+		if err != nil {
+			s.logger.Printf("Error writing response: %v", err)
+			return
+		}
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(track)
+	err := json.NewEncoder(w).Encode(track)
+	if err != nil {
+		s.logger.Printf("Error encoding response: %v", err)
+		return
+	}
 }
 
-func (s *SpotifyService) HandleTrackHistory(w http.ResponseWriter, r *http.Request) {
+func (s *Service) HandleTrackHistory(w http.ResponseWriter, r *http.Request) {
 	userID, ok := session.GetUserID(r.Context())
 	if !ok {
 		http.Error(w, "User not authenticated", http.StatusUnauthorized)
@@ -373,10 +395,14 @@ func (s *SpotifyService) HandleTrackHistory(w http.ResponseWriter, r *http.Reque
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(tracks)
+	err = json.NewEncoder(w).Encode(tracks)
+	if err != nil {
+		s.logger.Printf("Error encoding response: %v", err)
+		return
+	}
 }
 
-func (s *SpotifyService) FetchCurrentTrack(userID int64) (*models.Track, error) {
+func (s *Service) FetchCurrentTrack(userID int64) (*models.Track, error) {
 	s.mu.RLock()
 	token, exists := s.userTokens[userID]
 	s.mu.RUnlock()
@@ -435,7 +461,12 @@ func (s *SpotifyService) FetchCurrentTrack(userID int64) (*models.Track, error) 
 
 	// Ensure body is closed regardless of loop outcome
 	if resp != nil && resp.Body != nil {
-		defer resp.Body.Close()
+		defer func(Body io.ReadCloser) {
+			err := Body.Close()
+			if err != nil {
+				s.logger.Printf("Failed to close spotify response body: %v", err)
+			}
+		}(resp.Body)
 	}
 
 	// Handle final response after loop
@@ -512,7 +543,7 @@ func (s *SpotifyService) FetchCurrentTrack(userID int64) (*models.Track, error) 
 	return track, nil
 }
 
-func (s *SpotifyService) fetchAllUserTracks(ctx context.Context) {
+func (s *Service) fetchAllUserTracks(ctx context.Context) {
 	// copy userIDs to avoid holding the lock too long
 	s.mu.RLock()
 	userIDs := make([]int64, 0, len(s.userTokens))
@@ -568,7 +599,7 @@ func (s *SpotifyService) fetchAllUserTracks(ctx context.Context) {
 			currentTrack.DurationMs > 30000
 
 		// just log when we stamp tracks
-		if isNewTrack && isLastTrackStamped && !currentTrack.HasStamped {
+		if isNewTrack && isLastTrackStamped && currentTrack != nil && !currentTrack.HasStamped {
 			artistName := "Unknown Artist"
 			if len(currentTrack.Artist) > 0 {
 				artistName = currentTrack.Artist[0].Name
@@ -576,8 +607,11 @@ func (s *SpotifyService) fetchAllUserTracks(ctx context.Context) {
 			s.logger.Printf("User %d stamped (previous) track: %s by %s", userID, currentTrack.Name, artistName)
 			currentTrack.HasStamped = true
 			if currentTrack.PlayID != 0 {
-				s.DB.UpdateTrack(currentTrack.PlayID, currentTrack)
-
+				err := s.DB.UpdateTrack(currentTrack.PlayID, currentTrack)
+				if err != nil {
+					s.logger.Printf("Error updating track %d in DB: %v", currentTrack.PlayID, err)
+					return
+				}
 				s.logger.Printf("Updated!")
 			}
 		}
@@ -591,7 +625,11 @@ func (s *SpotifyService) fetchAllUserTracks(ctx context.Context) {
 			track.HasStamped = true
 			// if currenttrack has a playid and the last track is the same as the current track
 			if !isNewTrack && currentTrack.PlayID != 0 {
-				s.DB.UpdateTrack(currentTrack.PlayID, track)
+				err := s.DB.UpdateTrack(currentTrack.PlayID, track)
+				if err != nil {
+					s.logger.Printf("Error updating track %d in DB: %v", currentTrack.PlayID, err)
+					return
+				}
 
 				// Update in memory
 				s.mu.Lock()
@@ -640,8 +678,8 @@ func (s *SpotifyService) fetchAllUserTracks(ctx context.Context) {
 				s.logger.Printf("User %d (%d): ATProto DID not set. Skipping PDS submission for track '%s'.", userID, dbUser.ATProtoDID, track.Name)
 			} else {
 				// User has a DID, proceed with hydration and submission
-				var trackToSubmitToPDS *models.Track = track // Default to the original track (already *models.Track)
-				if s.mb != nil {                             // Check if MusicBrainz service is available
+				var trackToSubmitToPDS = track // Default to the original track (already *models.Track)
+				if s.mb != nil {               // Check if MusicBrainz service is available
 					// musicbrainz.HydrateTrack expects models.Track as second argument, so we pass *track
 					// and it returns *models.Track
 					hydratedTrack, errHydrate := musicbrainz.HydrateTrack(s.mb, *track)
@@ -679,7 +717,7 @@ func (s *SpotifyService) fetchAllUserTracks(ctx context.Context) {
 	}
 }
 
-func (s *SpotifyService) StartListeningTracker(interval time.Duration) {
+func (s *Service) StartListeningTracker(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 
 	go func() {

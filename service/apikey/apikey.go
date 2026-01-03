@@ -8,17 +8,17 @@ import (
 	"time"
 
 	"github.com/teal-fm/piper/db"
-	db_apikey "github.com/teal-fm/piper/db/apikey" // Assuming this is the package for ApiKey struct
+	dbapikey "github.com/teal-fm/piper/db/apikey" // Assuming this is the package for ApiKey struct
 	"github.com/teal-fm/piper/pages"
 	"github.com/teal-fm/piper/session"
 )
 
 type Service struct {
 	db       *db.DB
-	sessions *session.SessionManager
+	sessions *session.Manager
 }
 
-func NewAPIKeyService(database *db.DB, sessionManager *session.SessionManager) *Service {
+func NewAPIKeyService(database *db.DB, sessionManager *session.Manager) *Service {
 	return &Service{
 		db:       database,
 		sessions: sessionManager,
@@ -204,8 +204,8 @@ func (s *Service) HandleAPIKeyManagement(database *db.DB, pg *pages.Pages) http.
 		}
 
 		data := struct {
-			Keys     []*db_apikey.ApiKey // Assuming GetUserApiKeys returns this type
-			NewKeyID string              // Changed from NewKey for clarity as it's an ID
+			Keys     []*dbapikey.ApiKey // Assuming GetUserApiKeys returns this type
+			NewKeyID string             // Changed from NewKey for clarity as it's an ID
 			NavBar   pages.NavBar
 		}{
 			Keys:     keys,
