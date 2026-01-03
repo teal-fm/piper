@@ -1,5 +1,5 @@
 {
-  description = "Piper - A teal.fm scrobbler service for ATProto";
+  description = "Piper - A scrobbler service for teal.fm";
   inputs = { nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable"; };
 
   outputs = { self, nixpkgs }:
@@ -16,7 +16,7 @@
         let pkgs = nixpkgsFor.${system};
         in {
           default = pkgs.callPackage ./default.nix { };
-          teal-piper = pkgs.callPackage ./default.nix { };
+          tealfm-piper = pkgs.callPackage ./default.nix { };
         });
 
       apps = forAllSystems (system:
@@ -36,10 +36,10 @@
         });
 
       nixosModules.default = import ./module.nix;
-      nixosModules.teal-piper = import ./module.nix;
+      nixosModules.tealfm-piper = import ./module.nix;
 
       overlays.default = final: prev: {
-        teal-piper = final.callPackage ./default.nix { };
+        tealfm-piper = final.callPackage ./default.nix { };
       };
     };
 }

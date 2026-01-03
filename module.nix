@@ -4,7 +4,7 @@ let
   inherit (lib)
     mkEnableOption mkIf mkOption mkPackageOption types literalExpression;
 
-  cfg = config.services.teal-piper;
+  cfg = config.services.tealfm-piper;
 
   settingsFormat = pkgs.formats.keyValue { };
 
@@ -26,33 +26,31 @@ let
 
   finalSettings = lib.filterAttrs (_: v: v != null)
     (cfg.settings // derivedSettings // dbPathDefault);
-  settingsFile = settingsFormat.generate "teal-piper.env" finalSettings;
+  settingsFile = settingsFormat.generate "tealfm-piper.env" finalSettings;
 
 in {
-  meta = {
-    maintainers = with lib.maintainers; [ ]; # TODO:
-  };
+  meta = { maintainers = with lib.maintainers; [ ptdewey ]; };
 
-  options.services.teal-piper = {
+  options.services.tealfm-piper = {
     enable = mkEnableOption "Piper - teal.fm scrobbler service";
 
-    package = mkPackageOption pkgs "teal-piper" { };
+    package = mkPackageOption pkgs "tealfm-piper" { };
 
     user = mkOption {
       type = types.str;
-      default = "teal-piper";
+      default = "tealfm-piper";
       description = "User account under which piper runs.";
     };
 
     group = mkOption {
       type = types.str;
-      default = "teal-piper";
+      default = "tealfm-piper";
       description = "Group under which piper runs.";
     };
 
     dataDir = mkOption {
       type = types.path;
-      default = "/var/lib/teal-piper";
+      default = "/var/lib/tealfm-piper";
       description = "Directory where piper stores its database and data.";
     };
 
@@ -145,7 +143,7 @@ in {
     environmentFile = mkOption {
       type = types.nullOr types.path;
       default = null;
-      example = "/run/secrets/teal-piper.env";
+      example = "/run/secrets/tealfm-piper.env";
       description = ''
         Path to a file containing environment variables for secrets.
 
@@ -171,7 +169,7 @@ in {
 
     users.groups.${cfg.group} = { };
 
-    systemd.services.teal-piper = {
+    systemd.services.tealfm-piper = {
       description = "Piper - teal.fm scrobbler service";
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
@@ -199,7 +197,7 @@ in {
 
         # Allow write access to data directory
         ReadWritePaths = [ cfg.dataDir ];
-        StateDirectory = "teal-piper";
+        StateDirectory = "tealfm-piper";
         StateDirectoryMode = "0700";
 
         # Working directory
@@ -223,18 +221,18 @@ in {
         assertion = cfg.environmentFile != null
           || (cfg.settings ? ATPROTO_CLIENT_SECRET_KEY);
         message =
-          "services.teal-piper: ATPROTO_CLIENT_SECRET_KEY must be set via settings or environmentFile";
+          "services.tealfm-piper: ATPROTO_CLIENT_SECRET_KEY must be set via settings or environmentFile";
       }
       {
         assertion = cfg.environmentFile != null
           || (cfg.settings ? ATPROTO_CLIENT_SECRET_KEY_ID);
         message =
-          "services.teal-piper: ATPROTO_CLIENT_SECRET_KEY_ID must be set via settings or environmentFile";
+          "services.tealfm-piper: ATPROTO_CLIENT_SECRET_KEY_ID must be set via settings or environmentFile";
       }
       {
         assertion = cfg.settings.SERVER_ROOT_URL != null;
         message =
-          "services.teal-piper: SERVER_ROOT_URL must be set in settings (e.g., https://piper.teal.fm)";
+          "services.tealfm-piper: SERVER_ROOT_URL must be set in settings (e.g., https://piper.teal.fm)";
       }
     ];
   };
