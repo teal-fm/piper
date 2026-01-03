@@ -141,6 +141,7 @@ in {
       '';
     };
 
+    # TODO: maybe change to `environmentFiles`
     environmentFile = mkOption {
       type = types.nullOr types.path;
       default = null;
