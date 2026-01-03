@@ -57,18 +57,4 @@ func Load() {
 	} else {
 		log.Println("Using config file:", viper.ConfigFileUsed())
 	}
-
-	// check for required settings
-	requiredVars := []string{"spotify.client_id", "spotify.client_secret"}
-	var missingVars []string
-
-	for _, v := range requiredVars {
-		if !viper.IsSet(v) {
-			missingVars = append(missingVars, v)
-		}
-	}
-
-	if len(missingVars) > 0 {
-		log.Fatalf("Required configuration variables not set: %s", strings.Join(missingVars, ", "))
-	}
 }

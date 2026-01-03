@@ -98,8 +98,9 @@ func main() {
 
 	mbService := musicbrainz.NewMusicBrainzService(database)
 	playingNowService := playingnow.NewPlayingNowService(database, atprotoService)
-	spotifyService := spotify.NewSpotifyService(database, atprotoService, mbService, playingNowService)
-	lastfmService := lastfm.NewLastFMService(database, viper.GetString("lastfm.api_key"), mbService, atprotoService, playingNowService)
+
+	// Apple Music Initialization
+
 	// Read Apple Music settings with env fallbacks
 	teamID := viper.GetString("applemusic.team_id")
 	if teamID == "" {
@@ -117,6 +118,7 @@ func main() {
 	var appleMusicService *applemusic.Service
 	// Only initialize Apple Music service if all required credentials are present
 	if teamID != "" && keyID != "" && keyPath != "" {
+		log.Println("Apple Music variables provided, enabling Apple Music service")
 		appleMusicService = applemusic.NewService(
 			teamID,
 			keyID,
@@ -135,15 +137,45 @@ func main() {
 
 	oauthManager := oauth.NewOAuthServiceManager()
 
-	spotifyOAuth := oauth.NewOAuth2Service(
-		viper.GetString("spotify.client_id"),
-		viper.GetString("spotify.client_secret"),
-		viper.GetString("callback.spotify"),
-		viper.GetStringSlice("spotify.scopes"),
-		"spotify",
-		spotifyService,
-	)
-	oauthManager.RegisterService("spotify", spotifyOAuth)
+	// Spotify Initialization
+	var spotifyClientID = viper.GetString("spotify.client_id")
+	var spotifyClientSecret = viper.GetString("spotify.client_secret")
+	var spotifyCallbackURL = viper.GetString("callback.spotify")
+	var spotifyScopes = viper.GetStringSlice("spotify.scopes")
+
+	var spotifyService *spotify.Service
+	// Only initialize Spotify service if all required credentials are present
+	if spotifyClientID != "" && spotifyClientSecret != "" && spotifyCallbackURL != "" && len(spotifyScopes) > 0 {
+		log.Println("Spotify variables provided, enabling Spotify service")
+		spotifyService = spotify.NewSpotifyService(database, atprotoService, mbService, playingNowService)
+
+		spotifyOAuth := oauth.NewOAuth2Service(
+			spotifyClientID,
+			spotifyClientSecret,
+			spotifyCallbackURL,
+			spotifyScopes,
+			"spotify",
+			spotifyService,
+		)
+		oauthManager.RegisterService("spotify", spotifyOAuth)
+	} else {
+		log.Println("Spotify credentials not configured (missing client_id, client_secret, callback, or scopes). Spotify features will be disabled.")
+	}
+
+	// Last.fm Initialization
+	var lastfmInterval = time.Duration(viper.GetInt("lastfm.interval_seconds")) * time.Second
+
+	var lastfmService *lastfm.Service
+	if viper.GetString("lastfm.api_key") != "" {
+		log.Println("Last.fm API key provided, enabling Last.fm service")
+		lastfmService = lastfm.NewLastFMService(database, viper.GetString("lastfm.api_key"), mbService, atprotoService, playingNowService)
+		if lastfmInterval <= 0 {
+			lastfmInterval = 30 * time.Second
+		}
+	} else {
+		log.Println("Last.fm API key not configured. Last.fm features will be disabled.")
+	}
+
 	oauthManager.RegisterService("atproto", atprotoService)
 
 	apiKeyService := apikeyService.NewAPIKeyService(database, sessionManager)
@@ -162,14 +194,14 @@ func main() {
 	}
 
 	trackerInterval := time.Duration(viper.GetInt("tracker.interval")) * time.Second
-	lastfmInterval := time.Duration(viper.GetInt("lastfm.interval_seconds")) * time.Second // Add config for Last.fm interval
-	if lastfmInterval <= 0 {
-		lastfmInterval = 30 * time.Second
+	if spotifyService != nil {
+		go spotifyService.StartListeningTracker(trackerInterval)
 	}
 
-	go spotifyService.StartListeningTracker(trackerInterval)
+	if lastfmService != nil {
+		go lastfmService.StartListeningTracker(lastfmInterval)
+	}
 
-	go lastfmService.StartListeningTracker(lastfmInterval)
 	// Apple Music tracker uses same tracker.interval as Spotify for now
 	// Only start if Apple Music service is configured
 	if appleMusicService != nil {
