@@ -1,8 +1,3 @@
-.PHONY: dev-setup
-dev-setup:
-	rm -rf ../atproto \
-	&& git clone git@github.com:bluesky-social/atproto ../atproto \
-
 .PHONY: go-lexicons
 go-lexicons:
 	rm -rf ./api/cbor/cbor_gen.go \
@@ -23,5 +18,5 @@ lexgen:
 lexgen-types:
 	go run github.com/bluesky-social/indigo/cmd/lexgen \
 		--build-file ./lexcfg.json \
-		../atproto/lexicons \
+		./lexicons/bsky \
 		./lexicons/teal

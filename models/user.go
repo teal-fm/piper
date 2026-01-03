@@ -2,7 +2,7 @@ package models
 
 import "time"
 
-// an end user of piper
+// User an end user of piper
 type User struct {
 	ID       int64
 	Username *string

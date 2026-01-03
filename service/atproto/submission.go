@@ -15,7 +15,7 @@ import (
 )
 
 // SubmitPlayToPDS submits a track play to the ATProto PDS as a feed.play record
-func SubmitPlayToPDS(ctx context.Context, did string, mostRecentAtProtoSessionID string, track *models.Track, atprotoService *atprotoauth.ATprotoAuthService) error {
+func SubmitPlayToPDS(ctx context.Context, did string, mostRecentAtProtoSessionID string, track *models.Track, atprotoService *atprotoauth.AuthService) error {
 	if did == "" {
 		return fmt.Errorf("DID cannot be empty")
 	}

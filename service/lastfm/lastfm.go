@@ -23,17 +23,16 @@ import (
 
 const (
 	lastfmAPIBaseURL = "https://ws.audioscrobbler.com/2.0/"
-	defaultLimit     = 1 // Default number of tracks to fetch per user
 )
 
-type LastFMService struct {
+type Service struct {
 	db                 *db.DB
 	httpClient         *http.Client
 	limiter            *rate.Limiter
 	apiKey             string
 	Usernames          []string
-	musicBrainzService *musicbrainz.MusicBrainzService
-	atprotoService     *atprotoauth.ATprotoAuthService
+	musicBrainzService *musicbrainz.Service
+	atprotoService     *atprotoauth.AuthService
 	playingNowService  interface {
 		PublishPlayingNow(ctx context.Context, userID int64, track *models.Track) error
 		ClearPlayingNow(ctx context.Context, userID int64) error
@@ -43,13 +42,13 @@ type LastFMService struct {
 	logger             *log.Logger
 }
 
-func NewLastFMService(db *db.DB, apiKey string, musicBrainzService *musicbrainz.MusicBrainzService, atprotoService *atprotoauth.ATprotoAuthService, playingNowService interface {
+func NewLastFMService(db *db.DB, apiKey string, musicBrainzService *musicbrainz.Service, atprotoService *atprotoauth.AuthService, playingNowService interface {
 	PublishPlayingNow(ctx context.Context, userID int64, track *models.Track) error
 	ClearPlayingNow(ctx context.Context, userID int64) error
-}) *LastFMService {
+}) *Service {
 	logger := log.New(os.Stdout, "lastfm: ", log.LstdFlags|log.Lmsgprefix)
 
-	return &LastFMService{
+	return &Service{
 		db: db,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
@@ -67,7 +66,7 @@ func NewLastFMService(db *db.DB, apiKey string, musicBrainzService *musicbrainz.
 	}
 }
 
-func (l *LastFMService) loadUsernames() error {
+func (l *Service) loadUsernames() error {
 	u, err := l.db.GetAllUsersWithLastFM()
 	if err != nil {
 		l.logger.Printf("Error loading users with Last.fm from DB: %v", err)
@@ -98,7 +97,7 @@ func (l *LastFMService) loadUsernames() error {
 }
 
 // getRecentTracks fetches the most recent tracks for a given Last.fm user.
-func (l *LastFMService) getRecentTracks(ctx context.Context, username string, limit int) (*RecentTracksResponse, error) {
+func (l *Service) getRecentTracks(ctx context.Context, username string, limit int) (*RecentTracksResponse, error) {
 	if username == "" {
 		return nil, fmt.Errorf("username cannot be empty")
 	}
@@ -126,7 +125,12 @@ func (l *LastFMService) getRecentTracks(ctx context.Context, username string, li
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch recent tracks for %s: %w", username, err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			l.logger.Printf("Error closing response body for %s: %v", username, err)
+		}
+	}(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
@@ -159,7 +163,7 @@ func (l *LastFMService) getRecentTracks(ctx context.Context, username string, li
 	return &recentTracksResp, nil
 }
 
-func (l *LastFMService) StartListeningTracker(interval time.Duration) {
+func (l *Service) StartListeningTracker(interval time.Duration) {
 	if err := l.loadUsernames(); err != nil {
 		l.logger.Printf("Failed to perform initial username load: %v", err)
 		// Decide if we should proceed without initial load or return error
@@ -207,7 +211,7 @@ func (l *LastFMService) StartListeningTracker(interval time.Duration) {
 }
 
 // fetchAllUserTracks iterates through users and fetches their tracks.
-func (l *LastFMService) fetchAllUserTracks(ctx context.Context) {
+func (l *Service) fetchAllUserTracks(ctx context.Context) {
 	l.logger.Printf("Starting fetch cycle for %d users...", len(l.Usernames))
 	var wg sync.WaitGroup                             // Use WaitGroup to fetch concurrently (optional)
 	fetchErrors := make(chan error, len(l.Usernames)) // Channel for errors
@@ -266,7 +270,7 @@ func (l *LastFMService) fetchAllUserTracks(ctx context.Context) {
 	}
 }
 
-func (l *LastFMService) processTracks(ctx context.Context, username string, tracks []Track) error {
+func (l *Service) processTracks(ctx context.Context, username string, tracks []Track) error {
 	if l.db == nil {
 		return fmt.Errorf("database connection is nil")
 	}
@@ -388,7 +392,10 @@ func (l *LastFMService) processTracks(ctx context.Context, username string, trac
 			// we can use the track without MBIDs, it's still valid
 			hydratedTrack = &baseTrack
 		}
-		l.db.SaveTrack(user.ID, hydratedTrack)
+		_, err = l.db.SaveTrack(user.ID, hydratedTrack)
+		if err != nil {
+			return err
+		}
 		l.logger.Printf("Submitting track")
 		err = l.SubmitTrackToPDS(*user.ATProtoDID, *user.MostRecentAtProtoSessionID, hydratedTrack, ctx)
 		if err != nil {
@@ -413,13 +420,13 @@ func (l *LastFMService) processTracks(ctx context.Context, username string, trac
 	return nil
 }
 
-func (l *LastFMService) SubmitTrackToPDS(did string, mostRecentAtProtoSessionID string, track *models.Track, ctx context.Context) error {
+func (l *Service) SubmitTrackToPDS(did string, mostRecentAtProtoSessionID string, track *models.Track, ctx context.Context) error {
 	// Use shared atproto service for submission
 	return atprotoservice.SubmitPlayToPDS(ctx, did, mostRecentAtProtoSessionID, track, l.atprotoService)
 }
 
 // convertLastFMTrackToModelsTrack converts a Last.fm Track to models.Track format
-func (l *LastFMService) convertLastFMTrackToModelsTrack(track Track) *models.Track {
+func (l *Service) convertLastFMTrackToModelsTrack(track Track) *models.Track {
 	// Create artist array
 	artists := []models.Artist{
 		{

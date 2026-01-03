@@ -17,7 +17,7 @@ import (
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/oauth"
 	"github.com/teal-fm/piper/oauth/atproto"
-	pages "github.com/teal-fm/piper/pages"
+	"github.com/teal-fm/piper/pages"
 	apikeyService "github.com/teal-fm/piper/service/apikey"
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"github.com/teal-fm/piper/service/spotify"
@@ -26,13 +26,13 @@ import (
 
 type application struct {
 	database          *db.DB
-	sessionManager    *session.SessionManager
-	oauthManager      *oauth.OAuthServiceManager
-	spotifyService    *spotify.SpotifyService
+	sessionManager    *session.Manager
+	oauthManager      *oauth.ServiceManager
+	spotifyService    *spotify.Service
 	apiKeyService     *apikeyService.Service
-	mbService         *musicbrainz.MusicBrainzService
-	atprotoService    *atproto.ATprotoAuthService
-	playingNowService *playingnow.PlayingNowService
+	mbService         *musicbrainz.Service
+	atprotoService    *atproto.AuthService
+	playingNowService *playingnow.Service
 	appleMusicService *applemusic.Service
 	pages             *pages.Pages
 }
@@ -43,7 +43,11 @@ func jsonResponse(w http.ResponseWriter, statusCode int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	if data != nil {
-		json.NewEncoder(w).Encode(data)
+		err := json.NewEncoder(w).Encode(data)
+		if err != nil {
+			log.Printf("Error encoding JSON response: %v", err)
+			return
+		}
 	}
 }
 
