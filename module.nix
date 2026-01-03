@@ -1,7 +1,5 @@
 { config, lib, pkgs, ... }:
 
-with lib;
-
 let
   cfg = config.services.teal-piper;
 
@@ -25,7 +23,7 @@ let
   };
 
   # Auto-derive callback URLs if SERVER_ROOT_URL is set
-  derivedSettings = optionalAttrs (cfg.settings ? SERVER_ROOT_URL) {
+  derivedSettings = lib.optionalAttrs (cfg.settings ? SERVER_ROOT_URL) {
     ATPROTO_CLIENT_ID =
       cfg.settings.ATPROTO_CLIENT_ID or "${cfg.settings.SERVER_ROOT_URL}/oauth-client-metadata.json";
     ATPROTO_METADATA_URL =
@@ -43,39 +41,38 @@ let
   settingsFile = settingsFormat.generate "teal-piper.env" finalSettings;
 
 in {
+  meta = {
+    maintainers = with lib.maintainers;
+      [ ]; # Add maintainer info when upstreaming
+  };
+
   options.services.teal-piper = {
-    enable = mkEnableOption "Piper - teal.fm scrobbler service";
+    enable = lib.mkEnableOption "Piper - teal.fm scrobbler service";
 
-    package = mkOption {
-      type = types.package;
-      default = pkgs.teal-piper or (throw
-        "teal-piper package not found. Please add it to your nixpkgs overlay.");
-      defaultText = literalExpression "pkgs.teal-piper";
-      description = "The piper package to use.";
-    };
+    package = lib.mkPackageOption pkgs "teal-piper" { };
 
-    user = mkOption {
-      type = types.str;
+    user = lib.mkOption {
+      type = lib.types.str;
       default = "teal-piper";
       description = "User account under which piper runs.";
     };
 
-    group = mkOption {
-      type = types.str;
+    group = lib.mkOption {
+      type = lib.types.str;
       default = "teal-piper";
       description = "Group under which piper runs.";
     };
 
-    dataDir = mkOption {
-      type = types.path;
+    dataDir = lib.mkOption {
+      type = lib.types.path;
       default = "/var/lib/teal-piper";
       description = "Directory where piper stores its database and data.";
     };
 
-    settings = mkOption {
-      type = types.attrsOf types.str;
+    settings = lib.mkOption {
+      type = lib.types.attrsOf lib.types.str;
       default = { };
-      example = literalExpression ''
+      example = lib.literalExpression ''
         {
           SERVER_PORT = "8080";
           SERVER_HOST = "0.0.0.0";
@@ -86,17 +83,21 @@ in {
       description = ''
         Configuration for piper. These will be converted to environment variables.
 
-        Required settings:
-        - ATPROTO_CLIENT_SECRET_KEY (generate with: goat key generate -t P-256)
-        - ATPROTO_CLIENT_SECRET_KEY_ID
-        - SERVER_ROOT_URL
+        Required settings (set via environmentFile for security):
+        - SERVER_ROOT_URL: Public URL for OAuth callbacks
+        - SPOTIFY_CLIENT_ID: From Spotify Developer Dashboard
+        - SPOTIFY_CLIENT_SECRET: From Spotify Developer Dashboard
+        - ATPROTO_CLIENT_SECRET_KEY: P-256 private key (generate with: goat key generate -t P-256)
+        - ATPROTO_CLIENT_SECRET_KEY_ID: Unique persistent identifier
 
         Optional settings:
-        - SPOTIFY_CLIENT_SECRET
-        - LASTFM_API_KEY
-        - APPLE_MUSIC_TEAM_ID
-        - APPLE_MUSIC_KEY_ID
-        - APPLE_MUSIC_PRIVATE_KEY_PATH
+        - SERVER_PORT: Port to listen on (default: 8080)
+        - SERVER_HOST: Host to bind to (default: localhost)
+        - TRACKER_INTERVAL: Seconds between music checks (default: 30)
+        - LASTFM_API_KEY: For Last.fm integration
+        - APPLE_MUSIC_TEAM_ID: For Apple Music integration
+        - APPLE_MUSIC_KEY_ID: For Apple Music integration
+        - APPLE_MUSIC_PRIVATE_KEY_PATH: Path to Apple Music private key
 
         URLs are auto-derived from SERVER_ROOT_URL:
         - ATPROTO_CLIENT_ID
@@ -106,27 +107,24 @@ in {
       '';
     };
 
-    environmentFile = mkOption {
-      type = types.nullOr types.path;
+    environmentFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
       default = null;
       example = "/run/secrets/teal-piper.env";
       description = ''
         Path to a file containing environment variables for secrets.
-        This file should contain:
-
+        ```
         SPOTIFY_CLIENT_ID=your_spotify_client_id
         SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
         ATPROTO_CLIENT_SECRET_KEY=your_p256_private_key
         ATPROTO_CLIENT_SECRET_KEY_ID=1758199756
-        LASTFM_API_KEY=your_lastfm_key  # optional
-
-        This is the recommended way to configure secrets instead of putting them in settings.
+        LASTFM_API_KEY=your_lastfm_key
+        ```
       '';
     };
   };
 
-  config = mkIf cfg.enable {
-    # Create user and group
+  config = lib.mkIf cfg.enable {
     users.users.${cfg.user} = {
       isSystemUser = true;
       group = cfg.group;
@@ -136,7 +134,6 @@ in {
 
     users.groups.${cfg.group} = { };
 
-    # Systemd service
     systemd.services.teal-piper = {
       description = "Piper - teal.fm scrobbler service";
       after = [ "network-online.target" ];
@@ -173,7 +170,7 @@ in {
 
         # Load environment from generated file
         EnvironmentFile = [ settingsFile ]
-          ++ optional (cfg.environmentFile != null) cfg.environmentFile;
+          ++ lib.optional (cfg.environmentFile != null) cfg.environmentFile;
 
         # Start the service
         ExecStart = "${cfg.package}/bin/piper";
@@ -183,5 +180,25 @@ in {
         RestartSec = "10s";
       };
     };
+
+    assertions = [
+      {
+        assertion = cfg.environmentFile != null
+          || (cfg.settings ? ATPROTO_CLIENT_SECRET_KEY);
+        message =
+          "services.teal-piper: ATPROTO_CLIENT_SECRET_KEY must be set via settings or environmentFile";
+      }
+      {
+        assertion = cfg.environmentFile != null
+          || (cfg.settings ? ATPROTO_CLIENT_SECRET_KEY_ID);
+        message =
+          "services.teal-piper: ATPROTO_CLIENT_SECRET_KEY_ID must be set via settings or environmentFile";
+      }
+      {
+        assertion = cfg.settings ? SERVER_ROOT_URL;
+        message =
+          "services.teal-piper: SERVER_ROOT_URL must be set in settings (e.g., https://piper.teal.fm)";
+      }
+    ];
   };
 }

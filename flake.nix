@@ -1,6 +1,8 @@
 {
   description = "Piper - A teal.fm scrobbler service for ATProto";
+
   inputs = { nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable"; };
+
   outputs = { self, nixpkgs }:
     let
       forAllSystems = nixpkgs.lib.genAttrs [
@@ -10,41 +12,12 @@
         "aarch64-darwin"
       ];
       nixpkgsFor = forAllSystems (system: import nixpkgs { inherit system; });
-
-      mkPiper = pkgs:
-        pkgs.buildGoModule {
-          pname = "teal-piper";
-          version = "0.0.2";
-          src = ./.;
-          vendorHash = "sha256-gYlVWk1TOUOB2J49smq9TyGw/6AQdyP/A6tzJsfe3kI=";
-
-          nativeBuildInputs = [ pkgs.pkg-config ];
-          buildInputs = [ pkgs.sqlite ];
-
-          env.CGO_ENABLED = 1;
-          subPackages = [ "cmd" ];
-          ldflags = [ "-s" "-w" ];
-
-          postInstall = ''
-            mv $out/bin/cmd $out/bin/piper
-          '';
-
-          meta = with pkgs.lib; {
-            description = "A teal.fm tool for scrobbling music to ATProto PDSs";
-            homepage = "https://github.com/teal-fm/piper";
-            license = licenses.mit;
-            maintainers = [ ];
-            mainProgram = "piper";
-          };
-        };
     in {
       packages = forAllSystems (system:
-        let
-          pkgs = nixpkgsFor.${system};
-          piper = mkPiper pkgs;
+        let pkgs = nixpkgsFor.${system};
         in {
-          default = piper;
-          teal-piper = piper;
+          default = pkgs.callPackage ./package.nix { };
+          teal-piper = pkgs.callPackage ./package.nix { };
         });
 
       apps = forAllSystems (system:
@@ -59,12 +32,16 @@
       devShells = forAllSystems (system:
         let pkgs = nixpkgsFor.${system};
         in {
-          default = pkgs.mkShell { buildInputs = with pkgs; [ go air ]; };
+          default = pkgs.mkShell {
+            buildInputs = with pkgs; [ go air nodejs sqlite pkg-config ];
+          };
         });
 
-      nixosModules.default = import ./nixos-module.nix;
-      nixosModules.teal-piper = import ./nixos-module.nix;
+      nixosModules.default = import ./module.nix;
+      nixosModules.teal-piper = import ./module.nix;
 
-      overlays.default = final: prev: { teal-piper = mkPiper final; };
+      overlays.default = final: prev: {
+        teal-piper = final.callPackage ./package.nix { };
+      };
     };
 }
