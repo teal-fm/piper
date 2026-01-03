@@ -4,7 +4,7 @@ buildGoModule rec {
   pname = "tealfm-piper";
   version = "0.0.3";
   src = ./.;
-  vendorHash = "sha256-gYlVWk1TOUOB2J49smq9TyGw/6AQdyP/A6tzJsfe3kI=";
+  vendorHash = "sha256-poQutY1V8X6BdmPMXdQuPWIWE/j3xNoEp4PKSimj2bA=";
   buildInputs = [ sqlite ];
   env.CGO_ENABLED = 1;
   subPackages = [ "cmd" ];
