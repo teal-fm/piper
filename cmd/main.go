@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/teal-fm/piper/service/applemusic"
@@ -77,6 +78,11 @@ func main() {
 		return
 	}
 
+	var allowedDids = viper.GetStringSlice("allowed_dids")
+	if len(allowedDids) > 0 {
+		log.Printf("Allowed DIDs provided. Only allowing %s\n", strings.Join(allowedDids, ", "))
+	}
+
 	atprotoService, err := atproto.NewATprotoAuthService(
 		database,
 		sessionManager,
@@ -84,6 +90,7 @@ func main() {
 		viper.GetString("atproto.client_id"),
 		viper.GetString("atproto.callback_url"),
 		clientSecretKeyId,
+		allowedDids,
 	)
 	if err != nil {
 		log.Fatalf("Error creating ATproto auth service: %v", err)

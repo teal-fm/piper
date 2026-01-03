@@ -26,9 +26,10 @@ type AuthService struct {
 	clientId       string
 	callbackUrl    string
 	logger         *log.Logger
+	allowedDids    []string
 }
 
-func NewATprotoAuthService(database *db.DB, sessionManager *session.Manager, clientSecretKey string, clientId string, callbackUrl string, clientSecretId string) (*AuthService, error) {
+func NewATprotoAuthService(database *db.DB, sessionManager *session.SessionManager, clientSecretKey string, clientId string, callbackUrl string, clientSecretId string, allowedDids []string) (*ATprotoAuthService, error) {
 	fmt.Println(clientId, callbackUrl)
 
 	scopes := []string{"atproto", "repo:fm.teal.alpha.feed.play", "repo:fm.teal.alpha.actor.status"}
@@ -55,6 +56,7 @@ func NewATprotoAuthService(database *db.DB, sessionManager *session.Manager, cli
 		sessionManager: sessionManager,
 		clientId:       clientId,
 		logger:         logger,
+		allowedDids:    allowedDids,
 	}
 	return svc, nil
 }
@@ -82,13 +84,36 @@ func (a *AuthService) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	redirectURL, err := a.clientApp.StartAuthFlow(ctx, handle)
+
+	a.logger.Printf("Attempting login for handle %s", handle)
+
+	atid, err := syntax.ParseAtIdentifier(handle)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error parsing AT Identifier (%s): %v", handle, err), http.StatusInternalServerError)
+		return
+	}
+	ident, err := a.clientApp.Dir.Lookup(ctx, *atid)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error resolving DID for AT Identifier (%s): %v", handle, err), http.StatusInternalServerError)
+		return
+	}
+	accountDid := ident.DID.String()
+
+	if len(a.allowedDids) > 0 && !slices.Contains(a.allowedDids, accountDid) {
+		a.logger.Printf("ATProto Login Error: DID %s for handle %s is not in the allowed list", accountDid, handle)
+		http.Error(w, "Unauthorized", http.StatusForbidden)
+		return
+	}
+
+	redirectURL, err := a.clientApp.StartAuthFlow(ctx, accountDid)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error initiating login: %v", err), http.StatusInternalServerError)
+		return
 	}
 	authUrl, err := url.Parse(redirectURL)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error initiating login: %v", err), http.StatusInternalServerError)
+		return
 	}
 
 	a.logger.Printf("ATProto Login: Redirecting user %s to %s", handle, authUrl.String())

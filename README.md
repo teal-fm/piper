@@ -20,6 +20,8 @@ You have a couple of options
 
 Either way make note of what the publicly accessible domain name is for setting up env variables. It will be something like `https://piper.teal.fm` that you can access publicly
 
+When running publicly, anyone with an ATProto account will be able to login to the instance. If this is not desired, use the `ALLOWED_DIDS` environment variable to restrict the accounts that can login. See further below for more details.
+
 #### env variables
 
 Copy [.env.template](.env.template) and name it [.env](.env)
@@ -50,7 +52,8 @@ You now have to bring your own private key to run piper. Can do this via goat `g
 - `LASTFM_API_KEY` - Your lastfm api key. Can find out how to setup [here](https://www.last.fm/api)
 
 - `TRACKER_INTERVAL` - How long between checks to see if the registered users are listening to new music
-- `DB_PATH`= Path for the sqlite db. If you are using the docker compose probably want `/db/piper.db` to persist data
+- `DB_PATH` - Path for the sqlite db. If you are using the docker compose probably want `/db/piper.db` to persist data
+- `ALLOWED_DIDS` - Restricts the ATProto accounts that can sign-in to the instance to a specific list of DIDs. Supply full DIDs as a space-separated list (e.g., `ALLOWED_DIDS=did:plc:abcdefg did:web:example.com`).
 
 ##### apple music
 
