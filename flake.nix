@@ -15,8 +15,9 @@
       packages = forAllSystems (system:
         let pkgs = nixpkgsFor.${system};
         in {
-          default = pkgs.callPackage ./default.nix { };
-          tealfm-piper = pkgs.callPackage ./default.nix { };
+          tealfm-piper = pkgs.callPackage ./package.nix { };
+          # Local development build 
+          default = pkgs.callPackage ./package.nix { source = ./.; };
         });
 
       apps = forAllSystems (system:
@@ -36,10 +37,9 @@
         });
 
       nixosModules.default = import ./module.nix;
-      nixosModules.tealfm-piper = import ./module.nix;
 
       overlays.default = final: prev: {
-        tealfm-piper = final.callPackage ./default.nix { };
+        tealfm-piper = final.callPackage ./package.nix { };
       };
     };
 }
