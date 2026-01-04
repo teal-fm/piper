@@ -1,4 +1,4 @@
-{ defaultPackage ? null }:
+{ self ? null }:
 { config, lib, pkgs, ... }:
 
 let
@@ -36,8 +36,8 @@ in {
 
     package = mkOption {
       type = types.package;
-      default = if defaultPackage != null 
-        then defaultPackage 
+      default = if self != null 
+        then self.packages.${pkgs.stdenv.hostPlatform.system}.tealfm-piper
         else pkgs.tealfm-piper;
       defaultText = literalExpression "pkgs.tealfm-piper";
       description = "The piper package to use.";

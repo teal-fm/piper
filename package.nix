@@ -1,19 +1,14 @@
-{ lib, buildGoModule, tailwindcss_4, fetchFromGitHub, source ? null }:
-
-let
-  # Default to GitHub source for builds.
-  # Override with `source = ./.` for local development.
-  defaultSource = fetchFromGitHub {
-    owner = "teal-fm";
-    repo = "piper";
-    rev = "ccb72442021bd9f6ed20acc63f9703cf475b0f51";
-    hash = "sha256-wXA2RnvQ0J0QwUeDIg2gLRI2DNjgu07+QYjw5pRmyyI=";
-  };
-in buildGoModule {
+{ lib, buildGoModule, tailwindcss_4, fetchFromGitHub, source ? fetchFromGitHub {
+  owner = "teal-fm";
+  repo = "piper";
+  rev = "ccb72442021bd9f6ed20acc63f9703cf475b0f51";
+  hash = "sha256-wXA2RnvQ0J0QwUeDIg2gLRI2DNjgu07+QYjw5pRmyyI=";
+} }:
+buildGoModule {
   pname = "tealfm-piper";
   version = "0.0.3";
 
-  src = if source != null then source else defaultSource;
+  src = source;
 
   vendorHash = "sha256-poQutY1V8X6BdmPMXdQuPWIWE/j3xNoEp4PKSimj2bA=";
 
