@@ -8,7 +8,6 @@ let
 
   settingsFormat = pkgs.formats.keyValue { };
 
-  # Auto-derive callback URLs if SERVER_ROOT_URL is set
   derivedSettings = lib.optionalAttrs (cfg.settings.SERVER_ROOT_URL != null) {
     ATPROTO_CLIENT_ID =
       cfg.settings.ATPROTO_CLIENT_ID or "${cfg.settings.SERVER_ROOT_URL}/oauth-client-metadata.json";
@@ -102,7 +101,6 @@ in {
             description = "Seconds between music playback checks.";
           };
 
-          # Spotify defaults
           SPOTIFY_AUTH_URL = mkOption {
             type = types.str;
             default = "https://accounts.spotify.com/authorize";
@@ -139,22 +137,18 @@ in {
       '';
     };
 
-    # TODO: maybe change to `environmentFiles`
-    environmentFile = mkOption {
-      type = types.nullOr types.path;
-      default = null;
-      example = "/run/secrets/tealfm-piper.env";
+    environmentFiles = mkOption {
+      type = types.listOf types.path;
+      default = [ ];
+      example = literalExpression ''
+        [
+          "/run/secrets/tealfm-piper.env"
+          "/run/secrets/tealfm-piper-apple-music.env"
+        ]
+      '';
       description = ''
-        Path to a file containing environment variables for secrets.
-
-        Example content:
-        ```
-        SPOTIFY_CLIENT_ID=your_spotify_client_id
-        SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
-        ATPROTO_CLIENT_SECRET_KEY=your_p256_private_key
-        ATPROTO_CLIENT_SECRET_KEY_ID=1234567890
-        LASTFM_API_KEY=your_lastfm_key
-        ```
+        List of files containing environment variables for secrets.
+        Files are loaded in order, with later files overriding earlier ones.
       '';
     };
   };
@@ -179,8 +173,6 @@ in {
         Type = "simple";
         User = cfg.user;
         Group = cfg.group;
-
-        # Security hardening
         NoNewPrivileges = true;
         PrivateTmp = true;
         PrivateDevices = true;
@@ -194,23 +186,12 @@ in {
         RestrictRealtime = true;
         RestrictSUIDSGID = true;
         LockPersonality = true;
-
-        # Allow write access to data directory
         ReadWritePaths = [ cfg.dataDir ];
         StateDirectory = "tealfm-piper";
         StateDirectoryMode = "0700";
-
-        # Working directory
         WorkingDirectory = cfg.dataDir;
-
-        # Load environment from generated file
-        EnvironmentFile = [ settingsFile ]
-          ++ lib.optional (cfg.environmentFile != null) cfg.environmentFile;
-
-        # Start the service
+        EnvironmentFile = [ settingsFile ] ++ cfg.environmentFiles;
         ExecStart = "${cfg.package}/bin/piper";
-
-        # Restart policy
         Restart = "on-failure";
         RestartSec = "10s";
       };
@@ -218,16 +199,16 @@ in {
 
     assertions = [
       {
-        assertion = cfg.environmentFile != null
+        assertion = (cfg.environmentFiles != [ ])
           || (cfg.settings ? ATPROTO_CLIENT_SECRET_KEY);
         message =
-          "services.tealfm-piper: ATPROTO_CLIENT_SECRET_KEY must be set via settings or environmentFile";
+          "services.tealfm-piper: ATPROTO_CLIENT_SECRET_KEY must be set via settings or environmentFiles";
       }
       {
-        assertion = cfg.environmentFile != null
+        assertion = (cfg.environmentFiles != [ ])
           || (cfg.settings ? ATPROTO_CLIENT_SECRET_KEY_ID);
         message =
-          "services.tealfm-piper: ATPROTO_CLIENT_SECRET_KEY_ID must be set via settings or environmentFile";
+          "services.tealfm-piper: ATPROTO_CLIENT_SECRET_KEY_ID must be set via settings or environmentFiles";
       }
       {
         assertion = cfg.settings.SERVER_ROOT_URL != null;
