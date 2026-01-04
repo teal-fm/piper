@@ -1,8 +1,9 @@
+{ defaultPackage ? null }:
 { config, lib, pkgs, ... }:
 
 let
   inherit (lib)
-    mkEnableOption mkIf mkOption mkPackageOption types literalExpression;
+    mkEnableOption mkIf mkOption types literalExpression;
 
   cfg = config.services.tealfm-piper;
 
@@ -33,7 +34,14 @@ in {
   options.services.tealfm-piper = {
     enable = mkEnableOption "Piper - teal.fm scrobbler service";
 
-    package = mkPackageOption pkgs "tealfm-piper" { };
+    package = mkOption {
+      type = types.package;
+      default = if defaultPackage != null 
+        then defaultPackage 
+        else pkgs.tealfm-piper;
+      defaultText = literalExpression "pkgs.tealfm-piper";
+      description = "The piper package to use.";
+    };
 
     user = mkOption {
       type = types.str;

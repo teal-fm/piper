@@ -36,7 +36,14 @@
             pkgs.mkShell { buildInputs = with pkgs; [ go air nodejs sqlite ]; };
         });
 
-      nixosModules.default = import ./module.nix;
+      nixosModules.default = { config, lib, pkgs, ... }:
+        let
+          piperPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.tealfm-piper;
+        in {
+          imports = [
+            (import ./module.nix { defaultPackage = piperPackage; })
+          ];
+        };
 
       overlays.default = final: prev: {
         tealfm-piper = final.callPackage ./package.nix { };
