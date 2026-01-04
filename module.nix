@@ -2,8 +2,7 @@
 { config, lib, pkgs, ... }:
 
 let
-  inherit (lib)
-    mkEnableOption mkIf mkOption types literalExpression;
+  inherit (lib) mkEnableOption mkIf mkOption types literalExpression;
 
   cfg = config.services.tealfm-piper;
 
@@ -24,8 +23,12 @@ let
     DB_PATH = "${cfg.dataDir}/piper.db";
   };
 
+  allowedDidsString = lib.optionalAttrs (cfg.settings.ALLOWED_DIDS != null) {
+    ALLOWED_DIDS = lib.concatStringsSep " " cfg.settings.ALLOWED_DIDS;
+  };
+
   finalSettings = lib.filterAttrs (_: v: v != null)
-    (cfg.settings // derivedSettings // dbPathDefault);
+    (cfg.settings // derivedSettings // dbPathDefault // allowedDidsString);
   settingsFile = settingsFormat.generate "tealfm-piper.env" finalSettings;
 
 in {
@@ -36,9 +39,10 @@ in {
 
     package = mkOption {
       type = types.package;
-      default = if self != null 
-        then self.packages.${pkgs.stdenv.hostPlatform.system}.tealfm-piper
-        else pkgs.tealfm-piper;
+      default = if self != null then
+        self.packages.${pkgs.stdenv.hostPlatform.system}.tealfm-piper
+      else
+        pkgs.tealfm-piper;
       defaultText = literalExpression "pkgs.tealfm-piper";
       description = "The piper package to use.";
     };
@@ -125,6 +129,18 @@ in {
             type = types.str;
             default = "user-read-currently-playing user-read-email";
             description = "Spotify OAuth scopes to request.";
+          };
+
+          ALLOWED_DIDS = mkOption {
+            type = types.nullOr (types.listOf types.str);
+            default = null;
+            example =
+              literalExpression ''[ "did:plc:abcdefg" "did:web:example.com" ]'';
+            description = ''
+              List of ATProto DIDs allowed to sign in.
+              When set, restricts instance access to only these accounts.
+              Leave null to allow any ATProto account to sign in.
+            '';
           };
         };
       };

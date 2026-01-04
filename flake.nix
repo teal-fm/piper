@@ -28,9 +28,8 @@
       devShells = forAllSystems (system:
         let pkgs = import nixpkgs { inherit system; };
         in {
-          default = pkgs.mkShell {
-            buildInputs = with pkgs; [ go air nodejs sqlite ];
-          };
+          default =
+            pkgs.mkShell { buildInputs = with pkgs; [ go air nodejs sqlite ]; };
         });
 
       nixosModules.default = import ./module.nix { inherit self; };
