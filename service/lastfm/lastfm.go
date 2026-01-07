@@ -358,7 +358,7 @@ func (l *Service) processTracks(ctx context.Context, username string, tracks []T
 
 	// find last non-now-playing track
 	var lastNonNowPlaying *Track
-	for i := 0; i <= len(tracks)-1; i++ {
+	for i := range tracks {
 		if tracks[i].Attr == nil || tracks[i].Attr.NowPlaying != "true" {
 			lastNonNowPlaying = &tracks[i]
 			break
