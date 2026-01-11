@@ -3,6 +3,7 @@ package applemusic
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
@@ -285,6 +286,19 @@ type AppleRecentTrack struct {
 	} `json:"attributes"`
 }
 
+// Generates a hash representing the track name, album name, and artists' concatenated names,
+// to be used for comparing subsequent uploaded Apple Music tracks
+func generateUploadHash(track *models.Track) string {
+	artists := make([]string, len(track.Artist))
+	for i, artist := range track.Artist {
+		artists[i] = artist.Name
+	}
+
+	input := track.Name + track.Album + strings.Join(artists, ",")
+	hash := sha256.Sum256([]byte(input))
+	return fmt.Sprintf("am_uploaded_%x", hash)
+}
+
 type recentPlayedResponse struct {
 	Data []AppleRecentTrack `json:"data"`
 }
@@ -364,6 +378,10 @@ func (s *Service) toTrack(t AppleRecentTrack) *models.Track {
 		ISRC:           isrc,
 		HasStamped:     isStamped,
 		Timestamp:      time.Now().UTC(),
+	}
+
+	if track.URL == "" {
+		track.URL = generateUploadHash(track)
 	}
 
 	if s.mbService != nil {
