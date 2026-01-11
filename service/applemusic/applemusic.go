@@ -375,6 +375,8 @@ func (s *Service) toTrack(t AppleRecentTrack) *models.Track {
 		Timestamp:      time.Now().UTC(),
 	}
 
+	// If an Apple Music track has no URL, it's an uploaded track; generate an uploadHash so that the
+	// track can be distinguished from other uploaded tracks
 	if track.URL == "" {
 		track.URL = generateUploadHash(&t)
 	}
