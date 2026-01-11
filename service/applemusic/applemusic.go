@@ -288,13 +288,8 @@ type AppleRecentTrack struct {
 
 // Generates a hash representing the track name, album name, and artists' concatenated names,
 // to be used for comparing subsequent uploaded Apple Music tracks
-func generateUploadHash(track *models.Track) string {
-	artists := make([]string, len(track.Artist))
-	for i, artist := range track.Artist {
-		artists[i] = artist.Name
-	}
-
-	input := track.Name + track.Album + strings.Join(artists, ",")
+func generateUploadHash(track *AppleRecentTrack) string {
+	input := track.Attributes.Name + track.Attributes.AlbumName + track.Attributes.ArtistName
 	hash := sha256.Sum256([]byte(input))
 	return fmt.Sprintf("am_uploaded_%x", hash)
 }
@@ -381,7 +376,7 @@ func (s *Service) toTrack(t AppleRecentTrack) *models.Track {
 	}
 
 	if track.URL == "" {
-		track.URL = generateUploadHash(track)
+		track.URL = generateUploadHash(&t)
 	}
 
 	if s.mbService != nil {
