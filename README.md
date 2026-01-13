@@ -38,6 +38,12 @@ You now have to bring your own private key to run piper. Can do this via goat `g
 - `SERVER_PORT` - The port piper is hosted on
 - `SERVER_HOST` - The server host. `localhost` is fine here, or `0.0.0.0` for docker
 - `SERVER_ROOT_URL` - This needs to be the pubically accessible url created in [Setup](#setup). Like `https://piper.teal.fm`
+
+- `ENABLE_SPOTIFY` - Enables Spotify integration and validates envs
+- `ENABLE_LASTFM` - Enables Last.fm integration and validates envs
+- `ENABLE_APPLEMUSIC` - Enables Apple Music integration and validates envs
+
+
 - `SPOTIFY_CLIENT_ID` - Client Id from setup in [Spotify developer dashboard](https://developer.spotify.com/documentation/web-api/tutorials/getting-started)
 - `SPOTIFY_CLIENT_SECRET` - Client Secret from setup in [Spotify developer dashboard](https://developer.spotify.com/documentation/web-api/tutorials/getting-started)
 - `SPOTIFY_AUTH_URL` - most likely `https://accounts.spotify.com/authorize`
