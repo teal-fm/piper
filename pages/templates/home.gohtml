@@ -15,27 +15,48 @@
   {{if .NavBar.IsLoggedIn}}
   <p class="mb-2">You're logged in!</p>
   <ul class="list-disc pl-5 mb-3">
+    {{ if .NavBar.SpotifyEnabled }}
     <li>
       <a class="text-[#1DB954] font-bold" href="/login/spotify"
         >Connect your Spotify account</a
       >
       to start tracking.
     </li>
+    {{ else }}
+    <li class="text-gray-400">
+      <span title="Spotify is disabled on this server">Spotify tracking (disabled on this server)</span>
+    </li>
+    {{ end }}
+
+    {{ if .NavBar.LastFMEnabled }}
     <li>
       <a class="text-[#1DB954] font-bold" href="/link-lastfm"
         >Link your Last.fm account</a
       >
       to track scrobbles.
     </li>
+    {{ else }}
+    <li class="text-gray-400">
+      <span title="Last.fm is disabled on this server">Last.fm tracking (disabled on this server)</span>
+    </li>
+    {{ end }}
+
+    {{ if .NavBar.AppleMusicEnabled }}
     <li>
       <a class="text-[#1DB954] font-bold" href="/link-applemusic"
         >Link your Apple Music account</a
       >
       to fetch recently played.
     </li>
+    {{ else }}
+    <li class="text-gray-400">
+      <span title="Apple Music is disabled on this server">Apple Music tracking (disabled on this server)</span>
+    </li>
+    {{ end }}
   </ul>
   <p class="mb-2">Once connected, you can check out your:</p>
   <ul class="list-disc pl-5 mb-3">
+    {{ if .NavBar.SpotifyEnabled }}
     <li>
       <a class="text-[#1DB954] font-bold" href="/current-track"
         >Spotify current track</a
@@ -43,15 +64,14 @@
       or
       <a class="text-[#1DB954] font-bold" href="/history">listening history</a>.
     </li>
-    {{ if .NavBar.LastFMUsername }}
+    {{ end }}
+    {{ if and .NavBar.LastFMEnabled .NavBar.LastFMUsername }}
     <li>
       <a class="text-[#1DB954] font-bold" href="/lastfm/recent"
         >Last.fm recent tracks</a
       >.
     </li>
-    {{
-      end
-    }}
+    {{ end }}
   </ul>
   <p class="mb-3">
     You can also manage your
