@@ -24,6 +24,11 @@ func Load() {
 	viper.SetDefault("tracker.interval", 30)
 	viper.SetDefault("db.path", "./data/piper.db")
 
+	// Feature toggles for music services (default to true for backwards compatibility)
+	viper.SetDefault("enable_spotify", true)
+	viper.SetDefault("enable_lastfm", true)
+	viper.SetDefault("enable_applemusic", true)
+
 	// Apple Music defaults
 	viper.SetDefault("applemusic.team_id", "")
 	viper.SetDefault("applemusic.key_id", "")
@@ -58,17 +63,6 @@ func Load() {
 		log.Println("Using config file:", viper.ConfigFileUsed())
 	}
 
-	// check for required settings
-	requiredVars := []string{"spotify.client_id", "spotify.client_secret"}
-	var missingVars []string
-
-	for _, v := range requiredVars {
-		if !viper.IsSet(v) {
-			missingVars = append(missingVars, v)
-		}
-	}
-
-	if len(missingVars) > 0 {
-		log.Fatalf("Required configuration variables not set: %s", strings.Join(missingVars, ", "))
-	}
+	// No required music service settings - all services are optional
+	// Services will be enabled based on feature toggles and available credentials
 }

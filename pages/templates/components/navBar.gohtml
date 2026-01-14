@@ -4,27 +4,42 @@
   <a class="text-[#1DB954] font-bold no-underline" href="/">Home</a>
 
   {{if .IsLoggedIn}}
+  {{ if .SpotifyEnabled }}
   <a class="text-[#1DB954] font-bold no-underline" href="/current-track"
     >Spotify Current</a
   >
   <a class="text-[#1DB954] font-bold no-underline" href="/history"
     >Spotify History</a
   >
+  <a class="text-[#1DB954] font-bold no-underline" href="/login/spotify"
+    >Connect Spotify Account</a
+  >
+  {{ else }}
+  <span class="text-gray-400 font-bold cursor-not-allowed" title="Spotify is disabled on this server">Spotify (disabled)</span>
+  {{ end }}
+
+  {{ if .LastFMEnabled }}
   <a class="text-[#1DB954] font-bold no-underline" href="/link-lastfm"
     >Link Last.fm</a
-  >
-  <a class="text-[#1DB954] font-bold no-underline" href="/link-applemusic"
-    >Link Apple Music</a
   >
   {{ if .LastFMUsername }}
   <a class="text-[#1DB954] font-bold no-underline" href="/lastfm/recent"
     >Last.fm Recent</a
   >
   {{ end }}
-  <a class="text-[#1DB954] font-bold no-underline" href="/api-keys">API Keys</a>
-  <a class="text-[#1DB954] font-bold no-underline" href="/login/spotify"
-    >Connect Spotify Account</a
+  {{ else }}
+  <span class="text-gray-400 font-bold cursor-not-allowed" title="Last.fm is disabled on this server">Last.fm (disabled)</span>
+  {{ end }}
+
+  {{ if .AppleMusicEnabled }}
+  <a class="text-[#1DB954] font-bold no-underline" href="/link-applemusic"
+    >Link Apple Music</a
   >
+  {{ else }}
+  <span class="text-gray-400 font-bold cursor-not-allowed" title="Apple Music is disabled on this server">Apple Music (disabled)</span>
+  {{ end }}
+
+  <a class="text-[#1DB954] font-bold no-underline" href="/api-keys">API Keys</a>
   <a class="text-[#1DB954] font-bold no-underline" href="/logout">Logout</a>
   {{ else }}
   <a class="text-[#1DB954] font-bold no-underline" href="/login/atproto"

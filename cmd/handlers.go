@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/spf13/viper"
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/db/apikey"
 	"github.com/teal-fm/piper/models"
@@ -44,8 +45,11 @@ func home(database *db.DB, pg *pages.Pages) http.HandlerFunc {
 		}
 		params := HomeParams{
 			NavBar: pages.NavBar{
-				IsLoggedIn:     isLoggedIn,
-				LastFMUsername: lastfmUsername,
+				IsLoggedIn:        isLoggedIn,
+				LastFMUsername:    lastfmUsername,
+				SpotifyEnabled:    viper.GetBool("enable_spotify"),
+				LastFMEnabled:     viper.GetBool("enable_lastfm"),
+				AppleMusicEnabled: viper.GetBool("enable_applemusic"),
 			},
 		}
 		err := pg.Execute("home", w, params)
@@ -98,8 +102,11 @@ func handleLinkLastfmForm(database *db.DB, pg *pages.Pages) http.HandlerFunc {
 			CurrentUsername string
 		}{
 			NavBar: pages.NavBar{
-				IsLoggedIn:     authenticated,
-				LastFMUsername: currentUsername,
+				IsLoggedIn:        authenticated,
+				LastFMUsername:    currentUsername,
+				SpotifyEnabled:    viper.GetBool("enable_spotify"),
+				LastFMEnabled:     viper.GetBool("enable_lastfm"),
+				AppleMusicEnabled: viper.GetBool("enable_applemusic"),
 			},
 			CurrentUsername: currentUsername,
 		}
@@ -150,7 +157,14 @@ func handleAppleMusicLink(pg *pages.Pages, am *applemusic.Service) http.HandlerF
 		data := struct {
 			NavBar   pages.NavBar
 			DevToken string
-		}{DevToken: devToken}
+		}{
+			DevToken: devToken,
+			NavBar: pages.NavBar{
+				SpotifyEnabled:    viper.GetBool("enable_spotify"),
+				LastFMEnabled:     viper.GetBool("enable_lastfm"),
+				AppleMusicEnabled: viper.GetBool("enable_applemusic"),
+			},
+		}
 		err := pg.Execute("applemusic_link", w, data)
 		if err != nil {
 			log.Printf("Error executing template: %v", err)
