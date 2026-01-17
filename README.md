@@ -112,3 +112,59 @@ We also provide a docker compose file to use to run piper locally. There are a f
 `DB_PATH` = `/db/piper.db` to persist your piper db through container restarts
 
 Make sure you have docker and docker compose installed, then you can run piper with `docker compose up`
+
+#### nix
+
+For local development, the flake provides a dev shell with all dependencies: `nix develop`. You can also run piper directly with `nix run`.
+
+Piper can be installed as a NixOS module. Add the flake to your system configuration:
+
+```nix
+# flake.nix
+{
+  inputs = {
+    # ...
+    tealfm-piper.url = "github:teal-fm/piper";
+  };
+  outputs = { self, nixpkgs, tealfm-piper, ... }: {
+    nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
+      # ...
+      modules = [
+        # ...
+        ./modules/piper.nix # piper config
+        tealfm-piper.nixosModules.default # import piper module
+      ];
+    };
+  };
+}
+```
+
+Sensitive environment variables (Spotify, ATProto, Last.fm credentials) should be securely managed with a tool like [sops](https://github.com/getsops/sops):
+
+```nix
+# modules/piper.nix
+{ config, ... }:
+
+{
+  sops.secrets.piper = {
+    owner = "tealfm-piper";
+    group = "tealfm-piper";
+    sopsFile = ./sops/piper.env;
+    format = "dotenv";
+  };
+
+  services.tealfm-piper = {
+    enable = true;
+    environmentFiles = [ config.sops.secrets.piper.path ];
+    settings = {
+      SERVER_PORT = 19990;
+      SERVER_HOST = "localhost";
+      SERVER_ROOT_URL = "https://piper.example.com";
+      # Optional: DID allow list
+      ALLOWED_DIDS = [ "did:plc:tas6hj2xjrqben5653v5kohk" ];
+    };
+  };
+}
+```
+
+See [module.nix](./module.nix) for additional configuration options.

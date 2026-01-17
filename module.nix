@@ -1,0 +1,244 @@
+{ self ? null }:
+{ config, lib, pkgs, ... }:
+
+let
+  inherit (lib) mkEnableOption mkIf mkOption types literalExpression;
+
+  cfg = config.services.tealfm-piper;
+
+  settingsFormat = pkgs.formats.keyValue { };
+
+  derivedSettings = lib.optionalAttrs (cfg.settings.SERVER_ROOT_URL != null) {
+    ATPROTO_CLIENT_ID =
+      cfg.settings.ATPROTO_CLIENT_ID or "${cfg.settings.SERVER_ROOT_URL}/oauth-client-metadata.json";
+    ATPROTO_METADATA_URL =
+      cfg.settings.ATPROTO_METADATA_URL or "${cfg.settings.SERVER_ROOT_URL}/oauth-client-metadata.json";
+    ATPROTO_CALLBACK_URL =
+      cfg.settings.ATPROTO_CALLBACK_URL or "${cfg.settings.SERVER_ROOT_URL}/callback/atproto";
+    CALLBACK_SPOTIFY =
+      cfg.settings.CALLBACK_SPOTIFY or "${cfg.settings.SERVER_ROOT_URL}/callback/spotify";
+  };
+
+  dbPathDefault = lib.optionalAttrs (cfg.settings.DB_PATH == null) {
+    DB_PATH = "${cfg.dataDir}/piper.db";
+  };
+
+  allowedDidsString = lib.optionalAttrs (cfg.settings.ALLOWED_DIDS != null) {
+    ALLOWED_DIDS = lib.concatStringsSep " " cfg.settings.ALLOWED_DIDS;
+  };
+
+  finalSettings = lib.filterAttrs (_: v: v != null)
+    (cfg.settings // derivedSettings // dbPathDefault // allowedDidsString);
+  settingsFile = settingsFormat.generate "tealfm-piper.env" finalSettings;
+
+in {
+  meta = { maintainers = with lib.maintainers; [ ptdewey ]; };
+
+  options.services.tealfm-piper = {
+    enable = mkEnableOption "Piper - teal.fm scrobbler service";
+
+    package = mkOption {
+      type = types.package;
+      default = if self != null then
+        self.packages.${pkgs.stdenv.hostPlatform.system}.tealfm-piper
+      else
+        pkgs.tealfm-piper;
+      defaultText = literalExpression "pkgs.tealfm-piper";
+      description = "The piper package to use.";
+    };
+
+    user = mkOption {
+      type = types.str;
+      default = "tealfm-piper";
+      description = "User account under which piper runs.";
+    };
+
+    group = mkOption {
+      type = types.str;
+      default = "tealfm-piper";
+      description = "Group under which piper runs.";
+    };
+
+    dataDir = mkOption {
+      type = types.path;
+      default = "/var/lib/tealfm-piper";
+      description = "Directory where piper stores its database and data.";
+    };
+
+    settings = mkOption {
+      type = types.submodule {
+        freeformType = types.attrsOf
+          (types.oneOf [ (types.nullOr types.str) types.int types.port ]);
+
+        options = {
+          SERVER_PORT = mkOption {
+            type = types.port;
+            default = 8080;
+            description = "Port to listen on.";
+          };
+
+          SERVER_HOST = mkOption {
+            type = types.str;
+            default = "localhost";
+            description = "Host to bind to.";
+          };
+
+          SERVER_ROOT_URL = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            example = "https://piper.teal.fm";
+            description = ''
+              Public URL for OAuth callbacks. Required for OAuth flows.
+
+              Auto-derives the following URLs if not explicitly set:
+              - ATPROTO_CLIENT_ID
+              - ATPROTO_METADATA_URL
+              - ATPROTO_CALLBACK_URL
+              - CALLBACK_SPOTIFY
+            '';
+          };
+
+          DB_PATH = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            description = ''
+              Path to SQLite database file.
+              Defaults to {dataDir}/piper.db if not set.
+            '';
+          };
+
+          TRACKER_INTERVAL = mkOption {
+            type = types.int;
+            default = 30;
+            description = "Seconds between music playback checks.";
+          };
+
+          SPOTIFY_AUTH_URL = mkOption {
+            type = types.str;
+            default = "https://accounts.spotify.com/authorize";
+            description = "Spotify authorization endpoint.";
+          };
+
+          SPOTIFY_TOKEN_URL = mkOption {
+            type = types.str;
+            default = "https://accounts.spotify.com/api/token";
+            description = "Spotify token endpoint.";
+          };
+
+          SPOTIFY_SCOPES = mkOption {
+            type = types.str;
+            default = "user-read-currently-playing user-read-email";
+            description = "Spotify OAuth scopes to request.";
+          };
+
+          ALLOWED_DIDS = mkOption {
+            type = types.nullOr (types.listOf types.str);
+            default = null;
+            example =
+              literalExpression ''[ "did:plc:abcdefg" "did:web:example.com" ]'';
+            description = ''
+              List of ATProto DIDs allowed to sign in.
+              When set, restricts instance access to only these accounts.
+              Leave null to allow any ATProto account to sign in.
+            '';
+          };
+        };
+      };
+
+      default = { };
+
+      example = literalExpression ''
+        {
+          SERVER_PORT = 8080;
+          SERVER_HOST = "localhost";
+          SERVER_ROOT_URL = "https://piper.teal.fm";
+          TRACKER_INTERVAL = 30;
+        }
+      '';
+
+      description = ''
+        Configuration for piper. These will be converted to environment variables.
+      '';
+    };
+
+    environmentFiles = mkOption {
+      type = types.listOf types.path;
+      default = [ ];
+      example = literalExpression ''
+        [
+          "/run/secrets/tealfm-piper.env"
+          "/run/secrets/tealfm-piper-apple-music.env"
+        ]
+      '';
+      description = ''
+        List of files containing environment variables for secrets.
+        Files are loaded in order, with later files overriding earlier ones.
+      '';
+    };
+  };
+
+  config = mkIf cfg.enable {
+    users.users.${cfg.user} = {
+      isSystemUser = true;
+      group = cfg.group;
+      home = cfg.dataDir;
+      description = "Piper service user";
+    };
+
+    users.groups.${cfg.group} = { };
+
+    systemd.services.tealfm-piper = {
+      description = "Piper - teal.fm scrobbler service";
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
+      wantedBy = [ "multi-user.target" ];
+
+      serviceConfig = {
+        Type = "simple";
+        User = cfg.user;
+        Group = cfg.group;
+        NoNewPrivileges = true;
+        PrivateTmp = true;
+        PrivateDevices = true;
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        ProtectKernelTunables = true;
+        ProtectKernelModules = true;
+        ProtectControlGroups = true;
+        RestrictAddressFamilies = [ "AF_INET" "AF_INET6" "AF_UNIX" ];
+        RestrictNamespaces = true;
+        RestrictRealtime = true;
+        RestrictSUIDSGID = true;
+        LockPersonality = true;
+        ReadWritePaths = [ cfg.dataDir ];
+        StateDirectory = "tealfm-piper";
+        StateDirectoryMode = "0700";
+        WorkingDirectory = cfg.dataDir;
+        EnvironmentFile = [ settingsFile ] ++ cfg.environmentFiles;
+        ExecStart = "${cfg.package}/bin/piper";
+        Restart = "on-failure";
+        RestartSec = "10s";
+      };
+    };
+
+    assertions = [
+      {
+        assertion = (cfg.environmentFiles != [ ])
+          || (cfg.settings ? ATPROTO_CLIENT_SECRET_KEY);
+        message =
+          "services.tealfm-piper: ATPROTO_CLIENT_SECRET_KEY must be set via settings or environmentFiles";
+      }
+      {
+        assertion = (cfg.environmentFiles != [ ])
+          || (cfg.settings ? ATPROTO_CLIENT_SECRET_KEY_ID);
+        message =
+          "services.tealfm-piper: ATPROTO_CLIENT_SECRET_KEY_ID must be set via settings or environmentFiles";
+      }
+      {
+        assertion = cfg.settings.SERVER_ROOT_URL != null;
+        message =
+          "services.tealfm-piper: SERVER_ROOT_URL must be set in settings (e.g., https://piper.teal.fm)";
+      }
+    ];
+  };
+}
