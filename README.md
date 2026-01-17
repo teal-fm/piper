@@ -115,15 +115,34 @@ Make sure you have docker and docker compose installed, then you can run piper w
 
 #### nix
 
-For local development, the flake provides a dev shell with all dependencies: `nix develop`.
-You can also run piper directly with `nix run`.
+For local development, the flake provides a dev shell with all dependencies: `nix develop`. You can also run piper directly with `nix run`.
 
-Piper can also be installed as a NixOS module.
-Sensitive environment variables (Spotify, ATProto, Last.fm credentials) should be securely managed.
-
-Example nix module configuration (using [sops](https://github.com/getsops/sops) for secrets):
+Piper can be installed as a NixOS module. Add the flake to your system configuration:
 
 ```nix
+# flake.nix
+{
+  inputs = {
+    # ...
+    tealfm-piper.url = "github:teal-fm/piper";
+  };
+  outputs = { self, nixpkgs, tealfm-piper, ... }: {
+    nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
+      # ...
+      modules = [
+        # ...
+        ./modules/piper.nix # piper config
+        tealfm-piper.nixosModules.default # import piper module
+      ];
+    };
+  };
+}
+```
+
+Sensitive environment variables (Spotify, ATProto, Last.fm credentials) should be securely managed with a tool like [sops](https://github.com/getsops/sops):
+
+```nix
+# modules/piper.nix
 { config, ... }:
 
 {
