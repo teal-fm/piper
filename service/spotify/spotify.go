@@ -28,34 +28,65 @@ import (
 	"github.com/teal-fm/piper/session"
 )
 
+// Maximum delta time to add per poll cycle (prevents spurious accumulation if polling is delayed)
+const maxDeltaMs int64 = 30000
+
+// Maximum delta time that can be skipped upon first appearance of a track.
+const maxSkipDeltaMs int64 = 30000
+
+// userPlayState tracks the listening state for a user, including accumulated
+// listening time per track
+type userPlayState struct {
+	track         *models.Track // Full track info for now-playing and stamping
+	accumulatedMs int64         // Accumulated listening time in ms
+	lastPollTime  time.Time     // When we last polled (for delta calculation)
+	hasStamped    bool          // Whether we've stamped this "play cycle"
+	isPaused      bool          // Whether currently paused
+}
+
+// SpotifyTrackResponse contains track info and playback state from Spotify
+type SpotifyTrackResponse struct {
+	Track     *models.Track
+	IsPlaying bool
+}
+
+// stateAction describes what external actions to take after state computation
+type stateAction struct {
+	clearNowPlaying   bool
+	publishNowPlaying bool
+	stampTrack        bool
+	track             *models.Track
+	accumulatedMs     int64
+}
+
 type Service struct {
-	DB                *db.DB
-	atprotoService    *atprotoauth.AuthService // Added field
-	mb                *musicbrainz.Service     // Added field
-	playingNowService interface {
+	DB                 *db.DB
+	atprotoAuthService *atprotoauth.AuthService // Added field
+	mb                 *musicbrainz.Service     // Added field
+	playingNowService  interface {
 		PublishPlayingNow(ctx context.Context, userID int64, track *models.Track) error
 		ClearPlayingNow(ctx context.Context, userID int64) error
 	} // Added field for playing now service
-	userTracks map[int64]*models.Track
-	userTokens map[int64]string
-	mu         sync.RWMutex
-	logger     *log.Logger
+	userPlayStates map[int64]*userPlayState
+	userTokens     map[int64]string
+	mu             sync.RWMutex
+	logger         *log.Logger
 }
 
-func NewSpotifyService(database *db.DB, atprotoService *atprotoauth.AuthService, musicBrainzService *musicbrainz.Service, playingNowService interface {
+func NewSpotifyService(database *db.DB, atprotoAuthService *atprotoauth.AuthService, musicBrainzService *musicbrainz.Service, playingNowService interface {
 	PublishPlayingNow(ctx context.Context, userID int64, track *models.Track) error
 	ClearPlayingNow(ctx context.Context, userID int64) error
 }) *Service {
 	logger := log.New(os.Stdout, "spotify: ", log.LstdFlags|log.Lmsgprefix)
 
 	return &Service{
-		DB:                database,
-		atprotoService:    atprotoService,
-		mb:                musicBrainzService,
-		playingNowService: playingNowService,
-		userTracks:        make(map[int64]*models.Track),
-		userTokens:        make(map[int64]string),
-		logger:            logger,
+		DB:                 database,
+		atprotoAuthService: atprotoAuthService,
+		mb:                 musicBrainzService,
+		playingNowService:  playingNowService,
+		userPlayStates:     make(map[int64]*userPlayState),
+		userTokens:         make(map[int64]string),
+		logger:             logger,
 	}
 }
 
@@ -67,7 +98,7 @@ func (s *Service) SubmitTrackToPDS(did string, mostRecentAtProtoSessionID string
 	}
 
 	// Use shared atproto service for submission
-	return atprotoservice.SubmitPlayToPDS(ctx, did, mostRecentAtProtoSessionID, track, s.atprotoService)
+	return atprotoservice.SubmitPlayToPDS(ctx, did, mostRecentAtProtoSessionID, track, s.atprotoAuthService)
 }
 
 func (s *Service) SetAccessToken(token string, refreshToken string, userId int64, hasSession bool) (int64, error) {
@@ -360,10 +391,10 @@ func (s *Service) HandleCurrentTrack(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.mu.RLock()
-	track, exists := s.userTracks[userID]
+	state, exists := s.userPlayStates[userID]
 	s.mu.RUnlock()
 
-	if !exists || track == nil {
+	if !exists || state == nil || state.track == nil {
 		_, err := fmt.Fprintf(w, "No track currently playing")
 		if err != nil {
 			s.logger.Printf("Error writing response: %v", err)
@@ -373,7 +404,7 @@ func (s *Service) HandleCurrentTrack(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	err := json.NewEncoder(w).Encode(track)
+	err := json.NewEncoder(w).Encode(state.track)
 	if err != nil {
 		s.logger.Printf("Error encoding response: %v", err)
 		return
@@ -402,7 +433,7 @@ func (s *Service) HandleTrackHistory(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Service) FetchCurrentTrack(userID int64) (*models.Track, error) {
+func (s *Service) FetchCurrentTrack(userID int64) (*SpotifyTrackResponse, error) {
 	s.mu.RLock()
 	token, exists := s.userTokens[userID]
 	s.mu.RUnlock()
@@ -510,9 +541,7 @@ func (s *Service) FetchCurrentTrack(userID int64) (*models.Track, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal spotify response: %w", err)
 	}
-	if response.IsPlaying == false {
-		return nil, nil
-	}
+
 	var artists []models.Artist
 	for _, artist := range response.Item.Artists {
 		artists = append(artists, models.Artist{
@@ -523,7 +552,7 @@ func (s *Service) FetchCurrentTrack(userID int64) (*models.Track, error) {
 
 	// ignore tracks with no artists (podcasts, audiobooks, etc)
 	if len(artists) == 0 {
-		return nil, nil
+		return &SpotifyTrackResponse{Track: nil, IsPlaying: response.IsPlaying}, nil
 	}
 
 	// assemble Track
@@ -540,7 +569,165 @@ func (s *Service) FetchCurrentTrack(userID int64) (*models.Track, error) {
 		Timestamp:      time.Now().UTC(),
 	}
 
-	return track, nil
+	return &SpotifyTrackResponse{Track: track, IsPlaying: response.IsPlaying}, nil
+}
+
+func getFirstArtist(track *models.Track) string {
+	if track != nil && len(track.Artist) > 0 {
+		return track.Artist[0].Name
+	}
+	return "Unknown Artist"
+}
+
+// computeStateUpdate holds the lock, updates user play state based on the
+// Spotify response, and returns the actions that should be taken after
+// releasing the lock. This separates state computation from external I/O.
+// More importantly, this allows for holding a lock while doing early returns
+// through the use of defer.
+func (s *Service) computeStateUpdate(userID int64, resp *SpotifyTrackResponse) stateAction {
+	now := time.Now()
+	var action stateAction
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state := s.userPlayStates[userID]
+
+	// No track from Spotify (nothing playing, not even paused)
+	if resp == nil || resp.Track == nil {
+		// If the user already has some state, pause it
+		if state != nil {
+			state.isPaused = true
+			action.clearNowPlaying = true
+		}
+		return action
+	}
+
+	track := resp.Track
+	action.track = track
+
+	// Track is paused
+	if !resp.IsPlaying {
+		if state != nil && state.track != nil && state.track.URL == track.URL {
+			// Same song paused - preserve state, mark paused
+			state.isPaused = true
+		} else {
+			// Different song paused or no prior state - create new state but paused
+			//
+			// We use the track's progress rather than 0 to account
+			// for time missed due to polling latency. A cap is
+			// used to prevent instant skips past the stamping point
+			s.userPlayStates[userID] = &userPlayState{
+				track:         track,
+				accumulatedMs: min(track.ProgressMs, maxSkipDeltaMs),
+				lastPollTime:  now,
+				hasStamped:    false,
+				isPaused:      true,
+			}
+		}
+		action.clearNowPlaying = true
+		return action
+	}
+
+	// Track is playing
+
+	isNewTrack := state == nil || state.track == nil || state.track.URL != track.URL
+	if isNewTrack {
+		// New song - reset state
+		//
+		// We use the track's progress rather than 0 to account
+		// for time missed due to polling latency. A cap is
+		// used to prevent instant skips past the stamping point
+		s.userPlayStates[userID] = &userPlayState{
+			track:         track,
+			accumulatedMs: min(track.ProgressMs, maxSkipDeltaMs),
+			lastPollTime:  now,
+			hasStamped:    false,
+			isPaused:      false,
+		}
+		state = s.userPlayStates[userID]
+		action.publishNowPlaying = true
+		s.logger.Printf("Track changed for user %d: %s by %s", userID, track.Name, getFirstArtist(track))
+	} else {
+		// Same song continuing
+		state.track = track
+		if state.isPaused {
+			// Resuming from pause - just mark as playing, don't add delta yet
+			//
+			// This technically causes a loss of acc time due to
+			// polling latency, but there isn't really a safe way
+			// to fix this. If the user stops and starts the same
+			// song many times, this would cause issues. That's
+			// likely rare though.
+			state.isPaused = false
+			action.publishNowPlaying = true
+		} else {
+			// Was already playing - add delta time
+			// (capped to prevent spurious large accumulation from server issues)
+			deltaMs := min(now.Sub(state.lastPollTime).Milliseconds(), maxDeltaMs)
+			state.accumulatedMs += deltaMs
+		}
+		state.lastPollTime = now
+	}
+
+	// Check for song repeat (accumulated >= duration)
+	if state.accumulatedMs >= track.DurationMs {
+		// Subtract duration rather than setting to 0 to account for
+		// polling latency (leaves acc > 0 after in many cases).
+		state.accumulatedMs -= track.DurationMs
+		state.hasStamped = false
+		s.logger.Printf(
+			"Song repeat detected for user %d: %s (acc: %dms, dur: %dms)",
+			userID, track.Name, state.accumulatedMs, state.track.DurationMs,
+		)
+	}
+
+	// Check for stamp threshold
+	// We stamp a track iff we've played more than half or 30 seconds, whichever is greater
+	stampThreshold := max(track.DurationMs/2, 30000)
+	if state.accumulatedMs > stampThreshold && !state.hasStamped {
+		state.hasStamped = true
+		action.stampTrack = true
+		action.accumulatedMs = state.accumulatedMs
+	}
+
+	return action
+}
+
+// fetchTrackForUser fetches the current track from Spotify, computes the
+// state update, and executes any required external actions.
+func (s *Service) fetchTrackForUser(ctx context.Context, userID int64) {
+	// Fetch from Spotify
+	resp, err := s.FetchCurrentTrack(userID)
+	if err != nil {
+		s.logger.Printf("Error fetching track for user %d: %v", userID, err)
+		return
+	}
+
+	// Compute state changes (holds lock internally)
+	action := s.computeStateUpdate(userID, resp)
+
+	// Execute external calls based on computed actions (no lock held)
+	if action.clearNowPlaying && s.playingNowService != nil {
+		if err := s.playingNowService.ClearPlayingNow(ctx, userID); err != nil {
+			s.logger.Printf("Error clearing playing now for user %d: %v", userID, err)
+		}
+	}
+
+	if action.publishNowPlaying && s.playingNowService != nil {
+		if err := s.playingNowService.PublishPlayingNow(ctx, userID, action.track); err != nil {
+			s.logger.Printf("Error publishing playing now for user %d: %v", userID, err)
+		}
+	}
+
+	if action.stampTrack {
+		s.logger.Printf(
+			"User %d stamped track: %s by %s (acc: %dms, dur: %dms)",
+			userID, action.track.Name, getFirstArtist(action.track),
+			action.accumulatedMs, action.track.DurationMs,
+		)
+		s.stampTrack(ctx, userID, action.track)
+	}
 }
 
 func (s *Service) fetchAllUserTracks(ctx context.Context) {
@@ -558,162 +745,54 @@ func (s *Service) fetchAllUserTracks(ctx context.Context) {
 			break // Exit loop if context is cancelled
 		}
 
-		track, err := s.FetchCurrentTrack(userID)
+		s.fetchTrackForUser(ctx, userID)
+	}
+}
+
+// stampTrack handles MusicBrainz hydration, DB save, and PDS submission for a stamped track.
+func (s *Service) stampTrack(ctx context.Context, userID int64, track *models.Track) {
+	track.HasStamped = true
+
+	trackToSubmit := track
+	if s.mb != nil {
+		hydratedTrack, err := musicbrainz.HydrateTrack(s.mb, *track)
 		if err != nil {
-			s.logger.Printf("Error fetching track for user %d: %v", userID, err)
-			continue
+			s.logger.Printf("User %d: Error hydrating track '%s' with MusicBrainz: %v", userID, track.Name, err)
+		} else {
+			s.logger.Printf("User %d: Successfully hydrated track '%s'", userID, track.Name)
+			trackToSubmit = hydratedTrack
 		}
+	}
 
-		if track == nil {
-			// No track currently playing - clear playing now status
-			if s.playingNowService != nil {
-				if err := s.playingNowService.ClearPlayingNow(ctx, userID); err != nil {
-					s.logger.Printf("Error clearing playing now for user %d: %v", userID, err)
-				}
-			}
-			continue
-		}
+	// Save the track now that it is stamped and hydrated
+	if _, err := s.DB.SaveTrack(userID, trackToSubmit); err != nil {
+		s.logger.Printf("Error saving track for user %d: %v", userID, err)
+		return
+	}
 
-		s.mu.RLock()
-		currentTrack := s.userTracks[userID]
-		s.mu.RUnlock()
+	// Submit play record to ATProto PDS
 
-		if currentTrack == nil {
-			currentTracks, _ := s.DB.GetRecentTracks(userID, 1)
-			if len(currentTracks) > 0 {
-				currentTrack = currentTracks[0]
-			}
-		}
+	// Fetch the user
+	dbUser, err := s.DB.GetUserByID(userID)
+	if err != nil {
+		s.logger.Printf("User %d: Error fetching user for PDS: %v", userID, err)
+		return
+	}
+	if dbUser == nil {
+		s.logger.Printf("User %d: User not found in DB. Skipping PDS submission.", userID)
+		return
+	}
+	if dbUser.ATProtoDID == nil || *dbUser.ATProtoDID == "" {
+		// No DID configured, skip PDS submission silently
+		return
+	}
 
-		// if flagged true, we have a new track
-		isNewTrack := currentTrack == nil ||
-			currentTrack.Name != track.Name ||
-			// just check the first one for now
-			currentTrack.Artist[0].Name != track.Artist[0].Name
-
-		// we stamp a track iff we've played more than half (or 30 seconds whichever is greater)
-		isStamped := track.ProgressMs > track.DurationMs/2 && track.ProgressMs > 30000
-
-		// if currentTrack.Timestamp minus track.Timestamp is greater than 30 seconds
-		isLastTrackStamped := currentTrack != nil && time.Since(currentTrack.Timestamp) > 30*time.Second &&
-			currentTrack.DurationMs > 30000
-
-		// just log when we stamp tracks
-		if isNewTrack && isLastTrackStamped && currentTrack != nil && !currentTrack.HasStamped {
-			artistName := "Unknown Artist"
-			if len(currentTrack.Artist) > 0 {
-				artistName = currentTrack.Artist[0].Name
-			}
-			s.logger.Printf("User %d stamped (previous) track: %s by %s", userID, currentTrack.Name, artistName)
-			currentTrack.HasStamped = true
-			if currentTrack.PlayID != 0 {
-				err := s.DB.UpdateTrack(currentTrack.PlayID, currentTrack)
-				if err != nil {
-					s.logger.Printf("Error updating track %d in DB: %v", currentTrack.PlayID, err)
-					return
-				}
-				s.logger.Printf("Updated!")
-			}
-		}
-
-		if isStamped && currentTrack != nil && !currentTrack.HasStamped {
-			artistName := "Unknown Artist"
-			if len(track.Artist) > 0 {
-				artistName = track.Artist[0].Name
-			}
-			s.logger.Printf("User %d stamped track: %s by %s", userID, track.Name, artistName)
-			track.HasStamped = true
-			// if currenttrack has a playid and the last track is the same as the current track
-			if !isNewTrack && currentTrack.PlayID != 0 {
-				err := s.DB.UpdateTrack(currentTrack.PlayID, track)
-				if err != nil {
-					s.logger.Printf("Error updating track %d in DB: %v", currentTrack.PlayID, err)
-					return
-				}
-
-				// Update in memory
-				s.mu.Lock()
-				s.userTracks[userID] = track
-				s.mu.Unlock()
-
-				// Update playing now status since track progress changed
-				if s.playingNowService != nil {
-					if err := s.playingNowService.PublishPlayingNow(ctx, userID, track); err != nil {
-						s.logger.Printf("Error updating playing now for user %d: %v", userID, err)
-					}
-				}
-
-				s.logger.Printf("Updated!")
-			}
-		}
-
-		if isNewTrack {
-			id, err := s.DB.SaveTrack(userID, track)
-			if err != nil {
-				s.logger.Printf("Error saving track for user %d: %v", userID, err)
-				continue
-			}
-
-			track.PlayID = id
-
-			s.mu.Lock()
-			s.userTracks[userID] = track
-			s.mu.Unlock()
-
-			// Publish playing now status
-			if s.playingNowService != nil {
-				if err := s.playingNowService.PublishPlayingNow(ctx, userID, track); err != nil {
-					s.logger.Printf("Error publishing playing now for user %d: %v", userID, err)
-				}
-			}
-
-			// Submit to ATProto PDS
-			// The 'track' variable is *models.Track and has been saved to DB, PlayID is populated.
-			dbUser, errUser := s.DB.GetUserByID(userID) // Fetch user by their internal ID
-			if errUser != nil {
-				s.logger.Printf("User %d: Error fetching user details for PDS submission: %v", userID, errUser)
-			} else if dbUser == nil {
-				s.logger.Printf("User %d: User not found in DB. Skipping PDS submission.", userID)
-			} else if dbUser.ATProtoDID == nil || *dbUser.ATProtoDID == "" {
-				s.logger.Printf("User %d (%d): ATProto DID not set. Skipping PDS submission for track '%s'.", userID, dbUser.ATProtoDID, track.Name)
-			} else {
-				// User has a DID, proceed with hydration and submission
-				var trackToSubmitToPDS = track // Default to the original track (already *models.Track)
-				if s.mb != nil {               // Check if MusicBrainz service is available
-					// musicbrainz.HydrateTrack expects models.Track as second argument, so we pass *track
-					// and it returns *models.Track
-					hydratedTrack, errHydrate := musicbrainz.HydrateTrack(s.mb, *track)
-					if errHydrate != nil {
-						s.logger.Printf("User %d (%d): Error hydrating track '%s' with MusicBrainz: %v. Proceeding with original track data for PDS.", userID, dbUser.ATProtoDID, track.Name, errHydrate)
-					} else {
-						s.logger.Printf("User %d (%d): Successfully hydrated track '%s' with MusicBrainz.", userID, dbUser.ATProtoDID, track.Name)
-						trackToSubmitToPDS = hydratedTrack // hydratedTrack is *models.Track
-					}
-				} else {
-					s.logger.Printf("User %d (%d): MusicBrainz service not configured. Proceeding with original track data for PDS.", userID, dbUser.ATProtoDID)
-				}
-
-				artistName := "Unknown Artist"
-				if len(trackToSubmitToPDS.Artist) > 0 {
-					artistName = trackToSubmitToPDS.Artist[0].Name
-				}
-
-				s.logger.Printf("User %d (%d): Attempting to submit track '%s' by %s to PDS (DID: %s)", userID, dbUser.ATProtoDID, trackToSubmitToPDS.Name, artistName, *dbUser.ATProtoDID)
-				// Use context.Background() for now, or pass down a context if available
-				if errPDS := s.SubmitTrackToPDS(*dbUser.ATProtoDID, *dbUser.MostRecentAtProtoSessionID, trackToSubmitToPDS, context.Background()); errPDS != nil {
-					s.logger.Printf("User %d (%d): Error submitting track '%s' to PDS: %v", userID, dbUser.ATProtoDID, trackToSubmitToPDS.Name, errPDS)
-				} else {
-					s.logger.Printf("User %d (%d): Successfully submitted track '%s' to PDS.", userID, dbUser.ATProtoDID, trackToSubmitToPDS.Name)
-				}
-			}
-			// End of PDS submission block
-
-			artistName := "Unknown Artist"
-			if len(track.Artist) > 0 {
-				artistName = track.Artist[0].Name
-			}
-			s.logger.Printf("User %d is listening to: %s by %s", userID, track.Name, artistName)
-		}
+	// Perform submission to PDS
+	s.logger.Printf("User %d: Submitting track '%s' to PDS (DID: %s)", userID, trackToSubmit.Name, *dbUser.ATProtoDID)
+	if err := s.SubmitTrackToPDS(*dbUser.ATProtoDID, *dbUser.MostRecentAtProtoSessionID, trackToSubmit, ctx); err != nil {
+		s.logger.Printf("User %d: Error submitting to PDS: %v", userID, err)
+	} else {
+		s.logger.Printf("User %d: Successfully submitted track '%s' to PDS", userID, trackToSubmit.Name)
 	}
 }
 
