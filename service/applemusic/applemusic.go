@@ -286,7 +286,7 @@ type AppleRecentTrack struct {
 	} `json:"attributes"`
 }
 
-// Generates a hash representing the track name, album name, and artists' concatenated names,
+// Generates a hash representing the track name, album name, and artist name,
 // to be used for comparing subsequent uploaded Apple Music tracks
 func generateUploadHash(track *AppleRecentTrack) string {
 	input := track.Attributes.Name + track.Attributes.AlbumName + track.Attributes.ArtistName
