@@ -6,3 +6,4 @@ jwk*.json
 .idea
 AM_AUTHKEY.p8
 .DS_Store
+result
