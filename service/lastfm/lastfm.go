@@ -23,6 +23,8 @@ import (
 
 const (
 	lastfmAPIBaseURL = "https://ws.audioscrobbler.com/2.0/"
+	downloadLimit    = 200
+	noTimestampLimit = 5
 )
 
 type Service struct {
@@ -97,9 +99,23 @@ func (l *Service) loadUsernames() error {
 }
 
 // getRecentTracks fetches the most recent tracks for a given Last.fm user.
-func (l *Service) getRecentTracks(ctx context.Context, username string, limit int) (*RecentTracksResponse, error) {
+func (l *Service) getRecentTracks(ctx context.Context, username string) (*RecentTracksResponse, error) {
 	if username == "" {
 		return nil, fmt.Errorf("username cannot be empty")
+	}
+
+	if l.db == nil {
+		return nil, fmt.Errorf("database connection is nil")
+	}
+
+	user, err := l.db.GetUserByLastFM(username)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user ID for %s: %w", username, err)
+	}
+
+	lastKnownTimestamp, err := l.db.GetLastKnownTimestamp(user.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get last scrobble timestamp for %s: %w", username, err)
 	}
 
 	params := url.Values{}
@@ -107,7 +123,18 @@ func (l *Service) getRecentTracks(ctx context.Context, username string, limit in
 	params.Set("user", username)
 	params.Set("api_key", l.apiKey)
 	params.Set("format", "json")
-	params.Set("limit", strconv.Itoa(limit)) // Fetch a few more to handle duplicates/now playing
+
+	if lastKnownTimestamp == nil {
+		// If no timestamp, then just get the {noTimestampLimit} most recent tracks
+		l.logger.Printf("no previous scrobble timestamp found for user %s. retrieving last 5 tracks", username)
+		params.Set("limit", strconv.Itoa(noTimestampLimit))
+	} else {
+		// As last.fm returns tracks >= from, this will always return at leastthe user's most recent track, but should
+		// cover the (extremely remote) edge case where a user scrobbles multiple tracks within a single second
+		l.logger.Printf("retrieving all tracks for %s since last timestamp %s", username, lastKnownTimestamp.Format(time.RFC3339))
+		params.Set("limit", strconv.Itoa(downloadLimit))
+		params.Set("from", strconv.FormatInt(lastKnownTimestamp.Unix(), 10))
+	}
 
 	apiURL := lastfmAPIBaseURL + "?" + params.Encode()
 
@@ -232,8 +259,7 @@ func (l *Service) fetchAllUserTracks(ctx context.Context) {
 
 			// Fetch slightly more than 1 track to better handle edge cases
 			// where the latest is 'now playing' or duplicates exist.
-			const fetchLimit = 5
-			recentTracks, err := l.getRecentTracks(ctx, uname, fetchLimit)
+			recentTracks, err := l.getRecentTracks(ctx, uname)
 			if err != nil {
 				l.logger.Printf("Error fetching tracks for %s: %v", uname, err)
 				fetchErrors <- fmt.Errorf("fetch failed for %s: %w", uname, err) // Report error
@@ -332,7 +358,7 @@ func (l *Service) processTracks(ctx context.Context, username string, tracks []T
 
 	// find last non-now-playing track
 	var lastNonNowPlaying *Track
-	for i := len(tracks) - 1; i >= 0; i-- {
+	for i := range tracks {
 		if tracks[i].Attr == nil || tracks[i].Attr.NowPlaying != "true" {
 			lastNonNowPlaying = &tracks[i]
 			break
