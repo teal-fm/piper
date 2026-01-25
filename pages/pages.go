@@ -155,6 +155,9 @@ func (p *Pages) Execute(name string, w io.Writer, params any) error {
 // Shared view/template params
 
 type NavBar struct {
-	IsLoggedIn     bool
-	LastFMUsername string
+	IsLoggedIn        bool
+	LastFMUsername    string
+	SpotifyEnabled    bool
+	LastFMEnabled     bool
+	AppleMusicEnabled bool
 }
