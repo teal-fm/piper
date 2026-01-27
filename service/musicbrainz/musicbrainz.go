@@ -32,14 +32,22 @@ type ArtistCredit struct {
 	Name       string `json:"name"`
 }
 
+type ReleaseGroup struct {
+	ID             string   `json:"id"`
+	Title          string   `json:"title"`
+	PrimaryType    string   `json:"primary-type,omitempty"`
+	SecondaryTypes []string `json:"secondary-types,omitempty"`
+}
+
 type Release struct {
-	ID             string `json:"id"`
-	Title          string `json:"title"`
-	Status         string `json:"status,omitempty"`
-	Date           string `json:"date,omitempty"` // YYYY-MM-DD, YYYY-MM, or YYYY
-	Country        string `json:"country,omitempty"`
-	Disambiguation string `json:"disambiguation,omitempty"`
-	TrackCount     int    `json:"track-count,omitempty"`
+	ID             string        `json:"id"`
+	Title          string        `json:"title"`
+	Status         string        `json:"status,omitempty"`
+	Date           string        `json:"date,omitempty"` // YYYY-MM-DD, YYYY-MM, or YYYY
+	Country        string        `json:"country,omitempty"`
+	Disambiguation string        `json:"disambiguation,omitempty"`
+	TrackCount     int           `json:"track-count,omitempty"`
+	ReleaseGroup   *ReleaseGroup `json:"release-group,omitempty"`
 }
 
 type Recording struct {
@@ -223,8 +231,29 @@ func (s *Service) SearchMusicBrainz(ctx context.Context, params SearchParams) ([
 	return result.Recordings, nil
 }
 
+// isOfficialAlbum checks if a release is an official album (not a compilation, EP, promo, etc.)
+func isOfficialAlbum(r *Release) bool {
+	// Must be Official status (not Promotion, Bootleg, etc.)
+	if r.Status != "" && r.Status != "Official" {
+		return false
+	}
+	// Check release group type if available
+	if r.ReleaseGroup != nil {
+		// Must be an Album
+		if r.ReleaseGroup.PrimaryType != "Album" {
+			return false
+		}
+		// Must not be a compilation, soundtrack, etc.
+		if len(r.ReleaseGroup.SecondaryTypes) > 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // GetBestRelease selects the 'best' release from a list based on specific criteria.
-func (s *Service) GetBestRelease(releases []Release, trackTitle string) *Release {
+// expectedAlbum is the album name we're looking for (e.g., from the user's listening data).
+func (s *Service) GetBestRelease(releases []Release, trackTitle string, expectedAlbum string) *Release {
 	if len(releases) == 0 {
 		return nil
 	}
@@ -260,15 +289,46 @@ func (s *Service) GetBestRelease(releases []Release, trackTitle string) *Release
 		return releases[i].ID < releases[j].ID
 	})
 
-	// 1. Find oldest release where country is 'XW' or 'US' AND title is NOT track title
+	// Normalize expected album for comparison
+	expectedAlbumLower := strings.ToLower(strings.TrimSpace(expectedAlbum))
+
+	// 1. If we have an expected album name, find an official release that matches it
+	if expectedAlbumLower != "" {
+		for i := range releases {
+			release := &releases[i]
+			releaseTitleLower := strings.ToLower(strings.TrimSpace(release.Title))
+			// Check if release title matches expected album (exact or starts with for deluxe editions)
+			if (releaseTitleLower == expectedAlbumLower || strings.HasPrefix(releaseTitleLower, expectedAlbumLower)) && isOfficialAlbum(release) {
+				return release
+			}
+		}
+	}
+
+	// 2. Find oldest official album release where country is 'XW' or 'US' AND title is NOT track title
 	for i := range releases {
 		release := &releases[i]
-		if (release.Country == "XW" || release.Country == "US") && release.Title != trackTitle {
+		if (release.Country == "XW" || release.Country == "US") && release.Title != trackTitle && isOfficialAlbum(release) {
 			return release
 		}
 	}
 
-	// 2. If none, find oldest release where title is NOT track title
+	// 3. Find oldest official album release where title is NOT track title
+	for i := range releases {
+		release := &releases[i]
+		if release.Title != trackTitle && isOfficialAlbum(release) {
+			return release
+		}
+	}
+
+	// 4. Find oldest official release (any type) where title is NOT track title
+	for i := range releases {
+		release := &releases[i]
+		if release.Title != trackTitle && release.Status == "Official" {
+			return release
+		}
+	}
+
+	// 5. Find any release where title is NOT track title
 	for i := range releases {
 		release := &releases[i]
 		if release.Title != trackTitle {
@@ -276,7 +336,7 @@ func (s *Service) GetBestRelease(releases []Release, trackTitle string) *Release
 		}
 	}
 
-	// 3. If none found, return the oldest release overall (which is the first one after sorting)
+	// 6. If none found, return the oldest release overall (which is the first one after sorting)
 	s.logger.Printf("Could not find a suitable release for '%s', picking oldest: '%s' (%s)", trackTitle, releases[0].Title, releases[0].ID)
 	r := releases[0]
 	return &r
@@ -306,7 +366,7 @@ func HydrateTrack(mb *Service, track models.Track) (*models.Track, error) {
 	}
 
 	firstResult := res[0]
-	firstResultAlbum := mb.GetBestRelease(firstResult.Releases, firstResult.Title)
+	firstResultAlbum := mb.GetBestRelease(firstResult.Releases, firstResult.Title, track.Album)
 
 	var firstISRC string
 	if len(firstResult.ISRCs) > 0 {
