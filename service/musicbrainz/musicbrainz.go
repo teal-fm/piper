@@ -1,23 +1,24 @@
 package musicbrainz
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"sort"
 	"strings"
-	"sync" // Added for mutex
+	"sync"
 	"time"
+
+	"golang.org/x/time/rate"
 
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
-	"golang.org/x/time/rate"
 )
 
 // ArtistCredit API Types
@@ -61,6 +62,7 @@ type SearchParams struct {
 	Track   string
 	Artist  string
 	Release string
+	ISRC    string
 }
 
 // cacheEntry holds the cached data and its expiration time.
@@ -101,49 +103,19 @@ func NewMusicBrainzService(db *db.DB) *Service {
 	}
 }
 
-// generateCacheKey creates a unique string key for caching based on search parameters.
 func generateCacheKey(params SearchParams) string {
-	// Use a structured format to avoid collisions and ensure order doesn't matter implicitly
-	// url.QueryEscape handles potential special characters in parameters
-	return fmt.Sprintf("track=%s&artist=%s&release=%s",
+	return fmt.Sprintf("track=%s&artist=%s&release=%s&isrc=%s",
 		url.QueryEscape(params.Track),
 		url.QueryEscape(params.Artist),
-		url.QueryEscape(params.Release))
+		url.QueryEscape(params.Release),
+		url.QueryEscape(params.ISRC))
 }
 
-// SearchMusicBrainz searches the MusicBrainz API for recordings, using an in-memory cache.
-func (s *Service) SearchMusicBrainz(ctx context.Context, params SearchParams) ([]Recording, error) {
-	// Validate parameters first
-	if params.Track == "" && params.Artist == "" && params.Release == "" {
-		return nil, fmt.Errorf("at least one search parameter (Track, Artist, Release) must be provided")
-	}
-
-	// clean params
-	params.Track, _ = s.cleaner.CleanRecording(params.Track)
-	params.Artist, _ = s.cleaner.CleanArtist(params.Artist)
-
-	cacheKey := generateCacheKey(params)
-	now := time.Now().UTC()
-
-	// --- Check Cache (Read Lock) ---
-	s.cacheMutex.RLock()
-	entry, found := s.searchCache[cacheKey]
-	s.cacheMutex.RUnlock()
-
-	if found && now.Before(entry.expiresAt) {
-		s.logger.Printf("Cache hit for MusicBrainz search: key=%s", cacheKey)
-		// Return the cached data directly. Consider if a deep copy is needed if callers modify results.
-		return entry.recordings, nil
-	}
-	// --- Cache Miss or Expired ---
-	if found {
-		s.logger.Printf("Cache expired for MusicBrainz search: key=%s", cacheKey)
-	} else {
-		s.logger.Printf("Cache miss for MusicBrainz search: key=%s", cacheKey)
-	}
-
-	// --- Proceed with API call ---
+func buildSearchQuery(params SearchParams) string {
 	var queryParts []string
+	if params.ISRC != "" {
+		queryParts = append(queryParts, fmt.Sprintf(`isrc:"%s"`, params.ISRC))
+	}
 	if params.Track != "" {
 		queryParts = append(queryParts, fmt.Sprintf(`recording:"%s"`, params.Track))
 	}
@@ -153,56 +125,101 @@ func (s *Service) SearchMusicBrainz(ctx context.Context, params SearchParams) ([
 	if params.Release != "" {
 		queryParts = append(queryParts, fmt.Sprintf(`release:"%s"`, params.Release))
 	}
-	query := strings.Join(queryParts, " AND ")
-	endpoint := fmt.Sprintf("https://musicbrainz.org/ws/2/recording?query=%s&fmt=json&inc=artists+releases+isrcs", url.QueryEscape(query))
+	return strings.Join(queryParts, " AND ")
+}
 
-	if err := s.limiter.Wait(ctx); err != nil {
-		if ctx.Err() != nil {
-			return nil, fmt.Errorf("context cancelled during rate limiter wait: %w", ctx.Err())
-		}
-		return nil, fmt.Errorf("rate limiter error: %w", err)
+func buildSearchEndpoint(query string) string {
+	return fmt.Sprintf("https://musicbrainz.org/ws/2/recording?query=%s&fmt=json&inc=artists+releases+isrcs", url.QueryEscape(query))
+}
+
+func getCacheEntry(cache map[string]cacheEntry, cacheKey string) ([]Recording, bool) {
+	entry, found := cache[cacheKey]
+	now := time.Now().UTC()
+	if found && now.Before(entry.expiresAt) {
+		return entry.recordings, true
 	}
+	return nil, false
+}
 
+func setCacheEntry(cache map[string]cacheEntry, cacheKey string, recordings []Recording, ttl time.Duration) {
+	cache[cacheKey] = cacheEntry{
+		recordings: recordings,
+		expiresAt:  time.Now().UTC().Add(ttl),
+	}
+}
+
+func executeRequest(ctx context.Context, client *http.Client, endpoint string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("User-Agent", "piper/0.0.1 ( https://github.com/teal-fm/piper )")
 
-	resp, err := s.httpClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("context error during request execution: %w", ctx.Err())
 		}
 		return nil, fmt.Errorf("failed to execute request to %s: %w", endpoint, err)
 	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			s.logger.Printf("Error closing response body for %s: %v", endpoint, err)
-		}
-	}(resp.Body)
+	return resp, nil
+}
+
+func decodeResponse(resp *http.Response, endpoint string) (SearchResponse, error) {
+	var result SearchResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return result, fmt.Errorf("failed to decode response from %s: %w", endpoint, err)
+	}
+	return result, nil
+}
+
+func (s *Service) SearchMusicBrainz(ctx context.Context, params SearchParams) ([]Recording, error) {
+	if params.Track == "" && params.Artist == "" && params.Release == "" && params.ISRC == "" {
+		return nil, fmt.Errorf("at least one search parameter (Track, Artist, Release, ISRC) must be provided")
+	}
+
+	params.Track, _ = s.cleaner.CleanRecording(params.Track)
+	params.Artist, _ = s.cleaner.CleanArtist(params.Artist)
+
+	cacheKey := generateCacheKey(params)
+
+	s.cacheMutex.RLock()
+	if recordings, found := getCacheEntry(s.searchCache, cacheKey); found {
+		s.cacheMutex.RUnlock()
+		s.logger.Printf("Cache hit for MusicBrainz search: key=%s", cacheKey)
+		return recordings, nil
+	}
+	s.cacheMutex.RUnlock()
+
+	s.logger.Printf("Cache miss for MusicBrainz search: key=%s", cacheKey)
+
+	query := buildSearchQuery(params)
+	endpoint := buildSearchEndpoint(query)
+
+	if err := s.limiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limiter error: %w", err)
+	}
+
+	resp, err := executeRequest(ctx, s.httpClient, endpoint)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		// TODO: read body for detailed error message
 		return nil, fmt.Errorf("MusicBrainz API request to %s returned status %d", endpoint, resp.StatusCode)
 	}
 
-	var result SearchResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode response from %s: %w", endpoint, err)
+	result, err := decodeResponse(resp, endpoint)
+	if err != nil {
+		return nil, err
 	}
 
-	// cache result for later
 	s.cacheMutex.Lock()
-	s.searchCache[cacheKey] = cacheEntry{
-		recordings: result.Recordings,
-		expiresAt:  time.Now().UTC().Add(s.cacheTTL),
-	}
+	setCacheEntry(s.searchCache, cacheKey, result.Recordings, s.cacheTTL)
 	s.cacheMutex.Unlock()
 	s.logger.Printf("Cached MusicBrainz search result for key=%s, TTL=%s", cacheKey, s.cacheTTL)
 
-	// Return the newly fetched results
 	return result.Recordings, nil
 }
 
@@ -277,6 +294,7 @@ func HydrateTrack(mb *Service, track models.Track) (*models.Track, error) {
 		Track:   track.Name,
 		Artist:  strings.Join(artistArray, ", "),
 		Release: track.Album,
+		ISRC:    track.ISRC,
 	}
 	res, err := mb.SearchMusicBrainz(ctx, params)
 	if err != nil {
@@ -290,10 +308,9 @@ func HydrateTrack(mb *Service, track models.Track) (*models.Track, error) {
 	firstResult := res[0]
 	firstResultAlbum := mb.GetBestRelease(firstResult.Releases, firstResult.Title)
 
-	// woof. we Might not have any ISRCs!
-	var bestISRC string
-	if len(firstResult.ISRCs) >= 1 {
-		bestISRC = firstResult.ISRCs[0]
+	var firstISRC string
+	if len(firstResult.ISRCs) > 0 {
+		firstISRC = firstResult.ISRCs[0]
 	}
 
 	artists := make([]models.Artist, len(firstResult.ArtistCredit))
@@ -313,7 +330,7 @@ func HydrateTrack(mb *Service, track models.Track) (*models.Track, error) {
 		URL:            track.URL,
 		ServiceBaseUrl: track.ServiceBaseUrl,
 		RecordingMBID:  &firstResult.ID,
-		ISRC:           bestISRC,
+		ISRC:           cmp.Or(track.ISRC, firstISRC),
 		Timestamp:      track.Timestamp,
 		ProgressMs:     track.ProgressMs,
 		DurationMs:     int64(firstResult.Length),
