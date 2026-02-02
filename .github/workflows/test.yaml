@@ -2,9 +2,9 @@ name: Go Tests
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
   test:
@@ -19,7 +19,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           # Automatically detects go.mod version
-          go-version-file: 'go.mod'
+          go-version-file: "go.mod"
           cache: true
 
       - name: Install dependencies
@@ -27,8 +27,8 @@ jobs:
 
       # Optional: Runs "make" setup if your project requires generated files
       # Based on your README, you use lexicons and tailwind.
-      # - name: Run project setup
-      #   run: make dev-setup
+      - name: Run project setup
+        run: make
 
       - name: Run Tests
         # Runs all tests in the repository recursively
