@@ -16,11 +16,33 @@
     ></script>
   </head>
   <body>
-    <main style="max-width: 720px; margin: 4rem auto; padding: 0 1.5rem;">
-      <h1 style="font-size: 2.5rem; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 0.75rem; background: linear-gradient(135deg, #fa2d48, #fc5c7d); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">Link Apple Music</h1>
-      <p style="font-size: 1.125rem; color: #8e8e93; max-width: 480px;">Authorize with Apple Music to enable MusicKit features and sync your library.</p>
+    <main style="max-width: 720px; margin: 4rem auto; padding: 0 1.5rem">
+      <h1
+        style="
+          font-size: 2.5rem;
+          font-weight: 700;
+          letter-spacing: -0.03em;
+          margin-bottom: 0.75rem;
+          background: linear-gradient(135deg, #fa2d48, #fc5c7d);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        "
+      >
+        Link Apple Music
+      </h1>
+      <p style="font-size: 1.125rem; color: #8e8e93; max-width: 480px">
+        Authorize with Apple Music to enable MusicKit features and sync your
+        library.
+      </p>
       <div
-        style="display: flex; gap: 1.5rem; align-items: center; flex-wrap: wrap; margin-top: 2rem;"
+        style="
+          display: flex;
+          gap: 1.5rem;
+          align-items: center;
+          flex-wrap: wrap;
+          margin-top: 2rem;
+        "
       >
         <button id="authorizeBtn" class="am-btn am-btn-primary">
           🎵 Authorize Apple Music
@@ -29,11 +51,28 @@
           id="unlinkForm"
           method="post"
           action="/api/v1/applemusic/unlink"
-          onsubmit="handleUnlink(event)"
+          onsubmit="
+            (async () => {
+              const music = window.MusicKit.getInstance();
+              await music.unauthorize();
+              handleUnlink(event);
+            })()
+          "
         >
           <button type="submit" class="am-btn am-btn-danger">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;">
-              <path d="M18 6L6 18M6 6l12 12"/>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              style="flex-shrink: 0"
+            >
+              <path d="M18 6L6 18M6 6l12 12" />
             </svg>
             Unlink Apple Music
           </button>
@@ -56,7 +95,12 @@
           letter-spacing: -0.01em;
         }
         .am-btn-primary {
-          background: linear-gradient(135deg, #fa2d48 0%, #fc5c7d 50%, #fa2d48 100%);
+          background: linear-gradient(
+            135deg,
+            #fa2d48 0%,
+            #fc5c7d 50%,
+            #fa2d48 100%
+          );
           background-size: 200% 200%;
           color: white;
         }
@@ -146,7 +190,7 @@
             music.addEventListener("authorizationStatusDidChange", (e) => {
               console.debug(
                 "authorizationStatusDidChange",
-                e && e.authorizationStatus
+                e && e.authorizationStatus,
               );
             });
             music.addEventListener("userTokenDidChange", (e) => {
@@ -161,7 +205,7 @@
           } catch (evtErr) {
             console.warn(
               "Failed to attach some MusicKit event listeners",
-              evtErr
+              evtErr,
             );
           }
           document
