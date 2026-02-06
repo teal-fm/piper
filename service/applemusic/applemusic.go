@@ -439,11 +439,17 @@ func (s *Service) ProcessUser(ctx context.Context, user *models.User) error {
 		s.logger.Printf("failed to get last tracks for user %d: %v", user.ID, err)
 	}
 
-	// Check if this is a new track (by PlayParams.id)
+	// For uploaded tracks, the API returns an empty URL, but we store a generated hash.
+	// Compute the hash here so the comparison uses the same value as what's in the DB.
+	currentURL := currentAppleTrack.Attributes.URL
+	if currentURL == "" {
+		currentURL = generateUploadHash(currentAppleTrack)
+	}
+
+	// Check if this is a new track (by URL / upload hash)
 	if len(lastTracks) > 0 {
 		lastTrack := lastTracks[0]
-		// If the URL matches, it's the same track
-		if lastTrack.URL == currentAppleTrack.Attributes.URL {
+		if lastTrack.URL == currentURL {
 			s.logger.Printf("track unchanged for user %d: %s by %s", user.ID, currentAppleTrack.Attributes.Name, currentAppleTrack.Attributes.ArtistName)
 			return nil
 		}
