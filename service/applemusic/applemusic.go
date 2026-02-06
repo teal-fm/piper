@@ -439,8 +439,8 @@ func (s *Service) ProcessUser(ctx context.Context, user *models.User) error {
 		s.logger.Printf("failed to get last tracks for user %d: %v", user.ID, err)
 	}
 
-	// For uploaded tracks, the API returns an empty URL, but we store a generated hash.
-	// Compute the hash here so the comparison uses the same value as what's in the DB.
+	// Pre-compute the hash for uploaded tracks so comparisons against stored
+	// latest tracks will work
 	currentURL := currentAppleTrack.Attributes.URL
 	if currentURL == "" {
 		currentURL = generateUploadHash(currentAppleTrack)
