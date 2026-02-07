@@ -1,6 +1,7 @@
 package spotify
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -433,6 +434,12 @@ func (s *Service) HandleTrackHistory(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func generateLocalHash(track *models.Track) string {
+	input := track.Name + track.Album + getFirstArtist(track)
+	hash := sha256.Sum256([]byte(input))
+	return fmt.Sprintf("sp_local_%x", hash)
+}
+
 func (s *Service) FetchCurrentTrack(userID int64) (*SpotifyTrackResponse, error) {
 	s.mu.RLock()
 	token, exists := s.userTokens[userID]
@@ -567,6 +574,12 @@ func (s *Service) FetchCurrentTrack(userID int64) (*SpotifyTrackResponse, error)
 		ISRC:           response.Item.ExternalIDs.ISRC,
 		HasStamped:     false,
 		Timestamp:      time.Now().UTC(),
+	}
+
+	// Local files have no URL. We hash the song name, album name, and
+	// artist name to form a consistent URL.
+	if track.URL == "" {
+		track.URL = generateLocalHash(track)
 	}
 
 	return &SpotifyTrackResponse{Track: track, IsPlaying: response.IsPlaying}, nil

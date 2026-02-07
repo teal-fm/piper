@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -1347,6 +1348,68 @@ func TestComputeStateUpdate_MultipleUsersStampThreshold(t *testing.T) {
 		// User B should still not be stamped (threshold is 150000 for 300000ms track)
 		if stateB.hasStamped {
 			t.Error("User B hasStamped should still be false (not reached threshold yet)")
+		}
+	})
+}
+
+// ===== generateLocalHash Tests =====
+
+func TestGenerateLocalHash(t *testing.T) {
+	t.Run("deterministic output", func(t *testing.T) {
+		track := createTestTrack("My Song", "My Artist", "", 240000, 0)
+		hash1 := generateLocalHash(track)
+		hash2 := generateLocalHash(track)
+		if hash1 != hash2 {
+			t.Errorf("Expected deterministic output, got %s and %s", hash1, hash2)
+		}
+	})
+
+	t.Run("has correct prefix", func(t *testing.T) {
+		track := createTestTrack("My Song", "My Artist", "", 240000, 0)
+		hash := generateLocalHash(track)
+		if !strings.HasPrefix(hash, "sp_local_") {
+			t.Errorf("Expected hash to start with 'sp_local_', got '%s'", hash)
+		}
+	})
+
+	t.Run("different tracks produce different hashes", func(t *testing.T) {
+		trackA := createTestTrack("Song A", "Artist A", "", 240000, 0)
+		trackB := createTestTrack("Song B", "Artist B", "", 240000, 0)
+		hashA := generateLocalHash(trackA)
+		hashB := generateLocalHash(trackB)
+		if hashA == hashB {
+			t.Errorf("Expected different hashes for different tracks, both got %s", hashA)
+		}
+	})
+
+	t.Run("uses Unknown Artist for empty artist list", func(t *testing.T) {
+		trackWithArtist := &models.Track{
+			Name:  "Local File",
+			Album: "My Album",
+			// Hardcoding the other song to Unknown Artist to show that they result in the same hash.
+			// This would (probably) never happen, but just for testing sake
+			Artist: []models.Artist{{Name: "Unknown Artist", ID: ""}},
+		}
+		trackNoArtist := &models.Track{
+			Name:   "Local File",
+			Album:  "My Album",
+			Artist: []models.Artist{},
+		}
+		hashWith := generateLocalHash(trackWithArtist)
+		hashWithout := generateLocalHash(trackNoArtist)
+		if hashWith != hashWithout {
+			t.Errorf("Expected same hash when artist is 'Unknown Artist' vs empty list, got %s and %s", hashWith, hashWithout)
+		}
+	})
+
+	t.Run("album name affects hash", func(t *testing.T) {
+		trackA := createTestTrack("Same Song", "Same Artist", "", 240000, 0)
+		trackB := createTestTrack("Same Song", "Same Artist", "", 240000, 0)
+		trackB.Album = "Different Album"
+		hashA := generateLocalHash(trackA)
+		hashB := generateLocalHash(trackB)
+		if hashA == hashB {
+			t.Errorf("Expected different hashes for different albums, both got %s", hashA)
 		}
 	})
 }
