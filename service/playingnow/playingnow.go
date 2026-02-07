@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 
@@ -78,8 +77,8 @@ func (p *Service) PublishPlayingNow(ctx context.Context, userID int64, track *mo
 
 	status := &teal.AlphaActorStatus{
 		LexiconTypeID: "fm.teal.alpha.actor.status",
-		Time:          strconv.FormatInt(now.Unix(), 10),
-		Expiry:        func() *string { s := strconv.FormatInt(expiry.Unix(), 10); return &s }(),
+		Time:          now.Format(time.RFC3339),
+		Expiry:        func() *string { s := expiry.Format(time.RFC3339); return &s }(),
 		Item:          playView,
 	}
 
@@ -166,8 +165,8 @@ func (p *Service) ClearPlayingNow(ctx context.Context, userID int64) error {
 
 	status := &teal.AlphaActorStatus{
 		LexiconTypeID: "fm.teal.alpha.actor.status",
-		Time:          strconv.FormatInt(now.Unix(), 10),
-		Expiry:        func() *string { s := strconv.FormatInt(expiredTime.Unix(), 10); return &s }(),
+		Time:          now.Format(time.RFC3339),
+		Expiry:        func() *string { s := expiredTime.Format(time.RFC3339); return &s }(),
 		Item:          emptyPlayView,
 	}
 
