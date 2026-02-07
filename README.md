@@ -43,7 +43,6 @@ You now have to bring your own private key to run piper. Can do this via goat `g
 - `ENABLE_LASTFM` - Enables Last.fm integration and validates envs
 - `ENABLE_APPLEMUSIC` - Enables Apple Music integration and validates envs
 
-
 - `SPOTIFY_CLIENT_ID` - Client Id from setup in [Spotify developer dashboard](https://developer.spotify.com/documentation/web-api/tutorials/getting-started)
 - `SPOTIFY_CLIENT_SECRET` - Client Secret from setup in [Spotify developer dashboard](https://developer.spotify.com/documentation/web-api/tutorials/getting-started)
 - `SPOTIFY_AUTH_URL` - most likely `https://accounts.spotify.com/authorize`
@@ -75,13 +74,6 @@ make sure you have your env setup following [the env var setup](#env-variables)
 
 assuming you have go installed and set up properly:
 
-run some make scripts:
-
-```
-
-make dev-setup
-```
-
 install air:
 
 ```
@@ -107,7 +99,7 @@ which is imported on the [./pages/templates/layouts/base.gohtml](./pages/templat
 #### Lexicon changes
 
 1. Copy the new or changed json schema files to the [lexicon folders](./lexicons)
-2. run `make go-lexicons`
+2. run `go run ./cmd/lexgen`
 
 Go types should be updated and should have the changes to the schemas
 
