@@ -18,6 +18,7 @@ import (
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
 	atprotoauth "github.com/teal-fm/piper/oauth/atproto"
+	"github.com/teal-fm/piper/service/musicbrainz"
 )
 
 // Service handles publishing current playing status to ATProto
@@ -26,11 +27,12 @@ type Service struct {
 	atprotoService *atprotoauth.AuthService
 	logger         *log.Logger
 	mu             sync.RWMutex
+	mb             *musicbrainz.Service
 	clearedStatus  map[int64]bool // tracks if a user's status has been cleared on their repo
 }
 
 // NewPlayingNowService creates a new playing now service
-func NewPlayingNowService(database *db.DB, atprotoService *atprotoauth.AuthService) *Service {
+func NewPlayingNowService(database *db.DB, atprotoService *atprotoauth.AuthService, mb *musicbrainz.Service) *Service {
 	logger := log.New(os.Stdout, "playingnow: ", log.LstdFlags|log.Lmsgprefix)
 
 	return &Service{
@@ -38,6 +40,7 @@ func NewPlayingNowService(database *db.DB, atprotoService *atprotoauth.AuthServi
 		atprotoService: atprotoService,
 		logger:         logger,
 		clearedStatus:  make(map[int64]bool),
+		mb:             mb,
 	}
 }
 
@@ -63,6 +66,14 @@ func (p *Service) PublishPlayingNow(ctx context.Context, userID int64, track *mo
 	atProtoClient, err := p.atprotoService.GetATProtoClient(did, *user.MostRecentAtProtoSessionID, ctx)
 	if err != nil || atProtoClient == nil {
 		return fmt.Errorf("failed to get ATProto atProtoClient: %w", err)
+	}
+
+	hydratedTrack, err := musicbrainz.HydrateTrack(p.mb, *track)
+	if err != nil {
+		p.logger.Printf("User %d: Error hydrating track '%s' with MusicBrainz: %v", userID, track.Name, err)
+	} else {
+		p.logger.Printf("User %d: Successfully hydrated track '%s'", userID, track.Name)
+		track = hydratedTrack
 	}
 
 	// Convert track to PlayView format
