@@ -2,15 +2,10 @@
 
 package teal
 
+import "github.com/bluesky-social/indigo/lex/util"
+
 // schema: fm.teal.alpha.actor.status
 
-import (
-	"github.com/bluesky-social/indigo/lex/util"
-)
-
-func init() {
-	util.RegisterType("fm.teal.alpha.actor.status", &AlphaActorStatus{})
-} //
 // RECORDTYPE: AlphaActorStatus
 type AlphaActorStatus struct {
 	LexiconTypeID string `json:"$type,const=fm.teal.alpha.actor.status" cborgen:"$type,const=fm.teal.alpha.actor.status"`
@@ -19,4 +14,8 @@ type AlphaActorStatus struct {
 	Item   *AlphaFeedDefs_PlayView `json:"item" cborgen:"item"`
 	// time: The unix timestamp of when the item was recorded
 	Time string `json:"time" cborgen:"time"`
+}
+
+func init() {
+	util.RegisterType("fm.teal.alpha.actor.status", &AlphaActorStatus{})
 }
