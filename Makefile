@@ -1,3 +1,3 @@
-.PHONY: lexgen
-lexgen:
+.PHONY: lexicon
+lexicon:
 	go run ./cmd/lexgen
