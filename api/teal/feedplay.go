@@ -2,15 +2,10 @@
 
 package teal
 
+import "github.com/bluesky-social/indigo/lex/util"
+
 // schema: fm.teal.alpha.feed.play
 
-import (
-	"github.com/bluesky-social/indigo/lex/util"
-)
-
-func init() {
-	util.RegisterType("fm.teal.alpha.feed.play", &AlphaFeedPlay{})
-} //
 // RECORDTYPE: AlphaFeedPlay
 type AlphaFeedPlay struct {
 	LexiconTypeID string `json:"$type,const=fm.teal.alpha.feed.play" cborgen:"$type,const=fm.teal.alpha.feed.play"`
@@ -42,4 +37,8 @@ type AlphaFeedPlay struct {
 	TrackMbId *string `json:"trackMbId,omitempty" cborgen:"trackMbId,omitempty"`
 	// trackName: The name of the track
 	TrackName string `json:"trackName" cborgen:"trackName"`
+}
+
+func init() {
+	util.RegisterType("fm.teal.alpha.feed.play", &AlphaFeedPlay{})
 }

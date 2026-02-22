@@ -9,9 +9,6 @@ import (
 	"github.com/bluesky-social/indigo/lex/util"
 )
 
-func init() {
-	util.RegisterType("fm.teal.alpha.actor.profile", &AlphaActorProfile{})
-} //
 // RECORDTYPE: AlphaActorProfile
 type AlphaActorProfile struct {
 	LexiconTypeID string `json:"$type,const=fm.teal.alpha.actor.profile" cborgen:"$type,const=fm.teal.alpha.actor.profile"`
@@ -35,4 +32,8 @@ type AlphaActorProfile_FeaturedItem struct {
 	Mbid string `json:"mbid" cborgen:"mbid"`
 	// type: The type of the item. Must be a valid Musicbrainz type, e.g. album, track, recording, etc.
 	Type string `json:"type" cborgen:"type"`
+}
+
+func init() {
+	util.RegisterType("fm.teal.alpha.actor.profile", &AlphaActorProfile{})
 }

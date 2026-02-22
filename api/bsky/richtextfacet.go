@@ -5,13 +5,10 @@ package bsky
 // schema: app.bsky.richtext.facet
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 
 	"github.com/bluesky-social/indigo/lex/util"
-	cbg "github.com/whyrusleeping/cbor-gen"
 )
 
 // RichtextFacet is a "main" in the app.bsky.richtext.facet schema.
@@ -67,45 +64,6 @@ func (t *RichtextFacet_Features_Elem) UnmarshalJSON(b []byte) error {
 	case "app.bsky.richtext.facet#tag":
 		t.RichtextFacet_Tag = new(RichtextFacet_Tag)
 		return json.Unmarshal(b, t.RichtextFacet_Tag)
-
-	default:
-		return nil
-	}
-}
-
-func (t *RichtextFacet_Features_Elem) MarshalCBOR(w io.Writer) error {
-
-	if t == nil {
-		_, err := w.Write(cbg.CborNull)
-		return err
-	}
-	if t.RichtextFacet_Mention != nil {
-		return t.RichtextFacet_Mention.MarshalCBOR(w)
-	}
-	if t.RichtextFacet_Link != nil {
-		return t.RichtextFacet_Link.MarshalCBOR(w)
-	}
-	if t.RichtextFacet_Tag != nil {
-		return t.RichtextFacet_Tag.MarshalCBOR(w)
-	}
-	return fmt.Errorf("cannot cbor marshal empty enum")
-}
-func (t *RichtextFacet_Features_Elem) UnmarshalCBOR(r io.Reader) error {
-	typ, b, err := util.CborTypeExtractReader(r)
-	if err != nil {
-		return err
-	}
-
-	switch typ {
-	case "app.bsky.richtext.facet#mention":
-		t.RichtextFacet_Mention = new(RichtextFacet_Mention)
-		return t.RichtextFacet_Mention.UnmarshalCBOR(bytes.NewReader(b))
-	case "app.bsky.richtext.facet#link":
-		t.RichtextFacet_Link = new(RichtextFacet_Link)
-		return t.RichtextFacet_Link.UnmarshalCBOR(bytes.NewReader(b))
-	case "app.bsky.richtext.facet#tag":
-		t.RichtextFacet_Tag = new(RichtextFacet_Tag)
-		return t.RichtextFacet_Tag.UnmarshalCBOR(bytes.NewReader(b))
 
 	default:
 		return nil
