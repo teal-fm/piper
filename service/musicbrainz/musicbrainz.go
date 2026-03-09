@@ -350,15 +350,38 @@ func HydrateTrack(mb *Service, track models.Track) (*models.Track, error) {
 		artistArray[i] = a.Name
 	}
 
-	params := SearchParams{
-		Track:   track.Name,
-		Artist:  strings.Join(artistArray, ", "),
-		Release: track.Album,
-		ISRC:    track.ISRC,
+	var res []Recording
+
+	// When an ISRC is available, try an ISRC-only lookup first.
+	// ISRCs are unique identifiers, so additional filters (track name,
+	// artist) can cause false negatives when MusicBrainz stores the
+	// metadata in a different script or language.
+	if track.ISRC != "" {
+		isrcRes, err := mb.SearchMusicBrainz(ctx, SearchParams{ISRC: track.ISRC})
+		if err != nil {
+			mb.logger.Printf("ISRC lookup failed for %s, falling back to full query: %v", track.ISRC, err)
+		} else if len(isrcRes) > 0 {
+			res = isrcRes
+		} else {
+			mb.logger.Printf("ISRC lookup returned no results for %s, falling back to full query", track.ISRC)
+		}
 	}
-	res, err := mb.SearchMusicBrainz(ctx, params)
-	if err != nil {
-		return nil, err
+
+	// Fallback on the full search query with all relevant track
+	// information.
+	if res == nil {
+		params := SearchParams{
+			Track:   track.Name,
+			Artist:  strings.Join(artistArray, ", "),
+			Release: track.Album,
+			ISRC:    track.ISRC,
+		}
+		fullRes, err := mb.SearchMusicBrainz(ctx, params)
+		if err != nil {
+			return nil, err
+		} else {
+			res = fullRes
+		}
 	}
 
 	if len(res) == 0 {
