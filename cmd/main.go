@@ -97,7 +97,7 @@ func main() {
 	}
 
 	mbService := musicbrainz.NewMusicBrainzService(database)
-	playingNowService := playingnow.NewPlayingNowService(database, atprotoService)
+	playingNowService := playingnow.NewPlayingNowService(database, atprotoService, mbService)
 
 	// Check feature toggles for music services
 	enableSpotify := viper.GetBool("enable_spotify")
