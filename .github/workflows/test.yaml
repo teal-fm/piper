@@ -1,0 +1,46 @@
+name: Go Tests
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          # Automatically detects go.mod version
+          go-version-file: "go.mod"
+          cache: true
+
+      - name: Install dependencies
+        run: go mod download
+
+      # Optional: Runs "make" setup if your project requires generated files
+      # Based on your README, you use lexicons and tailwind.
+      - name: Run project setup
+        run: make
+
+      - name: Run Tests
+        # Runs all tests in the repository recursively
+        # -v provides verbose output
+        # -race enables the race detector (recommended for Go)
+        run: go test -v -race ./...
+
+      - name: Check Formatting
+        # Ensures all code is properly formatted
+        run: |
+          if [ "$(gofmt -l . | wc -l)" -gt 0 ]; then
+            echo "The following files are not formatted:"
+            gofmt -l .
+            exit 1
+          fi
