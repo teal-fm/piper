@@ -55,6 +55,39 @@ func (t *trackResponseTransport) RoundTrip(req *http.Request) (*http.Response, e
 	}, nil
 }
 
+type noopCoordinator struct{}
+
+func (noopCoordinator) ResolveCurrentTrack(userID int64) (*models.Track, string, error) {
+	return nil, "", nil
+}
+
+func (noopCoordinator) CanPublishNowPlaying(userID int64, service string, track *models.Track) (bool, error) {
+	return true, nil
+}
+
+func (noopCoordinator) CanClearNowPlaying(userID int64, service string) (bool, error) {
+	return true, nil
+}
+
+func (noopCoordinator) CanScrobble(userID int64, service string, track *models.Track) (bool, error) {
+	return true, nil
+}
+
+type recordingPlayingNow struct {
+	publishCount int
+	clearCount   int
+}
+
+func (r *recordingPlayingNow) PublishPlayingNow(ctx context.Context, userID int64, track *models.Track) error {
+	r.publishCount++
+	return nil
+}
+
+func (r *recordingPlayingNow) ClearPlayingNow(ctx context.Context, userID int64) error {
+	r.clearCount++
+	return nil
+}
+
 // newTestDB creates an in-memory SQLite database for testing.
 func newTestDB(t *testing.T) *db.DB {
 	t.Helper()
@@ -91,13 +124,17 @@ func newTestService(t *testing.T, testDB *db.DB, transport http.RoundTripper) *S
 	t.Helper()
 	tokenExpiry := time.Now().Add(1 * time.Hour)
 	return &Service{
-		DB:           testDB,
-		httpClient:   &http.Client{Transport: transport},
-		logger:       log.New(io.Discard, "", 0),
-		teamID:       "test-team",
-		keyID:        "test-key",
-		cachedToken:  createTestJWT("test-team", tokenExpiry),
-		cachedExpiry: tokenExpiry,
+		DB:            testDB,
+		httpClient:    &http.Client{Transport: transport},
+		logger:        log.New(io.Discard, "", 0),
+		teamID:        "test-team",
+		keyID:         "test-key",
+		cachedToken:   createTestJWT("test-team", tokenExpiry),
+		cachedExpiry:  tokenExpiry,
+		liveStates:    make(map[int64]*liveTrackState),
+		lastStamped:   make(map[int64]*models.Track),
+		nowPlayingTTL: 90 * time.Second,
+		clock:         time.Now,
 	}
 }
 
@@ -224,5 +261,48 @@ func TestGenerateUploadHash(t *testing.T) {
 				t.Errorf("generateUploadHash() is not deterministic: first=%v, second=%v", got, got2)
 			}
 		})
+	}
+}
+
+func TestGetLiveTrackExpiresAfterTTL(t *testing.T) {
+	testDB := newTestDB(t)
+	svc := newTestService(t, testDB, &trackResponseTransport{response: uploadedTrackJSON("Song", "Artist", "Album")})
+	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	svc.clock = func() time.Time { return base.Add(2 * time.Minute) }
+	svc.nowPlayingTTL = 90 * time.Second
+	svc.liveStates[42] = &liveTrackState{
+		track:      &models.Track{Name: "Song", Artist: []models.Artist{{Name: "Artist"}}},
+		currentURL: "am_uploaded_hash",
+		observedAt: base,
+	}
+
+	if track, ok := svc.GetLiveTrack(42); ok || track != nil {
+		t.Fatalf("expected expired live track to be unavailable, got %#v", track)
+	}
+}
+
+func TestProcessUserDoesNotRepublishUnchangedTrack(t *testing.T) {
+	env := newProcessUserTestEnv(t, uploadedTrackJSON("Same Track", "Artist", "Album"))
+	pn := &recordingPlayingNow{}
+	env.svc.playingNowService = pn
+
+	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	env.svc.clock = func() time.Time { return base }
+
+	if err := env.svc.ProcessUser(context.Background(), env.user); err != nil {
+		t.Fatalf("first ProcessUser returned error: %v", err)
+	}
+	if pn.publishCount != 1 {
+		t.Fatalf("expected one publish on first observation, got %d", pn.publishCount)
+	}
+
+	if err := env.svc.ProcessUser(context.Background(), env.user); err != nil {
+		t.Fatalf("second ProcessUser returned error: %v", err)
+	}
+	if pn.publishCount != 1 {
+		t.Fatalf("expected unchanged track not to republish, got %d publishes", pn.publishCount)
+	}
+	if got := env.trackCount(t); got != 1 {
+		t.Fatalf("expected only one saved track for unchanged observation, got %d", got)
 	}
 }

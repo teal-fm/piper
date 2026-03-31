@@ -24,6 +24,7 @@ import (
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
 	atprotoauth "github.com/teal-fm/piper/oauth/atproto"
+	"github.com/teal-fm/piper/service/arbiter"
 	atprotoservice "github.com/teal-fm/piper/service/atproto"
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"github.com/teal-fm/piper/session"
@@ -70,6 +71,8 @@ type Service struct {
 	} // Added field for playing now service
 	userPlayStates map[int64]*userPlayState
 	userTokens     map[int64]string
+	lastStamped    map[int64]*models.Track
+	arbiter        *arbiter.Coordinator
 	mu             sync.RWMutex
 	logger         *log.Logger
 }
@@ -87,8 +90,13 @@ func NewSpotifyService(database *db.DB, atprotoAuthService *atprotoauth.AuthServ
 		playingNowService:  playingNowService,
 		userPlayStates:     make(map[int64]*userPlayState),
 		userTokens:         make(map[int64]string),
+		lastStamped:        make(map[int64]*models.Track),
 		logger:             logger,
 	}
+}
+
+func (s *Service) SetCoordinator(coordinator *arbiter.Coordinator) {
+	s.arbiter = coordinator
 }
 
 func (s *Service) SubmitTrackToPDS(did string, mostRecentAtProtoSessionID string, track *models.Track, ctx context.Context) error {
@@ -592,6 +600,32 @@ func getFirstArtist(track *models.Track) string {
 	return "Unknown Artist"
 }
 
+func (s *Service) GetLiveTrack(userID int64) (*models.Track, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	state := s.userPlayStates[userID]
+	if state == nil || state.track == nil || state.isPaused {
+		return nil, false
+	}
+
+	freshness := time.Duration(viper.GetInt("tracker.interval")*2) * time.Second
+	if freshness <= 0 {
+		freshness = 60 * time.Second
+	}
+	if time.Since(state.lastPollTime) > freshness {
+		return nil, false
+	}
+
+	return cloneTrack(state.track), true
+}
+
+func (s *Service) GetLastStampedTrack(userID int64) *models.Track {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return cloneTrack(s.lastStamped[userID])
+}
+
 // computeStateUpdate holds the lock, updates user play state based on the
 // Spotify response, and returns the actions that should be taken after
 // releasing the lock. This separates state computation from external I/O.
@@ -722,18 +756,51 @@ func (s *Service) fetchTrackForUser(ctx context.Context, userID int64) {
 
 	// Execute external calls based on computed actions (no lock held)
 	if action.clearNowPlaying && s.playingNowService != nil {
-		if err := s.playingNowService.ClearPlayingNow(ctx, userID); err != nil {
-			s.logger.Printf("Error clearing playing now for user %d: %v", userID, err)
+		allowed := true
+		if s.arbiter != nil {
+			allowed, err = s.arbiter.CanClearNowPlaying(userID, models.ServiceSpotify)
+			if err != nil {
+				s.logger.Printf("Error checking spotify clear ownership for user %d: %v", userID, err)
+				allowed = false
+			}
+		}
+		if allowed {
+			if err := s.playingNowService.ClearPlayingNow(ctx, userID); err != nil {
+				s.logger.Printf("Error clearing playing now for user %d: %v", userID, err)
+			}
 		}
 	}
 
 	if action.publishNowPlaying && s.playingNowService != nil {
-		if err := s.playingNowService.PublishPlayingNow(ctx, userID, action.track); err != nil {
-			s.logger.Printf("Error publishing playing now for user %d: %v", userID, err)
+		allowed := true
+		if s.arbiter != nil {
+			allowed, err = s.arbiter.CanPublishNowPlaying(userID, models.ServiceSpotify, action.track)
+			if err != nil {
+				s.logger.Printf("Error checking spotify publish ownership for user %d: %v", userID, err)
+				allowed = false
+			}
+		}
+		if allowed {
+			if err := s.playingNowService.PublishPlayingNow(ctx, userID, action.track); err != nil {
+				s.logger.Printf("Error publishing playing now for user %d: %v", userID, err)
+			}
 		}
 	}
 
 	if action.stampTrack {
+		allowed := true
+		if s.arbiter != nil {
+			allowed, err = s.arbiter.CanScrobble(userID, models.ServiceSpotify, action.track)
+			if err != nil {
+				s.logger.Printf("Error checking spotify scrobble ownership for user %d: %v", userID, err)
+				allowed = false
+			}
+		}
+		if !allowed {
+			s.logger.Printf("Skipping spotify scrobble for user %d because a higher priority service owns the session", userID)
+			return
+		}
+
 		s.logger.Printf(
 			"User %d stamped track: %s by %s (acc: %dms, dur: %dms)",
 			userID, action.track.Name, getFirstArtist(action.track),
@@ -741,6 +808,17 @@ func (s *Service) fetchTrackForUser(ctx context.Context, userID int64) {
 		)
 		s.stampTrack(ctx, userID, action.track)
 	}
+}
+
+func cloneTrack(track *models.Track) *models.Track {
+	if track == nil {
+		return nil
+	}
+	cloned := *track
+	if len(track.Artist) > 0 {
+		cloned.Artist = append([]models.Artist(nil), track.Artist...)
+	}
+	return &cloned
 }
 
 func (s *Service) fetchAllUserTracks(ctx context.Context) {
@@ -782,6 +860,13 @@ func (s *Service) stampTrack(ctx context.Context, userID int64, track *models.Tr
 		s.logger.Printf("Error saving track for user %d: %v", userID, err)
 		return
 	}
+
+	s.mu.Lock()
+	if s.lastStamped == nil {
+		s.lastStamped = make(map[int64]*models.Track)
+	}
+	s.lastStamped[userID] = cloneTrack(trackToSubmit)
+	s.mu.Unlock()
 
 	// Submit play record to ATProto PDS
 

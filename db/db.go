@@ -57,6 +57,7 @@ func (db *DB) Initialize() error {
 		token_expiry TIMESTAMP,             -- Spotify token expiry
 		lastfm_username TEXT,               -- Last.fm username
 		applemusic_user_token TEXT,         -- Apple Music MusicKit user token
+		service_priority TEXT NOT NULL DEFAULT 'spotify,applemusic,lastfm',
 		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Use default
 		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP  -- Use default
 	)`)
@@ -67,6 +68,11 @@ func (db *DB) Initialize() error {
 	// Add missing columns to users table if they don't exist
 	_, err = db.Exec(`ALTER TABLE users ADD COLUMN applemusic_user_token TEXT`)
 	if err != nil && err.Error() != "duplicate column name: applemusic_user_token" {
+		return err
+	}
+
+	_, err = db.Exec(`ALTER TABLE users ADD COLUMN service_priority TEXT NOT NULL DEFAULT 'spotify,applemusic,lastfm'`)
+	if err != nil && err.Error() != "duplicate column name: service_priority" {
 		return err
 	}
 
@@ -244,12 +250,13 @@ func (db *DB) GetUserByID(ID int64) (*models.User, error) {
            token_expiry,
            lastfm_username,
            applemusic_user_token,
+           service_priority,
            created_at,
            updated_at
     FROM users WHERE id = ?`, ID).Scan(
 		&user.ID, &user.Username, &user.Email, &user.ATProtoDID, &user.MostRecentAtProtoSessionID, &user.SpotifyID,
 		&user.AccessToken, &user.RefreshToken, &user.TokenExpiry,
-		&user.LastFMUsername, &user.AppleMusicUserToken,
+		&user.LastFMUsername, &user.AppleMusicUserToken, &user.ServicePriority,
 		&user.CreatedAt, &user.UpdatedAt)
 
 	if errors.Is(err, sql.ErrNoRows) {
@@ -267,11 +274,11 @@ func (db *DB) GetUserBySpotifyID(spotifyID string) (*models.User, error) {
 	user := &models.User{}
 
 	err := db.QueryRow(`
-    SELECT id, username, email, spotify_id, access_token, refresh_token, token_expiry, lastfm_username, applemusic_user_token, created_at, updated_at
+    SELECT id, username, email, spotify_id, access_token, refresh_token, token_expiry, lastfm_username, applemusic_user_token, service_priority, created_at, updated_at
     FROM users WHERE spotify_id = ?`, spotifyID).Scan(
 		&user.ID, &user.Username, &user.Email, &user.SpotifyID,
 		&user.AccessToken, &user.RefreshToken, &user.TokenExpiry,
-		&user.LastFMUsername, &user.AppleMusicUserToken,
+		&user.LastFMUsername, &user.AppleMusicUserToken, &user.ServicePriority,
 		&user.CreatedAt, &user.UpdatedAt)
 
 	if errors.Is(err, sql.ErrNoRows) {
@@ -307,6 +314,16 @@ func (db *DB) UpdateAppleMusicUserToken(userID int64, userToken string) error {
 	return err
 }
 
+func (db *DB) UpdateUserServicePriority(userID int64, servicePriority string) error {
+	now := time.Now().UTC()
+	_, err := db.Exec(`
+		UPDATE users
+		SET service_priority = ?, updated_at = ?
+		WHERE id = ?`,
+		servicePriority, now, userID)
+	return err
+}
+
 // ClearAppleMusicUserToken removes the stored Apple Music user token for a user
 func (db *DB) ClearAppleMusicUserToken(userID int64) error {
 	now := time.Now().UTC()
@@ -323,7 +340,7 @@ func (db *DB) GetAllAppleMusicLinkedUsers() ([]*models.User, error) {
 	rows, err := db.Query(`
         SELECT id, username, email, atproto_did, most_recent_at_session_id,
                spotify_id, access_token, refresh_token, token_expiry,
-               lastfm_username, applemusic_user_token, created_at, updated_at
+               lastfm_username, applemusic_user_token, service_priority, created_at, updated_at
         FROM users
         WHERE applemusic_user_token IS NOT NULL AND applemusic_user_token != ''
         ORDER BY id`)
@@ -343,7 +360,7 @@ func (db *DB) GetAllAppleMusicLinkedUsers() ([]*models.User, error) {
 		if err := rows.Scan(
 			&u.ID, &u.Username, &u.Email, &u.ATProtoDID, &u.MostRecentAtProtoSessionID,
 			&u.SpotifyID, &u.AccessToken, &u.RefreshToken, &u.TokenExpiry,
-			&u.LastFMUsername, &u.AppleMusicUserToken, &u.CreatedAt, &u.UpdatedAt,
+			&u.LastFMUsername, &u.AppleMusicUserToken, &u.ServicePriority, &u.CreatedAt, &u.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

@@ -21,12 +21,20 @@ import (
 	"github.com/lestrrat-go/jwx/v3/jwa"
 	"github.com/lestrrat-go/jwx/v3/jws"
 	"github.com/lestrrat-go/jwx/v3/jwt"
+	"github.com/spf13/viper"
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
 	atprotoauth "github.com/teal-fm/piper/oauth/atproto"
+	"github.com/teal-fm/piper/service/arbiter"
 	atprotoservice "github.com/teal-fm/piper/service/atproto"
 	"github.com/teal-fm/piper/service/musicbrainz"
 )
+
+type liveTrackState struct {
+	track      *models.Track
+	currentURL string
+	observedAt time.Time
+}
 
 type Service struct {
 	teamID         string
@@ -51,6 +59,12 @@ type Service struct {
 	}
 	httpClient *http.Client
 	logger     *log.Logger
+
+	liveStates    map[int64]*liveTrackState
+	lastStamped   map[int64]*models.Track
+	nowPlayingTTL time.Duration
+	clock         func() time.Time
+	arbiter       *arbiter.Coordinator
 }
 
 func NewService(teamID, keyID, privateKeyPath string) *Service {
@@ -60,6 +74,10 @@ func NewService(teamID, keyID, privateKeyPath string) *Service {
 		privateKeyPath: privateKeyPath,
 		httpClient:     &http.Client{Timeout: 10 * time.Second},
 		logger:         log.New(os.Stdout, "applemusic: ", log.LstdFlags|log.Lmsgprefix),
+		liveStates:     make(map[int64]*liveTrackState),
+		lastStamped:    make(map[int64]*models.Track),
+		nowPlayingTTL:  time.Duration(viper.GetInt("applemusic.now_playing_ttl_seconds")) * time.Second,
+		clock:          time.Now,
 	}
 }
 
@@ -83,6 +101,35 @@ func (s *Service) WithDeps(database *db.DB, atproto *atprotoauth.AuthService, mb
 	s.mbService = mb
 	s.playingNowService = playingNowService
 	return s
+}
+
+func (s *Service) SetCoordinator(coordinator *arbiter.Coordinator) {
+	s.arbiter = coordinator
+}
+
+func (s *Service) GetLiveTrack(userID int64) (*models.Track, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	state := s.liveStates[userID]
+	if state == nil || state.track == nil {
+		return nil, false
+	}
+
+	if s.nowPlayingTTL <= 0 {
+		return nil, false
+	}
+	if s.now().Sub(state.observedAt) > s.nowPlayingTTL {
+		return nil, false
+	}
+
+	return cloneTrack(state.track), true
+}
+
+func (s *Service) GetLastStampedTrack(userID int64) *models.Track {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return cloneTrack(s.lastStamped[userID])
 }
 
 func (s *Service) HandleDeveloperToken(w http.ResponseWriter, r *http.Request) {
@@ -424,62 +471,118 @@ func (s *Service) ProcessUser(ctx context.Context, user *models.User) error {
 
 	if currentAppleTrack == nil {
 		s.logger.Printf("no current Apple Music track for user %d", user.ID)
-		// Clear playing now status if no track is playing
+		s.mu.Lock()
+		delete(s.liveStates, user.ID)
+		s.mu.Unlock()
 		if s.playingNowService != nil {
-			if err := s.playingNowService.ClearPlayingNow(ctx, user.ID); err != nil {
-				s.logger.Printf("Error clearing playing now for user %d: %v", user.ID, err)
+			allowed := true
+			if s.arbiter != nil {
+				allowed, err = s.arbiter.CanClearNowPlaying(user.ID, models.ServiceAppleMusic)
+				if err != nil {
+					s.logger.Printf("Error checking Apple Music clear ownership for user %d: %v", user.ID, err)
+					allowed = false
+				}
+			}
+			if allowed {
+				if err := s.playingNowService.ClearPlayingNow(ctx, user.ID); err != nil {
+					s.logger.Printf("Error clearing playing now for user %d: %v", user.ID, err)
+				}
 			}
 		}
 		return nil
 	}
 
-	// Get the last saved track to compare PlayParams.id
-	lastTracks, err := s.DB.GetRecentTracks(user.ID, 1)
-	if err != nil {
-		s.logger.Printf("failed to get last tracks for user %d: %v", user.ID, err)
-	}
-
-	// Pre-compute the hash for uploaded tracks so comparisons against stored
-	// latest tracks will work
 	currentURL := currentAppleTrack.Attributes.URL
 	if currentURL == "" {
 		currentURL = generateUploadHash(currentAppleTrack)
 	}
 
-	// Check if this is a new track (by URL / upload hash)
-	if len(lastTracks) > 0 {
-		lastTrack := lastTracks[0]
-		if lastTrack.URL == currentURL {
-			s.logger.Printf("track unchanged for user %d: %s by %s", user.ID, currentAppleTrack.Attributes.Name, currentAppleTrack.Attributes.ArtistName)
-			return nil
-		}
-	}
+	s.mu.RLock()
+	existingState := s.liveStates[user.ID]
+	s.mu.RUnlock()
 
-	// Convert to internal track format
-	track := s.toTrack(*currentAppleTrack)
+	isNewObservation := existingState == nil || existingState.currentURL != currentURL
+	var track *models.Track
+	if !isNewObservation && existingState != nil {
+		track = cloneTrack(existingState.track)
+	} else {
+		track = s.toTrack(*currentAppleTrack)
+	}
 	if track == nil || strings.TrimSpace(track.Name) == "" || len(track.Artist) == 0 {
 		s.logger.Printf("invalid track data for user %d", user.ID)
 		return nil
 	}
 
-	// Hydration is handled in toTrack() using MusicBrainz search; no ISRC-only hydration here
+	if isNewObservation {
+		s.mu.Lock()
+		if s.liveStates == nil {
+			s.liveStates = make(map[int64]*liveTrackState)
+		}
+		s.liveStates[user.ID] = &liveTrackState{
+			track:      cloneTrack(track),
+			currentURL: currentURL,
+			observedAt: s.now().UTC(),
+		}
+		s.mu.Unlock()
+	}
 
-	// Save the new track
+	if isNewObservation && s.playingNowService != nil {
+		allowed := true
+		if s.arbiter != nil {
+			allowed, err = s.arbiter.CanPublishNowPlaying(user.ID, models.ServiceAppleMusic, track)
+			if err != nil {
+				s.logger.Printf("Error checking Apple Music publish ownership for user %d: %v", user.ID, err)
+				allowed = false
+			}
+		}
+		if allowed {
+			if err := s.playingNowService.PublishPlayingNow(ctx, user.ID, track); err != nil {
+				s.logger.Printf("Error publishing playing now for user %d: %v", user.ID, err)
+			}
+		}
+	}
+
+	if !isNewObservation {
+		s.logger.Printf("track unchanged for user %d: %s by %s", user.ID, track.Name, track.Artist[0].Name)
+		return nil
+	}
+
+	allowed := true
+	if s.arbiter != nil {
+		allowed, err = s.arbiter.CanScrobble(user.ID, models.ServiceAppleMusic, track)
+		if err != nil {
+			s.logger.Printf("Error checking Apple Music scrobble ownership for user %d: %v", user.ID, err)
+			allowed = false
+		}
+	}
+	if !allowed {
+		s.logger.Printf("Skipping Apple Music scrobble for user %d because a higher priority service owns the session", user.ID)
+		return nil
+	}
+
+	lastTracks, err := s.DB.GetRecentTracks(user.ID, 1)
+	if err != nil {
+		s.logger.Printf("failed to get last tracks for user %d: %v", user.ID, err)
+	}
+	if len(lastTracks) > 0 && lastTracks[0].URL == currentURL {
+		s.logger.Printf("skipping duplicate Apple Music track for user %d: %s by %s", user.ID, track.Name, track.Artist[0].Name)
+		return nil
+	}
+
 	if _, err := s.DB.SaveTrack(user.ID, track); err != nil {
 		s.logger.Printf("failed saving apple track for user %d: %v", user.ID, err)
 		return err
 	}
 
+	s.mu.Lock()
+	if s.lastStamped == nil {
+		s.lastStamped = make(map[int64]*models.Track)
+	}
+	s.lastStamped[user.ID] = cloneTrack(track)
+	s.mu.Unlock()
+
 	s.logger.Printf("saved new track for user %d: %s by %s", user.ID, track.Name, track.Artist[0].Name)
 
-	// Publish playing now status
-	if s.playingNowService != nil {
-		if err := s.playingNowService.PublishPlayingNow(ctx, user.ID, track); err != nil {
-			s.logger.Printf("Error publishing playing now for user %d: %v", user.ID, err)
-		}
-	}
-
-	// Submit to PDS
 	if user.ATProtoDID != nil && user.MostRecentAtProtoSessionID != nil && s.atprotoService != nil {
 		if err := atprotoservice.SubmitPlayToPDS(ctx, *user.ATProtoDID, *user.MostRecentAtProtoSessionID, track, s.atprotoService); err != nil {
 			s.logger.Printf("failed submit to PDS for user %d: %v", user.ID, err)
@@ -487,6 +590,24 @@ func (s *Service) ProcessUser(ctx context.Context, user *models.User) error {
 	}
 
 	return nil
+}
+
+func cloneTrack(track *models.Track) *models.Track {
+	if track == nil {
+		return nil
+	}
+	cloned := *track
+	if len(track.Artist) > 0 {
+		cloned.Artist = append([]models.Artist(nil), track.Artist...)
+	}
+	return &cloned
+}
+
+func (s *Service) now() time.Time {
+	if s.clock != nil {
+		return s.clock()
+	}
+	return time.Now()
 }
 
 // StartListeningTracker periodically fetches recent plays for Apple Music linked users

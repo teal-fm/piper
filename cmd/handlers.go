@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/viper"
 	"github.com/teal-fm/piper/db"
@@ -22,7 +23,18 @@ import (
 )
 
 type HomeParams struct {
-	NavBar pages.NavBar
+	NavBar                 pages.NavBar
+	SpotifyConnected       bool
+	AppleMusicLinked       bool
+	LastFMLinked           bool
+	ServicePriority        string
+	ServicePriorityOptions []ServicePriorityOption
+}
+
+type ServicePriorityOption struct {
+	Value    string
+	Label    string
+	Selected bool
 }
 
 func home(database *db.DB, pg *pages.Pages) http.HandlerFunc {
@@ -33,17 +45,37 @@ func home(database *db.DB, pg *pages.Pages) http.HandlerFunc {
 		userID, authenticated := session.GetUserID(r.Context())
 		isLoggedIn := authenticated
 		lastfmUsername := ""
+		spotifyConnected := false
+		appleMusicLinked := false
+		lastFMLinked := false
+		servicePriority := models.DefaultServicePriority
 
 		if isLoggedIn {
 			user, err := database.GetUserByID(userID)
 			fmt.Printf("User: %+v\n", user)
 			if err == nil && user != nil && user.LastFMUsername != nil {
 				lastfmUsername = *user.LastFMUsername
+			}
+			if err == nil && user != nil {
+				spotifyConnected = user.SpotifyID != nil && *user.SpotifyID != ""
+				appleMusicLinked = user.AppleMusicUserToken != nil && *user.AppleMusicUserToken != ""
+				lastFMLinked = user.LastFMUsername != nil && *user.LastFMUsername != ""
+				if user.ServicePriority != "" {
+					servicePriority = user.ServicePriority
+				}
 			} else if err != nil {
 				log.Printf("Error fetching user %d details for home page: %v", userID, err)
 			}
 		}
 		params := HomeParams{
+			SpotifyConnected: spotifyConnected,
+			AppleMusicLinked: appleMusicLinked,
+			LastFMLinked:     lastFMLinked,
+			ServicePriority:  servicePriority,
+			ServicePriorityOptions: servicePriorityOptions(
+				servicePriority,
+				linkedServices(spotifyConnected, appleMusicLinked, lastFMLinked),
+			),
 			NavBar: pages.NavBar{
 				IsLoggedIn:        isLoggedIn,
 				LastFMUsername:    lastfmUsername,
@@ -57,6 +89,128 @@ func home(database *db.DB, pg *pages.Pages) http.HandlerFunc {
 			log.Printf("Error executing template: %v", err)
 		}
 	}
+}
+
+func linkedServices(spotifyConnected, appleMusicLinked, lastFMLinked bool) []string {
+	services := make([]string, 0, len(models.SupportedServicePriority))
+	if spotifyConnected {
+		services = append(services, models.ServiceSpotify)
+	}
+	if appleMusicLinked {
+		services = append(services, models.ServiceAppleMusic)
+	}
+	if lastFMLinked {
+		services = append(services, models.ServiceLastFM)
+	}
+	return services
+}
+
+func servicePriorityOptions(current string, linked []string) []ServicePriorityOption {
+	if len(linked) < 2 {
+		return nil
+	}
+
+	currentNormalized, err := models.NormalizeServicePriority(current)
+	if err != nil {
+		currentNormalized = models.DefaultServicePriority
+	}
+	selectedValue := effectivePriorityForLinked(currentNormalized, linked)
+
+	permutations := permuteServices(linked)
+	options := make([]ServicePriorityOption, 0, len(permutations))
+	for _, order := range permutations {
+		priority := append([]string{}, order...)
+		for _, service := range models.ParseServicePriority(currentNormalized) {
+			if !containsService(priority, service) {
+				priority = append(priority, service)
+			}
+		}
+
+		value, err := models.NormalizeServicePriority(strings.Join(priority, ","))
+		if err != nil {
+			continue
+		}
+
+		options = append(options, ServicePriorityOption{
+			Value:    value,
+			Label:    strings.Join(prettyServiceNames(order), " -> "),
+			Selected: value == selectedValue,
+		})
+	}
+
+	return options
+}
+
+func effectivePriorityForLinked(current string, linked []string) string {
+	priority := make([]string, 0, len(models.SupportedServicePriority))
+	for _, service := range models.ParseServicePriority(current) {
+		if containsService(linked, service) {
+			priority = append(priority, service)
+		}
+	}
+	for _, service := range linked {
+		if !containsService(priority, service) {
+			priority = append(priority, service)
+		}
+	}
+	for _, service := range models.ParseServicePriority(current) {
+		if !containsService(priority, service) {
+			priority = append(priority, service)
+		}
+	}
+	normalized, err := models.NormalizeServicePriority(strings.Join(priority, ","))
+	if err != nil {
+		return models.DefaultServicePriority
+	}
+	return normalized
+}
+
+func permuteServices(services []string) [][]string {
+	if len(services) == 0 {
+		return nil
+	}
+	working := append([]string{}, services...)
+	var result [][]string
+	var walk func(int)
+	walk = func(index int) {
+		if index == len(working) {
+			result = append(result, append([]string{}, working...))
+			return
+		}
+		for i := index; i < len(working); i++ {
+			working[index], working[i] = working[i], working[index]
+			walk(index + 1)
+			working[index], working[i] = working[i], working[index]
+		}
+	}
+	walk(0)
+	return result
+}
+
+func containsService(services []string, target string) bool {
+	for _, service := range services {
+		if service == target {
+			return true
+		}
+	}
+	return false
+}
+
+func prettyServiceNames(services []string) []string {
+	names := make([]string, 0, len(services))
+	for _, service := range services {
+		switch service {
+		case models.ServiceSpotify:
+			names = append(names, "Spotify")
+		case models.ServiceAppleMusic:
+			names = append(names, "Apple Music")
+		case models.ServiceLastFM:
+			names = append(names, "Last.fm")
+		default:
+			names = append(names, service)
+		}
+	}
+	return names
 }
 
 func handleLinkLastfmForm(database *db.DB, pg *pages.Pages) http.HandlerFunc {
@@ -195,6 +349,31 @@ func apiCurrentTrack(spotifyService *spotify.Service) http.HandlerFunc {
 	}
 }
 
+func apiResolvedCurrentTrack(database *db.DB, coordinator interface {
+	ResolveCurrentTrack(userID int64) (*models.Track, string, error)
+}) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, ok := session.GetUserID(r.Context())
+		if !ok {
+			jsonResponse(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+			return
+		}
+
+		track, _, err := coordinator.ResolveCurrentTrack(userID)
+		if err != nil {
+			jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": "Failed to get current track: " + err.Error()})
+			return
+		}
+
+		if track == nil {
+			jsonResponse(w, http.StatusOK, nil)
+			return
+		}
+
+		jsonResponse(w, http.StatusOK, track)
+	}
+}
+
 func apiTrackHistory(spotifyService *spotify.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID, ok := session.GetUserID(r.Context())
@@ -285,6 +464,7 @@ func apiMeHandler(database *db.DB) http.HandlerFunc {
 			"did":               user.ATProtoDID,
 			"lastfm_username":   lastfmUsername,
 			"spotify_connected": spotifyConnected,
+			"service_priority":  user.ServicePriority,
 		}
 		// do not send Apple token value; just whether present
 		response["applemusic_linked"] = user.AppleMusicUserToken != nil && *user.AppleMusicUserToken != ""
@@ -293,6 +473,37 @@ func apiMeHandler(database *db.DB) http.HandlerFunc {
 		}
 
 		jsonResponse(w, http.StatusOK, response)
+	}
+}
+
+func apiUpdateServicePriorityHandler(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID, _ := session.GetUserID(r.Context())
+
+		var reqBody struct {
+			ServicePriority string `json:"service_priority"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body: " + err.Error()})
+			return
+		}
+
+		normalized, err := models.NormalizeServicePriority(reqBody.ServicePriority)
+		if err != nil {
+			jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "Invalid service priority: " + err.Error()})
+			return
+		}
+
+		if err := database.UpdateUserServicePriority(userID, normalized); err != nil {
+			log.Printf("apiUpdateServicePriorityHandler: Error saving service priority for user %d: %v", userID, err)
+			jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": "Failed to save service priority"})
+			return
+		}
+
+		jsonResponse(w, http.StatusOK, map[string]string{
+			"message":          "Service priority updated successfully",
+			"service_priority": normalized,
+		})
 	}
 }
 
