@@ -38,7 +38,7 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("/api/v1/lastfm/unset", session.WithAPIAuth(apiUnlinkLastfmHandler(app.database), app.sessionManager))
 	mux.HandleFunc("/api/v1/current-track", session.WithAPIAuth(apiResolvedCurrentTrack(app.database, app.arbiter), app.sessionManager))
 	mux.HandleFunc("/api/v1/history", session.WithAPIAuth(apiTrackHistory(app.spotifyService), app.sessionManager)) // Spotify History
-	mux.HandleFunc("/api/v1/preferences/service-priority", session.WithAPIAuth(apiUpdateServicePriorityHandler(app.database), app.sessionManager))
+	mux.HandleFunc("/api/v1/preferences/service-priority", session.WithAuth(apiUpdateServicePriorityHandler(app.database), app.sessionManager))
 	mux.HandleFunc("/api/v1/musicbrainz/search", apiMusicBrainzSearch(app.mbService)) // MusicBrainz (public?)
 
 	// Apple Music user authorization (protected with session auth)
