@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/teal-fm/piper/service/applemusic"
+	"github.com/teal-fm/piper/service/arbiter"
 	"github.com/teal-fm/piper/service/lastfm"
 	"github.com/teal-fm/piper/service/playingnow"
 
@@ -34,6 +35,7 @@ type application struct {
 	atprotoService    *atproto.AuthService
 	playingNowService *playingnow.Service
 	appleMusicService *applemusic.Service
+	arbiter           *arbiter.Coordinator
 	pages             *pages.Pages
 }
 
@@ -98,6 +100,7 @@ func main() {
 
 	mbService := musicbrainz.NewMusicBrainzService(database)
 	playingNowService := playingnow.NewPlayingNowService(database, atprotoService, mbService)
+	streamArbiter := arbiter.New(database)
 
 	// Check feature toggles for music services
 	enableSpotify := viper.GetBool("enable_spotify")
@@ -115,6 +118,8 @@ func main() {
 
 		if clientID != "" && clientSecret != "" {
 			spotifyService = spotify.NewSpotifyService(database, atprotoService, mbService, playingNowService)
+			spotifyService.SetCoordinator(streamArbiter)
+			streamArbiter.SetSpotify(spotifyService)
 			log.Println("Spotify service enabled and configured")
 		} else {
 			log.Println("Spotify enabled but credentials missing (client_id or client_secret). Spotify features will be disabled.")
@@ -129,6 +134,8 @@ func main() {
 
 		if apiKey != "" {
 			lastfmService = lastfm.NewLastFMService(database, apiKey, mbService, atprotoService, playingNowService)
+			lastfmService.SetCoordinator(streamArbiter)
+			streamArbiter.SetLastFM(lastfmService)
 			log.Println("Last.fm service enabled and configured")
 		} else {
 			log.Println("Last.fm enabled but API key missing. Last.fm features will be disabled.")
@@ -167,6 +174,8 @@ func main() {
 					return database.SaveAppleMusicDeveloperToken(token, exp)
 				},
 			).WithDeps(database, atprotoService, mbService, playingNowService)
+			appleMusicService.SetCoordinator(streamArbiter)
+			streamArbiter.SetAppleMusic(appleMusicService)
 			log.Println("Apple Music service enabled and configured")
 		} else {
 			log.Println("Apple Music enabled but credentials missing (team_id, key_id, or private_key_path). Apple Music features will be disabled.")
@@ -205,6 +214,7 @@ func main() {
 		atprotoService:    atprotoService,
 		playingNowService: playingNowService,
 		appleMusicService: appleMusicService,
+		arbiter:           streamArbiter,
 		pages:             pages.NewPages(),
 	}
 

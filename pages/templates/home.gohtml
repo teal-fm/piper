@@ -87,6 +87,73 @@
   <p class="italic text-gray-600">Last.fm account not linked.</p>
   {{ end }}
 
+  {{ if .ServicePriorityOptions }}
+  <div class="mt-4 border border-gray-300 rounded-lg p-4">
+    <h3 class="text-lg font-semibold mb-2">Streaming Service Priority</h3>
+    <p class="mb-3 text-gray-700">
+      Choose which linked streaming service wins when Piper decides what is
+      currently playing and which scrobbles to keep.
+    </p>
+    <form id="service-priority-form" class="flex flex-col gap-3 max-w-md">
+      <label for="service-priority" class="font-medium">Preferred order</label>
+      <select
+        id="service-priority"
+        class="block w-full p-2 border border-gray-300 rounded bg-white"
+      >
+        {{ range .ServicePriorityOptions }}
+        <option value="{{ .Value }}" {{ if .Selected }}selected{{ end }}>
+          {{ .Label }}
+        </option>
+        {{ end }}
+      </select>
+      <button
+        class="bg-[#1DB954] text-white px-4 py-2.5 rounded cursor-pointer hover:opacity-90 w-fit"
+        type="submit"
+      >
+        Save Priority
+      </button>
+      <p id="service-priority-status" class="text-sm text-gray-600"></p>
+    </form>
+  </div>
+  <script>
+    (() => {
+      const form = document.getElementById("service-priority-form");
+      if (!form) return;
+
+      const select = document.getElementById("service-priority");
+      const status = document.getElementById("service-priority-status");
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        status.textContent = "Saving...";
+
+        try {
+          const response = await fetch("/api/v1/preferences/service-priority", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ service_priority: select.value }),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(payload.error || "Failed to save service priority");
+          }
+          select.value = payload.service_priority || select.value;
+          status.textContent = "Priority updated.";
+        } catch (error) {
+          status.textContent =
+            error && error.message ? error.message : "Failed to save priority.";
+        }
+      });
+    })();
+  </script>
+  {{ else if or .SpotifyConnected .AppleMusicLinked .LastFMLinked }}
+  <p class="mt-4 text-sm text-gray-600">
+    Connect at least two supported music services to customize streaming service
+    priority.
+  </p>
+  {{ end }}
+
   {{ else }}
 
   <p class="mb-3">Login with ATProto to get started!</p>

@@ -33,6 +33,7 @@ func Load() {
 	viper.SetDefault("applemusic.team_id", "")
 	viper.SetDefault("applemusic.key_id", "")
 	viper.SetDefault("applemusic.private_key_path", "./AM_AUTHKEY.p8")
+	viper.SetDefault("applemusic.now_playing_ttl_seconds", 90)
 
 	// server metadata
 	viper.SetDefault("server.root_url", "http://localhost:8080")
