@@ -524,6 +524,13 @@ func (s *Service) ProcessUser(ctx context.Context, user *models.User) error {
 			observedAt: s.now().UTC(),
 		}
 		s.mu.Unlock()
+	} else {
+		// Refresh observedAt for ongoing playback of the same track/URL
+		s.mu.Lock()
+		if state, ok := s.liveStates[user.ID]; ok && state.currentURL == currentURL {
+			state.observedAt = s.now().UTC()
+		}
+		s.mu.Unlock()
 	}
 
 	if isNewObservation && s.playingNowService != nil {
