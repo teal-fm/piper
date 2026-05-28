@@ -27,7 +27,7 @@ func (t *AlphaFeedPlay) MarshalCBOR(w io.Writer) error {
 	}
 
 	cw := cbg.NewCborWriter(w)
-	fieldCount := 15
+	fieldCount := 17
 
 	if t.ArtistMbIds == nil {
 		fieldCount--
@@ -65,6 +65,10 @@ func (t *AlphaFeedPlay) MarshalCBOR(w io.Writer) error {
 		fieldCount--
 	}
 
+	if t.ReleaseDiscriminant == nil {
+		fieldCount--
+	}
+
 	if t.ReleaseMbId == nil {
 		fieldCount--
 	}
@@ -74,6 +78,10 @@ func (t *AlphaFeedPlay) MarshalCBOR(w io.Writer) error {
 	}
 
 	if t.SubmissionClientAgent == nil {
+		fieldCount--
+	}
+
+	if t.TrackDiscriminant == nil {
 		fieldCount--
 	}
 
@@ -479,6 +487,70 @@ func (t *AlphaFeedPlay) MarshalCBOR(w io.Writer) error {
 				return err
 			}
 			if _, err := cw.WriteString(string(*t.RecordingMbId)); err != nil {
+				return err
+			}
+		}
+	}
+
+	// t.TrackDiscriminant (string) (string)
+	if t.TrackDiscriminant != nil {
+
+		if len("trackDiscriminant") > 1000000 {
+			return xerrors.Errorf("Value in field \"trackDiscriminant\" was too long")
+		}
+
+		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("trackDiscriminant"))); err != nil {
+			return err
+		}
+		if _, err := cw.WriteString(string("trackDiscriminant")); err != nil {
+			return err
+		}
+
+		if t.TrackDiscriminant == nil {
+			if _, err := cw.Write(cbg.CborNull); err != nil {
+				return err
+			}
+		} else {
+			if len(*t.TrackDiscriminant) > 1000000 {
+				return xerrors.Errorf("Value in field t.TrackDiscriminant was too long")
+			}
+
+			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(*t.TrackDiscriminant))); err != nil {
+				return err
+			}
+			if _, err := cw.WriteString(string(*t.TrackDiscriminant)); err != nil {
+				return err
+			}
+		}
+	}
+
+	// t.ReleaseDiscriminant (string) (string)
+	if t.ReleaseDiscriminant != nil {
+
+		if len("releaseDiscriminant") > 1000000 {
+			return xerrors.Errorf("Value in field \"releaseDiscriminant\" was too long")
+		}
+
+		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("releaseDiscriminant"))); err != nil {
+			return err
+		}
+		if _, err := cw.WriteString(string("releaseDiscriminant")); err != nil {
+			return err
+		}
+
+		if t.ReleaseDiscriminant == nil {
+			if _, err := cw.Write(cbg.CborNull); err != nil {
+				return err
+			}
+		} else {
+			if len(*t.ReleaseDiscriminant) > 1000000 {
+				return xerrors.Errorf("Value in field t.ReleaseDiscriminant was too long")
+			}
+
+			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(*t.ReleaseDiscriminant))); err != nil {
+				return err
+			}
+			if _, err := cw.WriteString(string(*t.ReleaseDiscriminant)); err != nil {
 				return err
 			}
 		}
@@ -923,6 +995,48 @@ func (t *AlphaFeedPlay) UnmarshalCBOR(r io.Reader) (err error) {
 					}
 
 					t.RecordingMbId = (*string)(&sval)
+				}
+			}
+			// t.TrackDiscriminant (string) (string)
+		case "trackDiscriminant":
+
+			{
+				b, err := cr.ReadByte()
+				if err != nil {
+					return err
+				}
+				if b != cbg.CborNull[0] {
+					if err := cr.UnreadByte(); err != nil {
+						return err
+					}
+
+					sval, err := cbg.ReadStringWithMax(cr, 1000000)
+					if err != nil {
+						return err
+					}
+
+					t.TrackDiscriminant = (*string)(&sval)
+				}
+			}
+			// t.ReleaseDiscriminant (string) (string)
+		case "releaseDiscriminant":
+
+			{
+				b, err := cr.ReadByte()
+				if err != nil {
+					return err
+				}
+				if b != cbg.CborNull[0] {
+					if err := cr.UnreadByte(); err != nil {
+						return err
+					}
+
+					sval, err := cbg.ReadStringWithMax(cr, 1000000)
+					if err != nil {
+						return err
+					}
+
+					t.ReleaseDiscriminant = (*string)(&sval)
 				}
 			}
 			// t.SubmissionClientAgent (string) (string)
@@ -1445,6 +1559,251 @@ func (t *AlphaActorProfile) UnmarshalCBOR(r io.Reader) (err error) {
 					}
 
 				}
+			}
+
+		default:
+			// Field doesn't exist on this type, so ignore it
+			if err := cbg.ScanForLinks(r, func(cid.Cid) {}); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+func (t *AlphaActorProfileStatus) MarshalCBOR(w io.Writer) error {
+	if t == nil {
+		_, err := w.Write(cbg.CborNull)
+		return err
+	}
+
+	cw := cbg.NewCborWriter(w)
+	fieldCount := 4
+
+	if t.CreatedAt == nil {
+		fieldCount--
+	}
+
+	if t.UpdatedAt == nil {
+		fieldCount--
+	}
+
+	if _, err := cw.Write(cbg.CborEncodeMajorType(cbg.MajMap, uint64(fieldCount))); err != nil {
+		return err
+	}
+
+	// t.LexiconTypeID (string) (string)
+	if len("$type") > 1000000 {
+		return xerrors.Errorf("Value in field \"$type\" was too long")
+	}
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("$type"))); err != nil {
+		return err
+	}
+	if _, err := cw.WriteString(string("$type")); err != nil {
+		return err
+	}
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("fm.teal.alpha.actor.profileStatus"))); err != nil {
+		return err
+	}
+	if _, err := cw.WriteString(string("fm.teal.alpha.actor.profileStatus")); err != nil {
+		return err
+	}
+
+	// t.CreatedAt (string) (string)
+	if t.CreatedAt != nil {
+
+		if len("createdAt") > 1000000 {
+			return xerrors.Errorf("Value in field \"createdAt\" was too long")
+		}
+
+		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("createdAt"))); err != nil {
+			return err
+		}
+		if _, err := cw.WriteString(string("createdAt")); err != nil {
+			return err
+		}
+
+		if t.CreatedAt == nil {
+			if _, err := cw.Write(cbg.CborNull); err != nil {
+				return err
+			}
+		} else {
+			if len(*t.CreatedAt) > 1000000 {
+				return xerrors.Errorf("Value in field t.CreatedAt was too long")
+			}
+
+			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(*t.CreatedAt))); err != nil {
+				return err
+			}
+			if _, err := cw.WriteString(string(*t.CreatedAt)); err != nil {
+				return err
+			}
+		}
+	}
+
+	// t.UpdatedAt (string) (string)
+	if t.UpdatedAt != nil {
+
+		if len("updatedAt") > 1000000 {
+			return xerrors.Errorf("Value in field \"updatedAt\" was too long")
+		}
+
+		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("updatedAt"))); err != nil {
+			return err
+		}
+		if _, err := cw.WriteString(string("updatedAt")); err != nil {
+			return err
+		}
+
+		if t.UpdatedAt == nil {
+			if _, err := cw.Write(cbg.CborNull); err != nil {
+				return err
+			}
+		} else {
+			if len(*t.UpdatedAt) > 1000000 {
+				return xerrors.Errorf("Value in field t.UpdatedAt was too long")
+			}
+
+			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(*t.UpdatedAt))); err != nil {
+				return err
+			}
+			if _, err := cw.WriteString(string(*t.UpdatedAt)); err != nil {
+				return err
+			}
+		}
+	}
+
+	// t.CompletedOnboarding (string) (string)
+	if len("completedOnboarding") > 1000000 {
+		return xerrors.Errorf("Value in field \"completedOnboarding\" was too long")
+	}
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("completedOnboarding"))); err != nil {
+		return err
+	}
+	if _, err := cw.WriteString(string("completedOnboarding")); err != nil {
+		return err
+	}
+
+	if len(t.CompletedOnboarding) > 1000000 {
+		return xerrors.Errorf("Value in field t.CompletedOnboarding was too long")
+	}
+
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(t.CompletedOnboarding))); err != nil {
+		return err
+	}
+	if _, err := cw.WriteString(string(t.CompletedOnboarding)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (t *AlphaActorProfileStatus) UnmarshalCBOR(r io.Reader) (err error) {
+	*t = AlphaActorProfileStatus{}
+
+	cr := cbg.NewCborReader(r)
+
+	maj, extra, err := cr.ReadHeader()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err == io.EOF {
+			err = io.ErrUnexpectedEOF
+		}
+	}()
+
+	if maj != cbg.MajMap {
+		return fmt.Errorf("cbor input should be of type map")
+	}
+
+	if extra > cbg.MaxLength {
+		return fmt.Errorf("AlphaActorProfileStatus: map struct too large (%d)", extra)
+	}
+
+	n := extra
+
+	nameBuf := make([]byte, 19)
+	for i := uint64(0); i < n; i++ {
+		nameLen, ok, err := cbg.ReadFullStringIntoBuf(cr, nameBuf, 1000000)
+		if err != nil {
+			return err
+		}
+
+		if !ok {
+			// Field doesn't exist on this type, so ignore it
+			if err := cbg.ScanForLinks(cr, func(cid.Cid) {}); err != nil {
+				return err
+			}
+			continue
+		}
+
+		switch string(nameBuf[:nameLen]) {
+		// t.LexiconTypeID (string) (string)
+		case "$type":
+
+			{
+				sval, err := cbg.ReadStringWithMax(cr, 1000000)
+				if err != nil {
+					return err
+				}
+
+				t.LexiconTypeID = string(sval)
+			}
+			// t.CreatedAt (string) (string)
+		case "createdAt":
+
+			{
+				b, err := cr.ReadByte()
+				if err != nil {
+					return err
+				}
+				if b != cbg.CborNull[0] {
+					if err := cr.UnreadByte(); err != nil {
+						return err
+					}
+
+					sval, err := cbg.ReadStringWithMax(cr, 1000000)
+					if err != nil {
+						return err
+					}
+
+					t.CreatedAt = (*string)(&sval)
+				}
+			}
+			// t.UpdatedAt (string) (string)
+		case "updatedAt":
+
+			{
+				b, err := cr.ReadByte()
+				if err != nil {
+					return err
+				}
+				if b != cbg.CborNull[0] {
+					if err := cr.UnreadByte(); err != nil {
+						return err
+					}
+
+					sval, err := cbg.ReadStringWithMax(cr, 1000000)
+					if err != nil {
+						return err
+					}
+
+					t.UpdatedAt = (*string)(&sval)
+				}
+			}
+			// t.CompletedOnboarding (string) (string)
+		case "completedOnboarding":
+
+			{
+				sval, err := cbg.ReadStringWithMax(cr, 1000000)
+				if err != nil {
+					return err
+				}
+
+				t.CompletedOnboarding = string(sval)
 			}
 
 		default:

@@ -41,6 +41,7 @@ var modules = []moduleConfig{
 		cborTypes: []string{
 			"teal.AlphaFeedPlay",
 			"teal.AlphaActorProfile",
+			"teal.AlphaActorProfileStatus",
 			"teal.AlphaActorStatus",
 			"teal.AlphaActorProfile_FeaturedItem",
 			"teal.AlphaFeedDefs_PlayView",

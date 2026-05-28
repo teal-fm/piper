@@ -228,7 +228,7 @@ func (p *Service) trackToPlayView(track *models.Track) (*teal.AlphaFeedDefs_Play
 	for _, a := range track.Artist {
 		artist := &teal.AlphaFeedDefs_Artist{
 			ArtistName: a.Name,
-			ArtistMbId: a.MBID,
+			ArtistMbId: models.FormatMBIDURI(a.MBID),
 		}
 		artists = append(artists, artist)
 	}
@@ -256,10 +256,7 @@ func (p *Service) trackToPlayView(track *models.Track) (*teal.AlphaFeedDefs_Play
 		originUrlPtr = &track.URL
 	}
 
-	var servicePtr *string
-	if track.ServiceBaseUrl != "" {
-		servicePtr = &track.ServiceBaseUrl
-	}
+	servicePtr := models.FormatMusicServiceBaseDomain(track.ServiceBaseUrl)
 
 	var releaseNamePtr *string
 	if track.Album != "" {
@@ -277,8 +274,8 @@ func (p *Service) trackToPlayView(track *models.Track) (*teal.AlphaFeedDefs_Play
 		Artists:                artists,
 		Duration:               durationPtr,
 		PlayedTime:             playedTimeStr,
-		RecordingMbId:          track.RecordingMBID,
-		ReleaseMbId:            track.ReleaseMBID,
+		RecordingMbId:          models.FormatMBIDURI(track.RecordingMBID),
+		ReleaseMbId:            models.FormatMBIDURI(track.ReleaseMBID),
 		ReleaseName:            releaseNamePtr,
 		Isrc:                   isrcPtr,
 		OriginUrl:              originUrlPtr,

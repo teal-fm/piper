@@ -9,10 +9,10 @@ import "github.com/bluesky-social/indigo/lex/util"
 // RECORDTYPE: AlphaActorStatus
 type AlphaActorStatus struct {
 	LexiconTypeID string `json:"$type,const=fm.teal.alpha.actor.status" cborgen:"$type,const=fm.teal.alpha.actor.status"`
-	// expiry: The unix timestamp of the expiry time of the item. If unavailable, default to 10 minutes past the start time.
+	// expiry: The RFC 3339 formatted time of the expiry time of the item. If unavailable, default to 10 minutes past the start time.
 	Expiry *string                 `json:"expiry,omitempty" cborgen:"expiry,omitempty"`
 	Item   *AlphaFeedDefs_PlayView `json:"item" cborgen:"item"`
-	// time: The unix timestamp of when the item was recorded
+	// time: The RFC 3339 formatted time of when the item was recorded
 	Time string `json:"time" cborgen:"time"`
 }
 
