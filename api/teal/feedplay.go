@@ -9,9 +9,9 @@ import "github.com/bluesky-social/indigo/lex/util"
 // RECORDTYPE: AlphaFeedPlay
 type AlphaFeedPlay struct {
 	LexiconTypeID string `json:"$type,const=fm.teal.alpha.feed.play" cborgen:"$type,const=fm.teal.alpha.feed.play"`
-	// artistMbIds: Array of Musicbrainz artist IDs. Prefer using 'artists'.
+	// artistMbIds: DEPRECATED: USE 'artists' INSTEAD. Array of Musicbrainz artist IDs.
 	ArtistMbIds []string `json:"artistMbIds,omitempty" cborgen:"artistMbIds,omitempty"`
-	// artistNames: Array of artist names in order of original appearance. Prefer using 'artists'.
+	// artistNames: DEPRECATED: USE 'artists' INSTEAD. Array of artist names in order of original appearance.
 	ArtistNames []string `json:"artistNames,omitempty" cborgen:"artistNames,omitempty"`
 	// artists: Array of artists in order of original appearance.
 	Artists []*AlphaFeedDefs_Artist `json:"artists,omitempty" cborgen:"artists,omitempty"`
@@ -25,15 +25,19 @@ type AlphaFeedPlay struct {
 	OriginUrl *string `json:"originUrl,omitempty" cborgen:"originUrl,omitempty"`
 	// playedTime: The unix timestamp of when the track was played
 	PlayedTime *string `json:"playedTime,omitempty" cborgen:"playedTime,omitempty"`
-	// recordingMbId: The Musicbrainz recording ID of the track
+	// recordingMbId: The MusicBrainz recording ID URI of the track, formatted as mbid:<uuid>
 	RecordingMbId *string `json:"recordingMbId,omitempty" cborgen:"recordingMbId,omitempty"`
-	// releaseMbId: The Musicbrainz release ID
+	// releaseDiscriminant: Distinguishing information for release variants (e.g. 'Deluxe Edition', 'Remastered', '2023 Remaster', 'Special Edition'). Used to differentiate between different versions of the same base release while maintaining grouping capabilities.
+	ReleaseDiscriminant *string `json:"releaseDiscriminant,omitempty" cborgen:"releaseDiscriminant,omitempty"`
+	// releaseMbId: The MusicBrainz release ID URI, formatted as mbid:<uuid>
 	ReleaseMbId *string `json:"releaseMbId,omitempty" cborgen:"releaseMbId,omitempty"`
 	// releaseName: The name of the release/album
 	ReleaseName *string `json:"releaseName,omitempty" cborgen:"releaseName,omitempty"`
 	// submissionClientAgent: A metadata string specifying the user agent where the format is `<app-identifier>/<version> (<kernel/OS-base>; <platform/OS-version>; <device-model>)`. If string is provided, only `app-identifier` and `version` are required. `app-identifier` is recommended to be in reverse dns format. Defaults to 'manual/unknown' if unavailable or not provided.
 	SubmissionClientAgent *string `json:"submissionClientAgent,omitempty" cborgen:"submissionClientAgent,omitempty"`
-	// trackMbId: The Musicbrainz ID of the track
+	// trackDiscriminant: Distinguishing information for track variants (e.g. 'Acoustic Version', 'Live at Wembley', 'Radio Edit', 'Demo'). Used to differentiate between different versions of the same base track while maintaining grouping capabilities.
+	TrackDiscriminant *string `json:"trackDiscriminant,omitempty" cborgen:"trackDiscriminant,omitempty"`
+	// trackMbId: The MusicBrainz ID URI of the track, formatted as mbid:<uuid>
 	TrackMbId *string `json:"trackMbId,omitempty" cborgen:"trackMbId,omitempty"`
 	// trackName: The name of the track
 	TrackName string `json:"trackName" cborgen:"trackName"`

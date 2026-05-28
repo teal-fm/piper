@@ -28,7 +28,7 @@ type AlphaActorProfile struct {
 
 // AlphaActorProfile_FeaturedItem is a "featuredItem" in the fm.teal.alpha.actor.profile schema.
 type AlphaActorProfile_FeaturedItem struct {
-	// mbid: The Musicbrainz ID of the item
+	// mbid: The MusicBrainz ID URI of the item, formatted as mbid:<uuid>
 	Mbid string `json:"mbid" cborgen:"mbid"`
 	// type: The type of the item. Must be a valid Musicbrainz type, e.g. album, track, recording, etc.
 	Type string `json:"type" cborgen:"type"`
