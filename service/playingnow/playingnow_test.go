@@ -62,7 +62,7 @@ func TestTrackToPlayView(t *testing.T) {
 		if playView.Artists[0].ArtistName != "Test Artist" {
 			t.Errorf("Expected artist name 'Test Artist', got %s", playView.Artists[0].ArtistName)
 		}
-		if playView.Artists[0].ArtistMbId == nil || *playView.Artists[0].ArtistMbId != "test-artist-mbid" {
+		if playView.Artists[0].ArtistMbId == nil || *playView.Artists[0].ArtistMbId != "mbid:test-artist-mbid" {
 			t.Errorf("Artist MBID not set correctly")
 		}
 	}
@@ -75,11 +75,11 @@ func TestTrackToPlayView(t *testing.T) {
 		t.Errorf("Expected duration 240 seconds, got %v", playView.Duration)
 	}
 
-	if playView.RecordingMbId == nil || *playView.RecordingMbId != "test-recording-mbid" {
+	if playView.RecordingMbId == nil || *playView.RecordingMbId != "mbid:test-recording-mbid" {
 		t.Errorf("Recording MBID not set correctly")
 	}
 
-	if playView.ReleaseMbId == nil || *playView.ReleaseMbId != "test-release-mbid" {
+	if playView.ReleaseMbId == nil || *playView.ReleaseMbId != "mbid:test-release-mbid" {
 		t.Errorf("Release MBID not set correctly")
 	}
 
@@ -91,7 +91,7 @@ func TestTrackToPlayView(t *testing.T) {
 		t.Errorf("Origin URL not set correctly")
 	}
 
-	if playView.MusicServiceBaseDomain == nil || *playView.MusicServiceBaseDomain != "spotify" {
+	if playView.MusicServiceBaseDomain == nil || *playView.MusicServiceBaseDomain != "spotify.com" {
 		t.Errorf("Music service not set correctly")
 	}
 }

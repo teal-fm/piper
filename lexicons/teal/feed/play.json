@@ -19,12 +19,13 @@
           },
           "trackMbId": {
             "type": "string",
-
-            "description": "The Musicbrainz ID of the track"
+            "format": "uri",
+            "description": "The MusicBrainz ID URI of the track, formatted as mbid:<uuid>"
           },
           "recordingMbId": {
             "type": "string",
-            "description": "The Musicbrainz recording ID of the track"
+            "format": "uri",
+            "description": "The MusicBrainz recording ID URI of the track, formatted as mbid:<uuid>"
           },
           "duration": {
             "type": "integer",
@@ -38,14 +39,14 @@
               "maxLength": 256,
               "maxGraphemes": 2560
             },
-            "description": "Array of artist names in order of original appearance. Prefer using 'artists'."
+            "description": "DEPRECATED: USE 'artists' INSTEAD. Array of artist names in order of original appearance."
           },
           "artistMbIds": {
             "type": "array",
             "items": {
               "type": "string"
             },
-            "description": "Array of Musicbrainz artist IDs. Prefer using 'artists'."
+            "description": "DEPRECATED: USE 'artists' INSTEAD. Array of Musicbrainz artist IDs."
           },
           "artists": {
             "type": "array",
@@ -63,7 +64,8 @@
           },
           "releaseMbId": {
             "type": "string",
-            "description": "The Musicbrainz release ID"
+            "format": "uri",
+            "description": "The MusicBrainz release ID URI, formatted as mbid:<uuid>"
           },
           "isrc": {
             "type": "string",
@@ -87,6 +89,18 @@
             "type": "string",
             "format": "datetime",
             "description": "The unix timestamp of when the track was played"
+          },
+          "trackDiscriminant": {
+            "type": "string",
+            "maxLength": 128,
+            "maxGraphemes": 1280,
+            "description": "Distinguishing information for track variants (e.g. 'Acoustic Version', 'Live at Wembley', 'Radio Edit', 'Demo'). Used to differentiate between different versions of the same base track while maintaining grouping capabilities."
+          },
+          "releaseDiscriminant": {
+            "type": "string",
+            "maxLength": 128,
+            "maxGraphemes": 1280,
+            "description": "Distinguishing information for release variants (e.g. 'Deluxe Edition', 'Remastered', '2023 Remaster', 'Special Edition'). Used to differentiate between different versions of the same base release while maintaining grouping capabilities."
           }
         }
       }

@@ -6,7 +6,7 @@ package teal
 
 // AlphaFeedDefs_Artist is a "artist" in the fm.teal.alpha.feed.defs schema.
 type AlphaFeedDefs_Artist struct {
-	// artistMbId: The Musicbrainz ID of the artist
+	// artistMbId: The MusicBrainz artist ID URI, formatted as mbid:<uuid>
 	ArtistMbId *string `json:"artistMbId,omitempty" cborgen:"artistMbId,omitempty"`
 	// artistName: The name of the artist
 	ArtistName string `json:"artistName" cborgen:"artistName"`
@@ -26,15 +26,15 @@ type AlphaFeedDefs_PlayView struct {
 	OriginUrl *string `json:"originUrl,omitempty" cborgen:"originUrl,omitempty"`
 	// playedTime: The unix timestamp of when the track was played
 	PlayedTime *string `json:"playedTime,omitempty" cborgen:"playedTime,omitempty"`
-	// recordingMbId: The Musicbrainz recording ID of the track
+	// recordingMbId: The MusicBrainz recording ID URI of the track, formatted as mbid:<uuid>
 	RecordingMbId *string `json:"recordingMbId,omitempty" cborgen:"recordingMbId,omitempty"`
-	// releaseMbId: The Musicbrainz release ID
+	// releaseMbId: The MusicBrainz release ID URI, formatted as mbid:<uuid>
 	ReleaseMbId *string `json:"releaseMbId,omitempty" cborgen:"releaseMbId,omitempty"`
 	// releaseName: The name of the release/album
 	ReleaseName *string `json:"releaseName,omitempty" cborgen:"releaseName,omitempty"`
 	// submissionClientAgent: A user-agent style string specifying the user agent. e.g. tealtracker/0.0.1b (Linux; Android 13; SM-A715F). Defaults to 'manual/unknown' if not provided.
 	SubmissionClientAgent *string `json:"submissionClientAgent,omitempty" cborgen:"submissionClientAgent,omitempty"`
-	// trackMbId: The Musicbrainz ID of the track
+	// trackMbId: The MusicBrainz ID URI of the track, formatted as mbid:<uuid>
 	TrackMbId *string `json:"trackMbId,omitempty" cborgen:"trackMbId,omitempty"`
 	// trackName: The name of the track
 	TrackName string `json:"trackName" cborgen:"trackName"`

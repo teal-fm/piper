@@ -27,7 +27,7 @@ func (t *AlphaFeedPlay) MarshalCBOR(w io.Writer) error {
 	}
 
 	cw := cbg.NewCborWriter(w)
-	fieldCount := 15
+	fieldCount := 17
 
 	if t.ArtistMbIds == nil {
 		fieldCount--
@@ -65,6 +65,10 @@ func (t *AlphaFeedPlay) MarshalCBOR(w io.Writer) error {
 		fieldCount--
 	}
 
+	if t.ReleaseDiscriminant == nil {
+		fieldCount--
+	}
+
 	if t.ReleaseMbId == nil {
 		fieldCount--
 	}
@@ -74,6 +78,10 @@ func (t *AlphaFeedPlay) MarshalCBOR(w io.Writer) error {
 	}
 
 	if t.SubmissionClientAgent == nil {
+		fieldCount--
+	}
+
+	if t.TrackDiscriminant == nil {
 		fieldCount--
 	}
 
@@ -479,6 +487,70 @@ func (t *AlphaFeedPlay) MarshalCBOR(w io.Writer) error {
 				return err
 			}
 			if _, err := cw.WriteString(string(*t.RecordingMbId)); err != nil {
+				return err
+			}
+		}
+	}
+
+	// t.TrackDiscriminant (string) (string)
+	if t.TrackDiscriminant != nil {
+
+		if len("trackDiscriminant") > 1000000 {
+			return xerrors.Errorf("Value in field \"trackDiscriminant\" was too long")
+		}
+
+		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("trackDiscriminant"))); err != nil {
+			return err
+		}
+		if _, err := cw.WriteString(string("trackDiscriminant")); err != nil {
+			return err
+		}
+
+		if t.TrackDiscriminant == nil {
+			if _, err := cw.Write(cbg.CborNull); err != nil {
+				return err
+			}
+		} else {
+			if len(*t.TrackDiscriminant) > 1000000 {
+				return xerrors.Errorf("Value in field t.TrackDiscriminant was too long")
+			}
+
+			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(*t.TrackDiscriminant))); err != nil {
+				return err
+			}
+			if _, err := cw.WriteString(string(*t.TrackDiscriminant)); err != nil {
+				return err
+			}
+		}
+	}
+
+	// t.ReleaseDiscriminant (string) (string)
+	if t.ReleaseDiscriminant != nil {
+
+		if len("releaseDiscriminant") > 1000000 {
+			return xerrors.Errorf("Value in field \"releaseDiscriminant\" was too long")
+		}
+
+		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("releaseDiscriminant"))); err != nil {
+			return err
+		}
+		if _, err := cw.WriteString(string("releaseDiscriminant")); err != nil {
+			return err
+		}
+
+		if t.ReleaseDiscriminant == nil {
+			if _, err := cw.Write(cbg.CborNull); err != nil {
+				return err
+			}
+		} else {
+			if len(*t.ReleaseDiscriminant) > 1000000 {
+				return xerrors.Errorf("Value in field t.ReleaseDiscriminant was too long")
+			}
+
+			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(*t.ReleaseDiscriminant))); err != nil {
+				return err
+			}
+			if _, err := cw.WriteString(string(*t.ReleaseDiscriminant)); err != nil {
 				return err
 			}
 		}
@@ -923,6 +995,48 @@ func (t *AlphaFeedPlay) UnmarshalCBOR(r io.Reader) (err error) {
 					}
 
 					t.RecordingMbId = (*string)(&sval)
+				}
+			}
+			// t.TrackDiscriminant (string) (string)
+		case "trackDiscriminant":
+
+			{
+				b, err := cr.ReadByte()
+				if err != nil {
+					return err
+				}
+				if b != cbg.CborNull[0] {
+					if err := cr.UnreadByte(); err != nil {
+						return err
+					}
+
+					sval, err := cbg.ReadStringWithMax(cr, 1000000)
+					if err != nil {
+						return err
+					}
+
+					t.TrackDiscriminant = (*string)(&sval)
+				}
+			}
+			// t.ReleaseDiscriminant (string) (string)
+		case "releaseDiscriminant":
+
+			{
+				b, err := cr.ReadByte()
+				if err != nil {
+					return err
+				}
+				if b != cbg.CborNull[0] {
+					if err := cr.UnreadByte(); err != nil {
+						return err
+					}
+
+					sval, err := cbg.ReadStringWithMax(cr, 1000000)
+					if err != nil {
+						return err
+					}
+
+					t.ReleaseDiscriminant = (*string)(&sval)
 				}
 			}
 			// t.SubmissionClientAgent (string) (string)

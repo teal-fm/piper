@@ -34,4 +34,16 @@ type AlphaActorDefs_ProfileView struct {
 	DisplayName *string `json:"displayName,omitempty" cborgen:"displayName,omitempty"`
 	// featuredItem: The user's most recent item featured on their profile.
 	FeaturedItem *AlphaActorProfile_FeaturedItem `json:"featuredItem,omitempty" cborgen:"featuredItem,omitempty"`
+	Status       *AlphaActorDefs_StatusView      `json:"status,omitempty" cborgen:"status,omitempty"`
+}
+
+// AlphaActorDefs_StatusView is a "statusView" in the fm.teal.alpha.actor.defs schema.
+//
+// A declaration of the status of the actor.
+type AlphaActorDefs_StatusView struct {
+	// expiry: The unix timestamp of the expiry time of the item. If unavailable, default to 10 minutes past the start time.
+	Expiry *string                 `json:"expiry,omitempty" cborgen:"expiry,omitempty"`
+	Item   *AlphaFeedDefs_PlayView `json:"item,omitempty" cborgen:"item,omitempty"`
+	// time: The unix timestamp of when the item was recorded
+	Time *string `json:"time,omitempty" cborgen:"time,omitempty"`
 }
