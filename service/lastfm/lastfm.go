@@ -16,6 +16,7 @@ import (
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
 	atprotoauth "github.com/teal-fm/piper/oauth/atproto"
+	"github.com/teal-fm/piper/service/arbiter"
 	atprotoservice "github.com/teal-fm/piper/service/atproto"
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"golang.org/x/time/rate"
@@ -40,6 +41,9 @@ type Service struct {
 		ClearPlayingNow(ctx context.Context, userID int64) error
 	}
 	lastSeenNowPlaying map[string]Track
+	liveTracks         map[int64]*models.Track
+	lastStamped        map[int64]*models.Track
+	arbiter            *arbiter.Coordinator
 	mu                 sync.Mutex
 	logger             *log.Logger
 }
@@ -63,9 +67,31 @@ func NewLastFMService(db *db.DB, apiKey string, musicBrainzService *musicbrainz.
 		musicBrainzService: musicBrainzService,
 		playingNowService:  playingNowService,
 		lastSeenNowPlaying: make(map[string]Track),
+		liveTracks:         make(map[int64]*models.Track),
+		lastStamped:        make(map[int64]*models.Track),
 		mu:                 sync.Mutex{},
 		logger:             logger,
 	}
+}
+
+func (l *Service) SetCoordinator(coordinator *arbiter.Coordinator) {
+	l.arbiter = coordinator
+}
+
+func (l *Service) GetLiveTrack(userID int64) (*models.Track, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	track := l.liveTracks[userID]
+	if track == nil {
+		return nil, false
+	}
+	return cloneTrack(track), true
+}
+
+func (l *Service) GetLastStampedTrack(userID int64) *models.Track {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return cloneTrack(l.lastStamped[userID])
 }
 
 func (l *Service) loadUsernames() error {
@@ -326,6 +352,8 @@ func (l *Service) processTracks(ctx context.Context, username string, tracks []T
 	if len(tracks) > 0 && tracks[0].Attr != nil && tracks[0].Attr.NowPlaying == "true" {
 		nowPlayingTrack := tracks[0]
 		l.logger.Printf("now playing track for %s: %s - %s", username, nowPlayingTrack.Artist.Text, nowPlayingTrack.Name)
+		var piperTrack *models.Track
+		changed := false
 		l.mu.Lock()
 		lastSeen, existed := l.lastSeenNowPlaying[username]
 		// if our current track matches with last seen
@@ -336,22 +364,44 @@ func (l *Service) processTracks(ctx context.Context, username string, tracks []T
 			l.logger.Printf("current track does not match last seen track for %s", username)
 			// aha! we record this!
 			l.lastSeenNowPlaying[username] = nowPlayingTrack
-
-			// Publish playing now status
-			if l.playingNowService != nil {
-				// Convert Last.fm track to models.Track format
-				piperTrack := l.convertLastFMTrackToModelsTrack(nowPlayingTrack)
+			piperTrack = l.convertLastFMTrackToModelsTrack(nowPlayingTrack)
+			l.liveTracks[user.ID] = cloneTrack(piperTrack)
+			changed = true
+		}
+		l.mu.Unlock()
+		if changed && l.playingNowService != nil {
+			allowed := true
+			if l.arbiter != nil {
+				allowed, err = l.arbiter.CanPublishNowPlaying(user.ID, models.ServiceLastFM, piperTrack)
+				if err != nil {
+					l.logger.Printf("Error checking Last.fm publish ownership for user %s: %v", username, err)
+					allowed = false
+				}
+			}
+			if allowed {
 				if err := l.playingNowService.PublishPlayingNow(ctx, user.ID, piperTrack); err != nil {
 					l.logger.Printf("Error publishing playing now for user %s: %v", username, err)
 				}
 			}
 		}
-		l.mu.Unlock()
 	} else {
+		l.mu.Lock()
+		delete(l.liveTracks, user.ID)
+		l.mu.Unlock()
 		// No now playing track - clear playing now status
 		if l.playingNowService != nil {
-			if err := l.playingNowService.ClearPlayingNow(ctx, user.ID); err != nil {
-				l.logger.Printf("Error clearing playing now for user %s: %v", username, err)
+			allowed := true
+			if l.arbiter != nil {
+				allowed, err = l.arbiter.CanClearNowPlaying(user.ID, models.ServiceLastFM)
+				if err != nil {
+					l.logger.Printf("Error checking Last.fm clear ownership for user %s: %v", username, err)
+					allowed = false
+				}
+			}
+			if allowed {
+				if err := l.playingNowService.ClearPlayingNow(ctx, user.ID); err != nil {
+					l.logger.Printf("Error clearing playing now for user %s: %v", username, err)
+				}
 			}
 		}
 	}
@@ -412,6 +462,19 @@ func (l *Service) processTracks(ctx context.Context, username string, tracks []T
 			HasStamped: true,
 		}
 
+		allowed := true
+		if l.arbiter != nil {
+			allowed, err = l.arbiter.CanScrobble(user.ID, models.ServiceLastFM, &baseTrack)
+			if err != nil {
+				l.logger.Printf("Error checking Last.fm scrobble ownership for user %s: %v", username, err)
+				allowed = false
+			}
+		}
+		if !allowed {
+			l.logger.Printf("Skipping Last.fm scrobble for user %s because a higher priority service owns the session", username)
+			continue
+		}
+
 		hydratedTrack, err := musicbrainz.HydrateTrack(l.musicBrainzService, baseTrack)
 		if err != nil {
 			l.logger.Printf("error hydrating track for user %s: %s - %s: %v", username, track.Artist.Text, track.Name, err)
@@ -422,6 +485,9 @@ func (l *Service) processTracks(ctx context.Context, username string, tracks []T
 		if err != nil {
 			return err
 		}
+		l.mu.Lock()
+		l.lastStamped[user.ID] = cloneTrack(hydratedTrack)
+		l.mu.Unlock()
 		l.logger.Printf("Submitting track")
 		err = l.SubmitTrackToPDS(*user.ATProtoDID, *user.MostRecentAtProtoSessionID, hydratedTrack, ctx)
 		if err != nil {
@@ -484,4 +550,15 @@ func (l *Service) convertLastFMTrackToModelsTrack(track Track) *models.Track {
 	}
 
 	return piperTrack
+}
+
+func cloneTrack(track *models.Track) *models.Track {
+	if track == nil {
+		return nil
+	}
+	cloned := *track
+	if len(track.Artist) > 0 {
+		cloned.Artist = append([]models.Artist(nil), track.Artist...)
+	}
+	return &cloned
 }
