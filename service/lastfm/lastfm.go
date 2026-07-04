@@ -95,6 +95,19 @@ func (l *Service) loadUsernames() error {
 	l.Usernames = filteredUsernames
 	l.logger.Printf("Loaded %d Last.fm usernames", len(l.Usernames))
 
+	// prune now-playing state for users no longer tracked
+	current := make(map[string]struct{}, len(filteredUsernames))
+	for _, name := range filteredUsernames {
+		current[name] = struct{}{}
+	}
+	l.mu.Lock()
+	for name := range l.lastSeenNowPlaying {
+		if _, ok := current[name]; !ok {
+			delete(l.lastSeenNowPlaying, name)
+		}
+	}
+	l.mu.Unlock()
+
 	return nil
 }
 
