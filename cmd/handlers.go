@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/spf13/viper"
 	"github.com/teal-fm/piper/db"
@@ -471,6 +473,7 @@ func apiSubmitListensHandler(database *db.DB, atprotoService *atprotoauth.AuthSe
 
 		// Process each listen in the payload
 		var processedTracks []models.Track
+		var savedListens []savedListen
 		var errors []string
 
 		for i, listen := range submission.Payload {
@@ -494,19 +497,8 @@ func apiSubmitListensHandler(database *db.DB, atprotoService *atprotoauth.AuthSe
 			// Convert to internal Track format
 			track := listen.ConvertToTrack()
 
-			// Attempt to hydrate with MusicBrainz data if service is available and track doesn't have MBIDs
-			if mbService != nil && track.RecordingMBID == nil {
-				hydratedTrack, err := musicbrainz.HydrateTrack(mbService, track)
-				if err != nil {
-					log.Printf("apiSubmitListensHandler: Could not hydrate track with MusicBrainz for user %d: %v (continuing with original data)", userID, err)
-					// Continue with non-hydrated track
-				} else if hydratedTrack != nil {
-					track = *hydratedTrack
-					log.Printf("apiSubmitListensHandler: Successfully hydrated track '%s' with MusicBrainz data", track.Name)
-				}
-			}
-
 			// For 'playing_now' type, publish to PDS as actor status
+			// (PublishPlayingNow hydrates with MusicBrainz internally)
 			if submission.ListenType == "playing_now" {
 				log.Printf("Received playing_now listen for user %d: %s - %s", userID, track.Artist[0].Name, track.Name)
 
@@ -529,21 +521,22 @@ func apiSubmitListensHandler(database *db.DB, atprotoService *atprotoauth.AuthSe
 			}
 
 			// Store the track
-			if _, err := database.SaveTrack(userID, &track); err != nil {
+			trackID, err := database.SaveTrack(userID, &track)
+			if err != nil {
 				log.Printf("apiSubmitListensHandler: Error saving track for user %d: %v", userID, err)
 				errors = append(errors, fmt.Sprintf("payload[%d]: failed to save track", i))
 				continue
 			}
 
-			// Submit to PDS as feed.play record
-			if user.ATProtoDID != nil && atprotoService != nil {
-				if err := atprotoservice.SubmitPlayToPDS(r.Context(), *user.ATProtoDID, *user.MostRecentAtProtoSessionID, &track, atprotoService); err != nil {
-					log.Printf("apiSubmitListensHandler: Error submitting play to PDS for user %d: %v", userID, err)
-					// Don't fail the request, just log the error
-				}
-			}
-
+			savedListens = append(savedListens, savedListen{trackID: trackID, track: track})
 			processedTracks = append(processedTracks, track)
+		}
+
+		// Hydrate and submit to the PDS in the background: MusicBrainz
+		// lookups are rate limited to 1/s, so doing them before responding
+		// can outlast the proxy timeout and trap clients in a retry loop
+		if len(savedListens) > 0 {
+			go hydrateAndSubmitListens(database, atprotoService, mbService, user, userID, savedListens)
 		}
 
 		// Prepare response
@@ -564,6 +557,42 @@ func apiSubmitListensHandler(database *db.DB, atprotoService *atprotoauth.AuthSe
 			len(processedTracks), userID, submission.ListenType)
 
 		jsonResponse(w, http.StatusOK, response)
+	}
+}
+
+// savedListen pairs a stored track row with the track data submitted for it
+type savedListen struct {
+	trackID int64
+	track   models.Track
+}
+
+// hydrateAndSubmitListens hydrates saved listens with MusicBrainz data and
+// submits them to the PDS. It runs detached from the request that saved them,
+// on its own context, since both steps can far outlast the client connection.
+func hydrateAndSubmitListens(database *db.DB, atprotoService *atprotoauth.AuthService, mbService *musicbrainz.Service, user *models.User, userID int64, listens []savedListen) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+
+	for _, saved := range listens {
+		track := saved.track
+
+		if mbService != nil && track.RecordingMBID == nil {
+			hydratedTrack, err := musicbrainz.HydrateTrack(mbService, track)
+			if err != nil {
+				log.Printf("apiSubmitListensHandler: Could not hydrate track with MusicBrainz for user %d: %v (continuing with original data)", userID, err)
+			} else if hydratedTrack != nil {
+				track = *hydratedTrack
+				if err := database.UpdateTrack(saved.trackID, &track); err != nil {
+					log.Printf("apiSubmitListensHandler: Error updating hydrated track for user %d: %v", userID, err)
+				}
+			}
+		}
+
+		if user.ATProtoDID != nil && atprotoService != nil {
+			if err := atprotoservice.SubmitPlayToPDS(ctx, *user.ATProtoDID, *user.MostRecentAtProtoSessionID, &track, atprotoService); err != nil {
+				log.Printf("apiSubmitListensHandler: Error submitting play to PDS for user %d: %v", userID, err)
+			}
+		}
 	}
 }
 
