@@ -754,6 +754,17 @@ func (s *Service) fetchTrackForUser(ctx context.Context, userID int64) {
 }
 
 func (s *Service) fetchAllUserTracks(ctx context.Context) {
+	// evict play states that have been idle for over a day; states must
+	// survive across poll cycles, so only long-stale entries are removed
+	staleCutoff := time.Now().Add(-24 * time.Hour)
+	s.mu.Lock()
+	for userID, state := range s.userPlayStates {
+		if state == nil || state.lastPollTime.Before(staleCutoff) {
+			delete(s.userPlayStates, userID)
+		}
+	}
+	s.mu.Unlock()
+
 	// copy userIDs to avoid holding the lock too long
 	s.mu.RLock()
 	userIDs := make([]int64, 0, len(s.userTokens))
