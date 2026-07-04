@@ -192,10 +192,10 @@ func (s *Service) LoadAllUsers() error {
 			s.userTokens[user.ID] = *user.AccessToken
 			count++
 		} else {
-			// Unlock so the refreshTokenInner method can lock to refresh tokens if needed
+			// Unlock so the refreshTokenForUser method can lock to refresh tokens if needed
 			s.mu.Unlock()
-			//We do not need to use the output of refreshTokenInner since it is added to the list inside the function
-			_, err := s.refreshTokenInner(user.ID)
+			//We do not need to use the output of refreshTokenForUser since it is added to the list inside the function
+			_, err := s.refreshTokenForUser(user)
 			if err != nil {
 				//Probably should remove the access token and refresh in long run?
 				s.logger.Printf("Error refreshing token for user %d: %v", user.ID, err)
@@ -228,6 +228,14 @@ func (s *Service) refreshTokenInner(userID int64) (string, error) {
 	if user == nil {
 		return "", fmt.Errorf("user %d not found for refresh", userID)
 	}
+
+	return s.refreshTokenForUser(user)
+}
+
+// refreshTokenForUser refreshes the Spotify token for an already-loaded user.
+// It returns the new access token or an error.
+func (s *Service) refreshTokenForUser(user *models.User) (string, error) {
+	userID := user.ID
 
 	if user.RefreshToken == nil || *user.RefreshToken == "" {
 		// If no refresh token, remove potentially stale access token from cache and return error
@@ -340,11 +348,12 @@ func (s *Service) RefreshExpiredTokens() {
 			continue
 		}
 
-		_, err := s.refreshTokenInner(user.ID)
+		_, err := s.refreshTokenForUser(user)
 
 		if err != nil {
 			// just print out errors here for now
 			s.logger.Printf("Error from service/spotify/spotify.go when refreshing tokens: %s", err.Error())
+			continue
 		}
 
 		refreshed++
