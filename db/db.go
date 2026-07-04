@@ -379,6 +379,17 @@ func (db *DB) SaveTrack(userID int64, track *models.Track) (int64, error) {
 	return trackID, err
 }
 
+// HasTrackListen reports whether a listen with the same name and timestamp
+// is already stored for the user, so resubmitted payloads stay idempotent.
+func (db *DB) HasTrackListen(userID int64, name string, timestamp time.Time) (bool, error) {
+	var exists bool
+	err := db.QueryRow(`
+	SELECT EXISTS(
+		SELECT 1 FROM tracks WHERE user_id = ? AND name = ? AND timestamp = ?
+	)`, userID, name, timestamp).Scan(&exists)
+	return exists, err
+}
+
 func (db *DB) UpdateTrack(trackID int64, track *models.Track) error {
 	// marshal artist json
 	artistString := ""

@@ -512,6 +512,15 @@ func apiSubmitListensHandler(database *db.DB, atprotoService *atprotoauth.AuthSe
 				continue
 			}
 
+			// Skip listens we already stored so client retries stay idempotent
+			exists, err := database.HasTrackListen(userID, track.Name, track.Timestamp)
+			if err != nil {
+				log.Printf("apiSubmitListensHandler: Error checking for existing listen for user %d: %v", userID, err)
+			} else if exists {
+				processedTracks = append(processedTracks, track)
+				continue
+			}
+
 			// Store the track
 			if _, err := database.SaveTrack(userID, &track); err != nil {
 				log.Printf("apiSubmitListensHandler: Error saving track for user %d: %v", userID, err)

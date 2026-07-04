@@ -437,6 +437,57 @@ func TestListenBrainzSubmission_ValidationErrors(t *testing.T) {
 	}
 }
 
+func TestListenBrainzSubmission_DuplicateResubmission(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	userID, apiKey := createTestUser(t, database)
+
+	submission := models.ListenBrainzSubmission{
+		ListenType: "single",
+		Payload: []models.ListenBrainzPayload{
+			{
+				ListenedAt: func() *int64 { i := int64(1704067200); return &i }(),
+				TrackMetadata: models.ListenBrainzTrackMetadata{
+					ArtistName: "Daft Punk",
+					TrackName:  "One More Time",
+				},
+			},
+		},
+	}
+
+	jsonData, err := json.Marshal(submission)
+	if err != nil {
+		t.Fatalf("Failed to marshal submission: %v", err)
+	}
+
+	handler := apiSubmitListensHandler(database, nil, nil, nil)
+
+	// Submit the identical payload twice, as a client retrying would
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/1/submit-listens", bytes.NewReader(jsonData))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Token "+apiKey)
+		req = req.WithContext(withUserContext(req.Context(), userID))
+
+		rr := httptest.NewRecorder()
+		handler(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("Submission %d: expected status %d, got %d. Body: %s", i+1, http.StatusOK, rr.Code, rr.Body.String())
+		}
+	}
+
+	tracks, err := database.GetRecentTracks(userID, 10)
+	if err != nil {
+		t.Fatalf("Failed to get tracks from database: %v", err)
+	}
+
+	if len(tracks) != 1 {
+		t.Fatalf("Expected 1 track in database after duplicate resubmission, got %d", len(tracks))
+	}
+}
+
 func TestListenBrainzSubmission_Unauthorized(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
