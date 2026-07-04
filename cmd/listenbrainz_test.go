@@ -488,6 +488,60 @@ func TestListenBrainzSubmission_DuplicateResubmission(t *testing.T) {
 	}
 }
 
+func TestListenBrainzSubmission_CancelledRequestStopsProcessing(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	userID, apiKey := createTestUser(t, database)
+
+	submission := models.ListenBrainzSubmission{
+		ListenType: "import",
+		Payload: []models.ListenBrainzPayload{
+			{
+				ListenedAt: func() *int64 { i := int64(1704067200); return &i }(),
+				TrackMetadata: models.ListenBrainzTrackMetadata{
+					ArtistName: "Artist One",
+					TrackName:  "Track One",
+				},
+			},
+			{
+				ListenedAt: func() *int64 { i := int64(1704067300); return &i }(),
+				TrackMetadata: models.ListenBrainzTrackMetadata{
+					ArtistName: "Artist Two",
+					TrackName:  "Track Two",
+				},
+			},
+		},
+	}
+
+	jsonData, err := json.Marshal(submission)
+	if err != nil {
+		t.Fatalf("Failed to marshal submission: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/1/submit-listens", bytes.NewReader(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Token "+apiKey)
+
+	// Simulate the client (or a proxy timeout) having gone away
+	ctx, cancel := context.WithCancel(withUserContext(req.Context(), userID))
+	cancel()
+	req = req.WithContext(ctx)
+
+	rr := httptest.NewRecorder()
+	handler := apiSubmitListensHandler(database, nil, nil, nil)
+	handler(rr, req)
+
+	tracks, err := database.GetRecentTracks(userID, 10)
+	if err != nil {
+		t.Fatalf("Failed to get tracks from database: %v", err)
+	}
+
+	if len(tracks) != 0 {
+		t.Fatalf("Expected 0 tracks saved for a cancelled request, got %d", len(tracks))
+	}
+}
+
 func TestListenBrainzSubmission_Unauthorized(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()

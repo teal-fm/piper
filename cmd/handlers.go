@@ -474,6 +474,13 @@ func apiSubmitListensHandler(database *db.DB, atprotoService *atprotoauth.AuthSe
 		var errors []string
 
 		for i, listen := range submission.Payload {
+			// Stop if the client is gone (e.g. proxy timeout); anything saved
+			// past this point would be resaved on the client's retry
+			if r.Context().Err() != nil {
+				log.Printf("apiSubmitListensHandler: request cancelled for user %d after %d listens, stopping", userID, len(processedTracks))
+				return
+			}
+
 			// Validate required fields
 			if listen.TrackMetadata.ArtistName == "" {
 				errors = append(errors, fmt.Sprintf("payload[%d]: artist_name is required", i))
