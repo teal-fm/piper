@@ -92,6 +92,11 @@ func (db *DB) Initialize() error {
 		return err
 	}
 
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_tracks_user_id_timestamp ON tracks(user_id, timestamp DESC)`)
+	if err != nil {
+		return err
+	}
+
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS atproto_state (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
