@@ -73,6 +73,9 @@ type SearchParams struct {
 	ISRC    string
 }
 
+// maxSearchCacheEntries caps the search cache size.
+const maxSearchCacheEntries = 1000
+
 // cacheEntry holds the cached data and its expiration time.
 type cacheEntry struct {
 	recordings []Recording
@@ -168,6 +171,18 @@ func (s *Service) setCacheEntry(cacheKey string, recordings []Recording) {
 		if !now.Before(entry.expiresAt) {
 			delete(s.searchCache, key)
 		}
+	}
+	// Cap the cache size by evicting the entry closest to expiry.
+	if len(s.searchCache) >= maxSearchCacheEntries {
+		var oldestKey string
+		var oldestExpiry time.Time
+		for key, entry := range s.searchCache {
+			if oldestKey == "" || entry.expiresAt.Before(oldestExpiry) {
+				oldestKey = key
+				oldestExpiry = entry.expiresAt
+			}
+		}
+		delete(s.searchCache, oldestKey)
 	}
 	s.searchCache[cacheKey] = cacheEntry{
 		recordings: recordings,
