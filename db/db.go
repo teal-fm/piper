@@ -155,23 +155,21 @@ func (db *DB) Initialize() error {
 		return err
 	}
 
+	// Apple Music developer token persistence
+	_, err = db.Exec(`
+    CREATE TABLE IF NOT EXISTS applemusic_token (
+      token TEXT,
+      expires_at TIMESTAMP
+    )
+	`)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
-// Apple Music developer token persistence
-func (db *DB) ensureAppleMusicTokenTable() error {
-	_, err := db.Exec(`
-        CREATE TABLE IF NOT EXISTS applemusic_token (
-            token TEXT,
-            expires_at TIMESTAMP
-        )`)
-	return err
-}
-
 func (db *DB) GetAppleMusicDeveloperToken() (string, time.Time, bool, error) {
-	if err := db.ensureAppleMusicTokenTable(); err != nil {
-		return "", time.Time{}, false, err
-	}
 	var token string
 	var exp time.Time
 	err := db.QueryRow(`SELECT token, expires_at FROM applemusic_token LIMIT 1`).Scan(&token, &exp)
@@ -185,9 +183,6 @@ func (db *DB) GetAppleMusicDeveloperToken() (string, time.Time, bool, error) {
 }
 
 func (db *DB) SaveAppleMusicDeveloperToken(token string, exp time.Time) error {
-	if err := db.ensureAppleMusicTokenTable(); err != nil {
-		return err
-	}
 	// Replace existing single row
 	_, err := db.Exec(`DELETE FROM applemusic_token`)
 	if err != nil {
