@@ -70,6 +70,7 @@ type Service struct {
 	} // Added field for playing now service
 	userPlayStates map[int64]*userPlayState
 	userTokens     map[int64]string
+	httpClient     *http.Client
 	mu             sync.RWMutex
 	logger         *log.Logger
 }
@@ -87,7 +88,10 @@ func NewSpotifyService(database *db.DB, atprotoAuthService *atprotoauth.AuthServ
 		playingNowService:  playingNowService,
 		userPlayStates:     make(map[int64]*userPlayState),
 		userTokens:         make(map[int64]string),
-		logger:             logger,
+		httpClient: &http.Client{
+			Timeout: 10 * time.Second,
+		},
+		logger: logger,
 	}
 }
 
@@ -252,8 +256,7 @@ func (s *Service) refreshTokenInner(userID int64) (string, error) {
 	req.Header.Set("Authorization", "Basic "+authHeader)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to execute refresh request: %w", err)
 	}
@@ -359,8 +362,7 @@ func (s *Service) fetchSpotifyProfile(token string) (*spotifyProfile, error) {
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token)
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -455,7 +457,6 @@ func (s *Service) FetchCurrentTrack(userID int64) (*SpotifyTrackResponse, error)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token)
-	client := &http.Client{}
 	var resp *http.Response
 	var err error
 
@@ -463,7 +464,7 @@ func (s *Service) FetchCurrentTrack(userID int64) (*SpotifyTrackResponse, error)
 	for attempt := range 2 {
 		// We need to be able to re-read the body if the request is retried,
 		// but since this is a GET request with no body, we don't need to worry about it.
-		resp, err = client.Do(req) // Use = instead of := inside loop
+		resp, err = s.httpClient.Do(req) // Use = instead of := inside loop
 		if err != nil {
 			// Network or other client error, don't retry
 			return nil, fmt.Errorf("failed to execute spotify request on attempt %d: %w", attempt+1, err)
