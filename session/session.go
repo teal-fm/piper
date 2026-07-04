@@ -49,10 +49,40 @@ func NewSessionManager(database *db.DB) *Manager {
 
 	apiKeyMgr := apikey.NewApiKeyManager(database)
 
-	return &Manager{
+	sm := &Manager{
 		db:        database,
 		sessions:  make(map[string]*Session),
 		ApiKeyMgr: apiKeyMgr,
+	}
+
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			sm.cleanupExpiredSessions()
+		}
+	}()
+
+	return sm
+}
+
+// cleanupExpiredSessions removes expired sessions from the in-memory map and the database
+func (sm *Manager) cleanupExpiredSessions() {
+	now := time.Now().UTC()
+
+	sm.mu.Lock()
+	for id, session := range sm.sessions {
+		if now.After(session.ExpiresAt) {
+			delete(sm.sessions, id)
+		}
+	}
+	sm.mu.Unlock()
+
+	if sm.db != nil {
+		_, err := sm.db.Exec("DELETE FROM sessions WHERE expires_at < ?", now)
+		if err != nil {
+			log.Printf("Error deleting expired sessions from database: %v", err)
+		}
 	}
 }
 
