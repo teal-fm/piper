@@ -48,9 +48,37 @@ func NewApiKeyManager(database *db.DB) *Manager {
 		log.Printf("Error creating api_keys table: %v", err)
 	}
 
-	return &Manager{
+	am := &Manager{
 		db:      database,
 		apiKeys: make(map[string]*ApiKey),
+	}
+
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			am.cleanupExpiredApiKeys()
+		}
+	}()
+
+	return am
+}
+
+// cleanupExpiredApiKeys removes expired API keys from the in-memory map and the database
+func (am *Manager) cleanupExpiredApiKeys() {
+	now := time.Now().UTC()
+
+	am.mu.Lock()
+	for id, apiKey := range am.apiKeys {
+		if now.After(apiKey.ExpiresAt) {
+			delete(am.apiKeys, id)
+		}
+	}
+	am.mu.Unlock()
+
+	_, err := am.db.Exec("DELETE FROM api_keys WHERE expires_at < ?", now)
+	if err != nil {
+		log.Printf("Error deleting expired API keys from database: %v", err)
 	}
 }
 
@@ -103,10 +131,8 @@ func (am *Manager) GetApiKey(apiKeyID string) (*ApiKey, bool) {
 	if exists {
 		// Check if API key is expired
 		if time.Now().UTC().After(apiKey.ExpiresAt) {
-			err := am.DeleteApiKey(apiKeyID)
-			fmt.Println("Error deleting an expired API key: %w", err)
-			if err != nil {
-				return nil, false
+			if err := am.DeleteApiKey(apiKeyID); err != nil {
+				log.Printf("Error deleting an expired API key: %v", err)
 			}
 			return nil, false
 		}
@@ -125,10 +151,8 @@ func (am *Manager) GetApiKey(apiKeyID string) (*ApiKey, bool) {
 	}
 
 	if time.Now().UTC().After(apiKey.ExpiresAt) {
-		err := am.DeleteApiKey(apiKeyID)
-		fmt.Println("Error deleting an expired API key: %w", err)
-		if err != nil {
-			return nil, false
+		if err := am.DeleteApiKey(apiKeyID); err != nil {
+			log.Printf("Error deleting an expired API key: %v", err)
 		}
 		return nil, false
 	}

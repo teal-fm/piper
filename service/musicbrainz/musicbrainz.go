@@ -73,6 +73,9 @@ type SearchParams struct {
 	ISRC    string
 }
 
+// maxSearchCacheEntries caps the search cache size.
+const maxSearchCacheEntries = 1000
+
 // cacheEntry holds the cached data and its expiration time.
 type cacheEntry struct {
 	recordings []Recording
@@ -140,19 +143,50 @@ func buildSearchEndpoint(query string) string {
 	return fmt.Sprintf("https://musicbrainz.org/ws/2/recording?query=%s&fmt=json&inc=artists+releases+isrcs", url.QueryEscape(query))
 }
 
-func getCacheEntry(cache map[string]cacheEntry, cacheKey string) ([]Recording, bool) {
-	entry, found := cache[cacheKey]
-	now := time.Now().UTC()
-	if found && now.Before(entry.expiresAt) {
+func (s *Service) getCacheEntry(cacheKey string) ([]Recording, bool) {
+	s.cacheMutex.RLock()
+	entry, found := s.searchCache[cacheKey]
+	s.cacheMutex.RUnlock()
+	if !found {
+		return nil, false
+	}
+	if time.Now().UTC().Before(entry.expiresAt) {
 		return entry.recordings, true
 	}
+	// Entry is expired; delete it under a write lock.
+	s.cacheMutex.Lock()
+	if entry, found := s.searchCache[cacheKey]; found && !time.Now().UTC().Before(entry.expiresAt) {
+		delete(s.searchCache, cacheKey)
+	}
+	s.cacheMutex.Unlock()
 	return nil, false
 }
 
-func setCacheEntry(cache map[string]cacheEntry, cacheKey string, recordings []Recording, ttl time.Duration) {
-	cache[cacheKey] = cacheEntry{
+func (s *Service) setCacheEntry(cacheKey string, recordings []Recording) {
+	now := time.Now().UTC()
+	s.cacheMutex.Lock()
+	defer s.cacheMutex.Unlock()
+	// Opportunistically sweep expired entries so the cache doesn't grow unbounded.
+	for key, entry := range s.searchCache {
+		if !now.Before(entry.expiresAt) {
+			delete(s.searchCache, key)
+		}
+	}
+	// Cap the cache size by evicting the entry closest to expiry.
+	if len(s.searchCache) >= maxSearchCacheEntries {
+		var oldestKey string
+		var oldestExpiry time.Time
+		for key, entry := range s.searchCache {
+			if oldestKey == "" || entry.expiresAt.Before(oldestExpiry) {
+				oldestKey = key
+				oldestExpiry = entry.expiresAt
+			}
+		}
+		delete(s.searchCache, oldestKey)
+	}
+	s.searchCache[cacheKey] = cacheEntry{
 		recordings: recordings,
-		expiresAt:  time.Now().UTC().Add(ttl),
+		expiresAt:  now.Add(s.cacheTTL),
 	}
 }
 
@@ -191,13 +225,10 @@ func (s *Service) SearchMusicBrainz(ctx context.Context, params SearchParams) ([
 
 	cacheKey := generateCacheKey(params)
 
-	s.cacheMutex.RLock()
-	if recordings, found := getCacheEntry(s.searchCache, cacheKey); found {
-		s.cacheMutex.RUnlock()
+	if recordings, found := s.getCacheEntry(cacheKey); found {
 		s.logger.Printf("Cache hit for MusicBrainz search: key=%s", cacheKey)
 		return recordings, nil
 	}
-	s.cacheMutex.RUnlock()
 
 	s.logger.Printf("Cache miss for MusicBrainz search: key=%s", cacheKey)
 
@@ -223,9 +254,7 @@ func (s *Service) SearchMusicBrainz(ctx context.Context, params SearchParams) ([
 		return nil, err
 	}
 
-	s.cacheMutex.Lock()
-	setCacheEntry(s.searchCache, cacheKey, result.Recordings, s.cacheTTL)
-	s.cacheMutex.Unlock()
+	s.setCacheEntry(cacheKey, result.Recordings)
 	s.logger.Printf("Cached MusicBrainz search result for key=%s, TTL=%s", cacheKey, s.cacheTTL)
 
 	return result.Recordings, nil

@@ -92,6 +92,11 @@ func (db *DB) Initialize() error {
 		return err
 	}
 
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_tracks_user_id_timestamp ON tracks(user_id, timestamp DESC)`)
+	if err != nil {
+		return err
+	}
+
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS atproto_state (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -150,23 +155,21 @@ func (db *DB) Initialize() error {
 		return err
 	}
 
+	// Apple Music developer token persistence
+	_, err = db.Exec(`
+    CREATE TABLE IF NOT EXISTS applemusic_token (
+      token TEXT,
+      expires_at TIMESTAMP
+    )
+	`)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
-// Apple Music developer token persistence
-func (db *DB) ensureAppleMusicTokenTable() error {
-	_, err := db.Exec(`
-        CREATE TABLE IF NOT EXISTS applemusic_token (
-            token TEXT,
-            expires_at TIMESTAMP
-        )`)
-	return err
-}
-
 func (db *DB) GetAppleMusicDeveloperToken() (string, time.Time, bool, error) {
-	if err := db.ensureAppleMusicTokenTable(); err != nil {
-		return "", time.Time{}, false, err
-	}
 	var token string
 	var exp time.Time
 	err := db.QueryRow(`SELECT token, expires_at FROM applemusic_token LIMIT 1`).Scan(&token, &exp)
@@ -180,9 +183,6 @@ func (db *DB) GetAppleMusicDeveloperToken() (string, time.Time, bool, error) {
 }
 
 func (db *DB) SaveAppleMusicDeveloperToken(token string, exp time.Time) error {
-	if err := db.ensureAppleMusicTokenTable(); err != nil {
-		return err
-	}
 	// Replace existing single row
 	_, err := db.Exec(`DELETE FROM applemusic_token`)
 	if err != nil {
@@ -377,6 +377,17 @@ func (db *DB) SaveTrack(userID int64, track *models.Track) (int64, error) {
 		track.DurationMs, track.ProgressMs, track.ServiceBaseUrl, track.ISRC, track.HasStamped).Scan(&trackID)
 
 	return trackID, err
+}
+
+// HasTrackListen reports whether a listen with the same name and timestamp
+// is already stored for the user, so resubmitted payloads stay idempotent.
+func (db *DB) HasTrackListen(userID int64, name string, timestamp time.Time) (bool, error) {
+	var exists bool
+	err := db.QueryRow(`
+	SELECT EXISTS(
+		SELECT 1 FROM tracks WHERE user_id = ? AND name = ? AND timestamp = ?
+	)`, userID, name, timestamp).Scan(&exists)
+	return exists, err
 }
 
 func (db *DB) UpdateTrack(trackID int64, track *models.Track) error {

@@ -121,10 +121,10 @@ func (p *Service) PublishPlayingNow(ctx context.Context, userID int64, track *mo
 		return fmt.Errorf("failed to create playing now status for DID %s: %w", did, err)
 	}
 
-	// Resets clear to false since there is a song playing. The publish playing state is kept in the services from
+	// Removes the cleared marker since there is a song playing. The publish playing state is kept in the services from
 	// if a song has changed/stamped
 	p.mu.Lock()
-	p.clearedStatus[userID] = false
+	delete(p.clearedStatus, userID)
 	p.mu.Unlock()
 
 	return nil

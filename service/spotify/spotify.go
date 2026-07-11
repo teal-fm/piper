@@ -70,6 +70,7 @@ type Service struct {
 	} // Added field for playing now service
 	userPlayStates map[int64]*userPlayState
 	userTokens     map[int64]string
+	httpClient     *http.Client
 	mu             sync.RWMutex
 	logger         *log.Logger
 }
@@ -87,7 +88,10 @@ func NewSpotifyService(database *db.DB, atprotoAuthService *atprotoauth.AuthServ
 		playingNowService:  playingNowService,
 		userPlayStates:     make(map[int64]*userPlayState),
 		userTokens:         make(map[int64]string),
-		logger:             logger,
+		httpClient: &http.Client{
+			Timeout: 10 * time.Second,
+		},
+		logger: logger,
 	}
 }
 
@@ -188,10 +192,10 @@ func (s *Service) LoadAllUsers() error {
 			s.userTokens[user.ID] = *user.AccessToken
 			count++
 		} else {
-			// Unlock so the refreshTokenInner method can lock to refresh tokens if needed
+			// Unlock so the refreshTokenForUser method can lock to refresh tokens if needed
 			s.mu.Unlock()
-			//We do not need to use the output of refreshTokenInner since it is added to the list inside the function
-			_, err := s.refreshTokenInner(user.ID)
+			//We do not need to use the output of refreshTokenForUser since it is added to the list inside the function
+			_, err := s.refreshTokenForUser(user)
 			if err != nil {
 				//Probably should remove the access token and refresh in long run?
 				s.logger.Printf("Error refreshing token for user %d: %v", user.ID, err)
@@ -225,6 +229,14 @@ func (s *Service) refreshTokenInner(userID int64) (string, error) {
 		return "", fmt.Errorf("user %d not found for refresh", userID)
 	}
 
+	return s.refreshTokenForUser(user)
+}
+
+// refreshTokenForUser refreshes the Spotify token for an already-loaded user.
+// It returns the new access token or an error.
+func (s *Service) refreshTokenForUser(user *models.User) (string, error) {
+	userID := user.ID
+
 	if user.RefreshToken == nil || *user.RefreshToken == "" {
 		// If no refresh token, remove potentially stale access token from cache and return error
 		s.mu.Lock()
@@ -252,8 +264,7 @@ func (s *Service) refreshTokenInner(userID int64) (string, error) {
 	req.Header.Set("Authorization", "Basic "+authHeader)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to execute refresh request: %w", err)
 	}
@@ -337,11 +348,12 @@ func (s *Service) RefreshExpiredTokens() {
 			continue
 		}
 
-		_, err := s.refreshTokenInner(user.ID)
+		_, err := s.refreshTokenForUser(user)
 
 		if err != nil {
 			// just print out errors here for now
 			s.logger.Printf("Error from service/spotify/spotify.go when refreshing tokens: %s", err.Error())
+			continue
 		}
 
 		refreshed++
@@ -359,8 +371,7 @@ func (s *Service) fetchSpotifyProfile(token string) (*spotifyProfile, error) {
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token)
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -455,7 +466,6 @@ func (s *Service) FetchCurrentTrack(userID int64) (*SpotifyTrackResponse, error)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token)
-	client := &http.Client{}
 	var resp *http.Response
 	var err error
 
@@ -463,7 +473,7 @@ func (s *Service) FetchCurrentTrack(userID int64) (*SpotifyTrackResponse, error)
 	for attempt := range 2 {
 		// We need to be able to re-read the body if the request is retried,
 		// but since this is a GET request with no body, we don't need to worry about it.
-		resp, err = client.Do(req) // Use = instead of := inside loop
+		resp, err = s.httpClient.Do(req) // Use = instead of := inside loop
 		if err != nil {
 			// Network or other client error, don't retry
 			return nil, fmt.Errorf("failed to execute spotify request on attempt %d: %w", attempt+1, err)
@@ -744,6 +754,17 @@ func (s *Service) fetchTrackForUser(ctx context.Context, userID int64) {
 }
 
 func (s *Service) fetchAllUserTracks(ctx context.Context) {
+	// evict play states that have been idle for over a day; states must
+	// survive across poll cycles, so only long-stale entries are removed
+	staleCutoff := time.Now().Add(-24 * time.Hour)
+	s.mu.Lock()
+	for userID, state := range s.userPlayStates {
+		if state == nil || state.lastPollTime.Before(staleCutoff) {
+			delete(s.userPlayStates, userID)
+		}
+	}
+	s.mu.Unlock()
+
 	// copy userIDs to avoid holding the lock too long
 	s.mu.RLock()
 	userIDs := make([]int64, 0, len(s.userTokens))

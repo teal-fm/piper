@@ -437,6 +437,185 @@ func TestListenBrainzSubmission_ValidationErrors(t *testing.T) {
 	}
 }
 
+func TestListenBrainzSubmission_DuplicateResubmission(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	userID, apiKey := createTestUser(t, database)
+
+	submission := models.ListenBrainzSubmission{
+		ListenType: "single",
+		Payload: []models.ListenBrainzPayload{
+			{
+				ListenedAt: func() *int64 { i := int64(1704067200); return &i }(),
+				TrackMetadata: models.ListenBrainzTrackMetadata{
+					ArtistName: "Daft Punk",
+					TrackName:  "One More Time",
+				},
+			},
+		},
+	}
+
+	jsonData, err := json.Marshal(submission)
+	if err != nil {
+		t.Fatalf("Failed to marshal submission: %v", err)
+	}
+
+	handler := apiSubmitListensHandler(database, nil, nil, nil)
+
+	// Submit the identical payload twice, as a client retrying would
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/1/submit-listens", bytes.NewReader(jsonData))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Token "+apiKey)
+		req = req.WithContext(withUserContext(req.Context(), userID))
+
+		rr := httptest.NewRecorder()
+		handler(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Errorf("Submission %d: expected status %d, got %d. Body: %s", i+1, http.StatusOK, rr.Code, rr.Body.String())
+		}
+	}
+
+	tracks, err := database.GetRecentTracks(userID, 10)
+	if err != nil {
+		t.Fatalf("Failed to get tracks from database: %v", err)
+	}
+
+	if len(tracks) != 1 {
+		t.Fatalf("Expected 1 track in database after duplicate resubmission, got %d", len(tracks))
+	}
+}
+
+func TestListenBrainzSubmission_CancelledRequestStopsProcessing(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	userID, apiKey := createTestUser(t, database)
+
+	submission := models.ListenBrainzSubmission{
+		ListenType: "import",
+		Payload: []models.ListenBrainzPayload{
+			{
+				ListenedAt: func() *int64 { i := int64(1704067200); return &i }(),
+				TrackMetadata: models.ListenBrainzTrackMetadata{
+					ArtistName: "Artist One",
+					TrackName:  "Track One",
+				},
+			},
+			{
+				ListenedAt: func() *int64 { i := int64(1704067300); return &i }(),
+				TrackMetadata: models.ListenBrainzTrackMetadata{
+					ArtistName: "Artist Two",
+					TrackName:  "Track Two",
+				},
+			},
+		},
+	}
+
+	jsonData, err := json.Marshal(submission)
+	if err != nil {
+		t.Fatalf("Failed to marshal submission: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/1/submit-listens", bytes.NewReader(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Token "+apiKey)
+
+	// Simulate the client (or a proxy timeout) having gone away
+	ctx, cancel := context.WithCancel(withUserContext(req.Context(), userID))
+	cancel()
+	req = req.WithContext(ctx)
+
+	rr := httptest.NewRecorder()
+	handler := apiSubmitListensHandler(database, nil, nil, nil)
+	handler(rr, req)
+
+	tracks, err := database.GetRecentTracks(userID, 10)
+	if err != nil {
+		t.Fatalf("Failed to get tracks from database: %v", err)
+	}
+
+	if len(tracks) != 0 {
+		t.Fatalf("Expected 0 tracks saved for a cancelled request, got %d", len(tracks))
+	}
+}
+
+func TestListenBrainzSubmission_RespondsWithoutWaitingForHydration(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	userID, apiKey := createTestUser(t, database)
+
+	// A real MusicBrainz service: its rate limiter allows 1 request/second,
+	// so hydrating 3 tracks synchronously takes at least 2 seconds
+	mbService := musicbrainz.NewMusicBrainzService(database)
+
+	submission := models.ListenBrainzSubmission{
+		ListenType: "import",
+		Payload: []models.ListenBrainzPayload{
+			{
+				ListenedAt: func() *int64 { i := int64(1704067200); return &i }(),
+				TrackMetadata: models.ListenBrainzTrackMetadata{
+					ArtistName: "Hydration Artist One",
+					TrackName:  "Hydration Track One",
+				},
+			},
+			{
+				ListenedAt: func() *int64 { i := int64(1704067300); return &i }(),
+				TrackMetadata: models.ListenBrainzTrackMetadata{
+					ArtistName: "Hydration Artist Two",
+					TrackName:  "Hydration Track Two",
+				},
+			},
+			{
+				ListenedAt: func() *int64 { i := int64(1704067400); return &i }(),
+				TrackMetadata: models.ListenBrainzTrackMetadata{
+					ArtistName: "Hydration Artist Three",
+					TrackName:  "Hydration Track Three",
+				},
+			},
+		},
+	}
+
+	jsonData, err := json.Marshal(submission)
+	if err != nil {
+		t.Fatalf("Failed to marshal submission: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/1/submit-listens", bytes.NewReader(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Token "+apiKey)
+	req = req.WithContext(withUserContext(req.Context(), userID))
+
+	rr := httptest.NewRecorder()
+	handler := apiSubmitListensHandler(database, nil, nil, mbService)
+
+	start := time.Now()
+	handler(rr, req)
+	elapsed := time.Since(start)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d. Body: %s", http.StatusOK, rr.Code, rr.Body.String())
+	}
+
+	// The response must not be gated on MusicBrainz lookups; a synchronous
+	// implementation cannot beat the 1 req/s limiter across 3 tracks
+	if elapsed >= time.Second {
+		t.Fatalf("Handler took %v; it must respond without waiting for hydration", elapsed)
+	}
+
+	tracks, err := database.GetRecentTracks(userID, 10)
+	if err != nil {
+		t.Fatalf("Failed to get tracks from database: %v", err)
+	}
+
+	if len(tracks) != 3 {
+		t.Fatalf("Expected 3 tracks saved before hydration completes, got %d", len(tracks))
+	}
+}
+
 func TestListenBrainzSubmission_Unauthorized(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()

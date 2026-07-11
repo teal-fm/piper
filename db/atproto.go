@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -316,6 +317,10 @@ func (s *SqliteATProtoStore) SaveAuthRequestInfo(ctx context.Context, info oauth
 		accountDIDStr = info.AccountDID.String()
 	} else {
 		accountDIDStr = nil
+	}
+	// clean up abandoned auth requests; OAuth flows are short-lived
+	if _, cleanupErr := s.db.Exec(`DELETE FROM atproto_state WHERE created_at < ?`, time.Now().UTC().Add(-1*time.Hour)); cleanupErr != nil {
+		log.Printf("Error deleting stale atproto auth request state: %v", cleanupErr)
 	}
 	_, err = s.db.Exec(`
 		INSERT INTO atproto_state (
