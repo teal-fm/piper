@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "fm.teal.alpha.actor.searchActors",
+  "id": "fm.teal.actor.searchActors",
   "description": "This lexicon is in a not officially released state. It is subject to change. | Searches for actors based on profile contents.",
   "defs": {
     "main": {
@@ -37,7 +37,7 @@
               "type": "array",
               "items": {
                 "type": "ref",
-                "ref": "fm.teal.alpha.actor.defs#miniProfileView"
+                "ref": "fm.teal.actor.defs#miniProfileView"
               }
             },
             "cursor": {

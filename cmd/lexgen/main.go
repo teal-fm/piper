@@ -39,12 +39,12 @@ var modules = []moduleConfig{
 		pkgName:    "teal",
 		cborOut:    "api/teal/cbor_gen.go",
 		cborTypes: []string{
-			"teal.AlphaFeedPlay",
-			"teal.AlphaActorProfile",
-			"teal.AlphaActorStatus",
-			"teal.AlphaActorProfile_FeaturedItem",
-			"teal.AlphaFeedDefs_PlayView",
-			"teal.AlphaFeedDefs_Artist",
+			"teal.FeedPlay",
+			"teal.ActorProfile",
+			"teal.ActorStatus",
+			"teal.ActorProfile_FeaturedItem",
+			"teal.FeedDefs_PlayView",
+			"teal.FeedDefs_Artist",
 		},
 	},
 }

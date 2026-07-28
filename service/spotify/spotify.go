@@ -20,7 +20,7 @@ import (
 	// Added for atproto.RepoCreateRecord_Input
 	// Added for lexutil.LexiconTypeDecoder
 	// Added for xrpc.Client
-	"github.com/spf13/viper" // Added for teal.AlphaFeedPlay
+	"github.com/spf13/viper" // Added for teal.FeedPlay
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
 	atprotoauth "github.com/teal-fm/piper/oauth/atproto"

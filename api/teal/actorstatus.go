@@ -4,18 +4,18 @@ package teal
 
 import "github.com/bluesky-social/indigo/lex/util"
 
-// schema: fm.teal.alpha.actor.status
+// schema: fm.teal.actor.status
 
-// RECORDTYPE: AlphaActorStatus
-type AlphaActorStatus struct {
-	LexiconTypeID string `json:"$type,const=fm.teal.alpha.actor.status" cborgen:"$type,const=fm.teal.alpha.actor.status"`
+// RECORDTYPE: ActorStatus
+type ActorStatus struct {
+	LexiconTypeID string `json:"$type,const=fm.teal.actor.status" cborgen:"$type,const=fm.teal.actor.status"`
 	// expiry: The RFC 3339 formatted time of the expiry time of the item. If unavailable, default to 10 minutes past the start time.
-	Expiry *string                 `json:"expiry,omitempty" cborgen:"expiry,omitempty"`
-	Item   *AlphaFeedDefs_PlayView `json:"item" cborgen:"item"`
+	Expiry *string            `json:"expiry,omitempty" cborgen:"expiry,omitempty"`
+	Item   *FeedDefs_PlayView `json:"item" cborgen:"item"`
 	// time: The RFC 3339 formatted time of when the item was recorded
 	Time string `json:"time" cborgen:"time"`
 }
 
 func init() {
-	util.RegisterType("fm.teal.alpha.actor.status", &AlphaActorStatus{})
+	util.RegisterType("fm.teal.actor.status", &ActorStatus{})
 }

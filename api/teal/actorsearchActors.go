@@ -2,7 +2,7 @@
 
 package teal
 
-// schema: fm.teal.alpha.actor.searchActors
+// schema: fm.teal.actor.searchActors
 
 import (
 	"context"
@@ -10,20 +10,20 @@ import (
 	"github.com/bluesky-social/indigo/lex/util"
 )
 
-// AlphaActorSearchActors_Output is the output of a fm.teal.alpha.actor.searchActors call.
-type AlphaActorSearchActors_Output struct {
-	Actors []*AlphaActorDefs_MiniProfileView `json:"actors" cborgen:"actors"`
+// ActorSearchActors_Output is the output of a fm.teal.actor.searchActors call.
+type ActorSearchActors_Output struct {
+	Actors []*ActorDefs_MiniProfileView `json:"actors" cborgen:"actors"`
 	// cursor: Cursor for pagination
 	Cursor *string `json:"cursor,omitempty" cborgen:"cursor,omitempty"`
 }
 
-// AlphaActorSearchActors calls the XRPC method "fm.teal.alpha.actor.searchActors".
+// ActorSearchActors calls the XRPC method "fm.teal.actor.searchActors".
 //
 // cursor: Cursor for pagination
 // limit: The maximum number of actors to return
 // q: The search query
-func AlphaActorSearchActors(ctx context.Context, c util.LexClient, cursor string, limit int64, q string) (*AlphaActorSearchActors_Output, error) {
-	var out AlphaActorSearchActors_Output
+func ActorSearchActors(ctx context.Context, c util.LexClient, cursor string, limit int64, q string) (*ActorSearchActors_Output, error) {
+	var out ActorSearchActors_Output
 
 	params := map[string]interface{}{}
 	if cursor != "" {
@@ -33,7 +33,7 @@ func AlphaActorSearchActors(ctx context.Context, c util.LexClient, cursor string
 		params["limit"] = limit
 	}
 	params["q"] = q
-	if err := c.LexDo(ctx, util.Query, "", "fm.teal.alpha.actor.searchActors", params, nil, &out); err != nil {
+	if err := c.LexDo(ctx, util.Query, "", "fm.teal.actor.searchActors", params, nil, &out); err != nil {
 		return nil, err
 	}
 

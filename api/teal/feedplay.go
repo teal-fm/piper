@@ -4,17 +4,17 @@ package teal
 
 import "github.com/bluesky-social/indigo/lex/util"
 
-// schema: fm.teal.alpha.feed.play
+// schema: fm.teal.feed.play
 
-// RECORDTYPE: AlphaFeedPlay
-type AlphaFeedPlay struct {
-	LexiconTypeID string `json:"$type,const=fm.teal.alpha.feed.play" cborgen:"$type,const=fm.teal.alpha.feed.play"`
+// RECORDTYPE: FeedPlay
+type FeedPlay struct {
+	LexiconTypeID string `json:"$type,const=fm.teal.feed.play" cborgen:"$type,const=fm.teal.feed.play"`
 	// artistMbIds: DEPRECATED: USE 'artists' INSTEAD. Array of Musicbrainz artist IDs.
 	ArtistMbIds []string `json:"artistMbIds,omitempty" cborgen:"artistMbIds,omitempty"`
 	// artistNames: DEPRECATED: USE 'artists' INSTEAD. Array of artist names in order of original appearance.
 	ArtistNames []string `json:"artistNames,omitempty" cborgen:"artistNames,omitempty"`
 	// artists: Array of artists in order of original appearance.
-	Artists []*AlphaFeedDefs_Artist `json:"artists,omitempty" cborgen:"artists,omitempty"`
+	Artists []*FeedDefs_Artist `json:"artists,omitempty" cborgen:"artists,omitempty"`
 	// duration: The length of the track in seconds
 	Duration *int64 `json:"duration,omitempty" cborgen:"duration,omitempty"`
 	// isrc: The ISRC code associated with the recording
@@ -44,5 +44,5 @@ type AlphaFeedPlay struct {
 }
 
 func init() {
-	util.RegisterType("fm.teal.alpha.feed.play", &AlphaFeedPlay{})
+	util.RegisterType("fm.teal.feed.play", &FeedPlay{})
 }

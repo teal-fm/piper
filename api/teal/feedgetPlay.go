@@ -2,7 +2,7 @@
 
 package teal
 
-// schema: fm.teal.alpha.feed.getPlay
+// schema: fm.teal.feed.getPlay
 
 import (
 	"context"
@@ -10,22 +10,22 @@ import (
 	"github.com/bluesky-social/indigo/lex/util"
 )
 
-// AlphaFeedGetPlay_Output is the output of a fm.teal.alpha.feed.getPlay call.
-type AlphaFeedGetPlay_Output struct {
-	Play *AlphaFeedDefs_PlayView `json:"play" cborgen:"play"`
+// FeedGetPlay_Output is the output of a fm.teal.feed.getPlay call.
+type FeedGetPlay_Output struct {
+	Play *FeedDefs_PlayView `json:"play" cborgen:"play"`
 }
 
-// AlphaFeedGetPlay calls the XRPC method "fm.teal.alpha.feed.getPlay".
+// FeedGetPlay calls the XRPC method "fm.teal.feed.getPlay".
 //
 // authorDID: The author's DID for the play
 // rkey: The record key of the play
-func AlphaFeedGetPlay(ctx context.Context, c util.LexClient, authorDID string, rkey string) (*AlphaFeedGetPlay_Output, error) {
-	var out AlphaFeedGetPlay_Output
+func FeedGetPlay(ctx context.Context, c util.LexClient, authorDID string, rkey string) (*FeedGetPlay_Output, error) {
+	var out FeedGetPlay_Output
 
 	params := map[string]interface{}{}
 	params["authorDID"] = authorDID
 	params["rkey"] = rkey
-	if err := c.LexDo(ctx, util.Query, "", "fm.teal.alpha.feed.getPlay", params, nil, &out); err != nil {
+	if err := c.LexDo(ctx, util.Query, "", "fm.teal.feed.getPlay", params, nil, &out); err != nil {
 		return nil, err
 	}
 

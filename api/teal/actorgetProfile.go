@@ -2,7 +2,7 @@
 
 package teal
 
-// schema: fm.teal.alpha.actor.getProfile
+// schema: fm.teal.actor.getProfile
 
 import (
 	"context"
@@ -10,20 +10,20 @@ import (
 	"github.com/bluesky-social/indigo/lex/util"
 )
 
-// AlphaActorGetProfile_Output is the output of a fm.teal.alpha.actor.getProfile call.
-type AlphaActorGetProfile_Output struct {
-	Actor *AlphaActorDefs_ProfileView `json:"actor" cborgen:"actor"`
+// ActorGetProfile_Output is the output of a fm.teal.actor.getProfile call.
+type ActorGetProfile_Output struct {
+	Actor *ActorDefs_ProfileView `json:"actor" cborgen:"actor"`
 }
 
-// AlphaActorGetProfile calls the XRPC method "fm.teal.alpha.actor.getProfile".
+// ActorGetProfile calls the XRPC method "fm.teal.actor.getProfile".
 //
 // actor: The author's DID
-func AlphaActorGetProfile(ctx context.Context, c util.LexClient, actor string) (*AlphaActorGetProfile_Output, error) {
-	var out AlphaActorGetProfile_Output
+func ActorGetProfile(ctx context.Context, c util.LexClient, actor string) (*ActorGetProfile_Output, error) {
+	var out ActorGetProfile_Output
 
 	params := map[string]interface{}{}
 	params["actor"] = actor
-	if err := c.LexDo(ctx, util.Query, "", "fm.teal.alpha.actor.getProfile", params, nil, &out); err != nil {
+	if err := c.LexDo(ctx, util.Query, "", "fm.teal.actor.getProfile", params, nil, &out); err != nil {
 		return nil, err
 	}
 

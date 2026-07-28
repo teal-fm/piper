@@ -2,20 +2,20 @@
 
 package teal
 
-// schema: fm.teal.alpha.feed.defs
+// schema: fm.teal.feed.defs
 
-// AlphaFeedDefs_Artist is a "artist" in the fm.teal.alpha.feed.defs schema.
-type AlphaFeedDefs_Artist struct {
+// FeedDefs_Artist is a "artist" in the fm.teal.feed.defs schema.
+type FeedDefs_Artist struct {
 	// artistMbId: The MusicBrainz artist ID URI, formatted as mbid:<uuid>
 	ArtistMbId *string `json:"artistMbId,omitempty" cborgen:"artistMbId,omitempty"`
 	// artistName: The name of the artist
 	ArtistName string `json:"artistName" cborgen:"artistName"`
 }
 
-// AlphaFeedDefs_PlayView is a "playView" in the fm.teal.alpha.feed.defs schema.
-type AlphaFeedDefs_PlayView struct {
+// FeedDefs_PlayView is a "playView" in the fm.teal.feed.defs schema.
+type FeedDefs_PlayView struct {
 	// artists: Array of artists in order of original appearance.
-	Artists []*AlphaFeedDefs_Artist `json:"artists" cborgen:"artists"`
+	Artists []*FeedDefs_Artist `json:"artists" cborgen:"artists"`
 	// duration: The length of the track in seconds
 	Duration *int64 `json:"duration,omitempty" cborgen:"duration,omitempty"`
 	// isrc: The ISRC code associated with the recording
