@@ -77,6 +77,7 @@ func (db *DB) Initialize() error {
 		"display_name TEXT",
 		"avatar_url TEXT",
 		"profile_fetched_at TIMESTAMP",
+		"lastfm_avatar_url TEXT",
 	} {
 		name := strings.Fields(column)[0]
 		_, err = db.Exec(`ALTER TABLE users ADD COLUMN ` + column)
@@ -327,6 +328,7 @@ func (db *DB) GetUserByID(ID int64) (*models.User, error) {
            refresh_token,
            token_expiry,
            lastfm_username,
+           lastfm_avatar_url,
            applemusic_user_token,
            handle,
            display_name,
@@ -337,7 +339,7 @@ func (db *DB) GetUserByID(ID int64) (*models.User, error) {
     FROM users WHERE id = ?`, ID).Scan(
 		&user.ID, &user.Username, &user.Email, &user.ATProtoDID, &user.MostRecentAtProtoSessionID, &user.SpotifyID,
 		&user.AccessToken, &user.RefreshToken, &user.TokenExpiry,
-		&user.LastFMUsername, &user.AppleMusicUserToken,
+		&user.LastFMUsername, &user.LastFMAvatarURL, &user.AppleMusicUserToken,
 		&user.Handle, &user.DisplayName, &user.AvatarURL, &user.ProfileFetchedAt,
 		&user.CreatedAt, &user.UpdatedAt)
 

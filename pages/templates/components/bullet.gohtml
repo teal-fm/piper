@@ -1,0 +1,6 @@
+{{/*
+  Marker colour for the "connect your accounts" list: green once the service is
+  linked, grey while it isn't. Takes the connected bool as its argument, and is
+  only ever used inside a class attribute.
+*/}}
+{{ define "components/bullet" }}{{ if . }}marker:text-[#1DB954]{{ else }}marker:text-gray-400{{ end }}{{ end }}

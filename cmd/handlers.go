@@ -17,6 +17,7 @@ import (
 	"github.com/teal-fm/piper/service/applemusic"
 	atprotoservice "github.com/teal-fm/piper/service/atproto"
 	"github.com/teal-fm/piper/service/bsky"
+	"github.com/teal-fm/piper/service/lastfm"
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"github.com/teal-fm/piper/service/playingnow"
 	"github.com/teal-fm/piper/service/spotify"
@@ -27,7 +28,7 @@ type HomeParams struct {
 	NavBar pages.NavBar
 }
 
-func home(database *db.DB, pg *pages.Pages) http.HandlerFunc {
+func home(database *db.DB, pg *pages.Pages, lastfmService *lastfm.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "text/html")
@@ -42,6 +43,7 @@ func home(database *db.DB, pg *pages.Pages) http.HandlerFunc {
 				log.Printf("Error fetching user %d details for home page: %v", userID, err)
 			}
 			user = backfillProfile(r.Context(), database, user)
+			user = backfillLastFMAvatar(r.Context(), database, lastfmService, user)
 		}
 
 		params := HomeParams{
@@ -77,6 +79,30 @@ func backfillProfile(ctx context.Context, database *db.DB, user *models.User) *m
 	user.Handle = &profile.Handle
 	user.DisplayName = &profile.DisplayName
 	user.AvatarURL = &profile.Avatar
+	return user
+}
+
+// backfillLastFMAvatar caches the linked Last.fm account's picture. The cached
+// value is cleared whenever the username changes, so this refetches on a
+// re-link; otherwise it runs once and is best-effort. Accounts with no picture
+// cache an empty string, which stops us asking again on every page load.
+func backfillLastFMAvatar(ctx context.Context, database *db.DB, lastfmService *lastfm.Service, user *models.User) *models.User {
+	if user == nil || lastfmService == nil || user.LastFMUsername == nil || user.LastFMAvatarURL != nil {
+		return user
+	}
+
+	avatarURL, err := lastfmService.FetchAvatarURL(ctx, *user.LastFMUsername)
+	if err != nil {
+		log.Printf("Error fetching Last.fm avatar for %s: %v", *user.LastFMUsername, err)
+		return user
+	}
+
+	if err := database.SaveLastFMAvatarURL(user.ID, avatarURL); err != nil {
+		log.Printf("Error saving Last.fm avatar for %s: %v", *user.LastFMUsername, err)
+		return user
+	}
+
+	user.LastFMAvatarURL = &avatarURL
 	return user
 }
 

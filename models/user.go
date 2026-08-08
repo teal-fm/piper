@@ -16,6 +16,9 @@ type User struct {
 
 	// lfm information
 	LastFMUsername *string
+	// LastFMAvatarURL is cached from user.getinfo. An empty (but non-nil) value
+	// means we looked and the account has no avatar, so we don't ask again.
+	LastFMAvatarURL *string
 
 	// Apple Music
 	AppleMusicUserToken *string

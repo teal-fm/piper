@@ -32,6 +32,7 @@ type application struct {
 	sessionManager    *session.Manager
 	oauthManager      *oauth.ServiceManager
 	spotifyService    *spotify.Service
+	lastfmService     *lastfm.Service
 	apiKeyService     *apikeyService.Service
 	mbService         *musicbrainz.Service
 	atprotoService    *atproto.AuthService
@@ -212,6 +213,7 @@ func main() {
 		apiKeyService:     apiKeyService,
 		mbService:         mbService,
 		spotifyService:    spotifyService,
+		lastfmService:     lastfmService,
 		atprotoService:    atprotoService,
 		playingNowService: playingNowService,
 		appleMusicService: appleMusicService,

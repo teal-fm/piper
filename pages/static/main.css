@@ -248,11 +248,20 @@
   .inline {
     display: inline;
   }
+  .inline-flex {
+    display: inline-flex;
+  }
   .table {
     display: table;
   }
+  .h-5 {
+    height: calc(var(--spacing) * 5);
+  }
   .h-6 {
     height: calc(var(--spacing) * 6);
+  }
+  .w-5 {
+    width: calc(var(--spacing) * 5);
   }
   .w-6 {
     width: calc(var(--spacing) * 6);
@@ -407,6 +416,9 @@
   .text-left {
     text-align: left;
   }
+  .align-middle {
+    vertical-align: middle;
+  }
   .font-mono {
     font-family: var(--font-mono);
   }
@@ -452,9 +464,6 @@
   .uppercase {
     text-transform: uppercase;
   }
-  .italic {
-    font-style: italic;
-  }
   .no-underline {
     text-decoration-line: none;
   }
@@ -465,6 +474,34 @@
     transition-property: color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to, opacity, box-shadow, transform, translate, scale, rotate, filter, -webkit-backdrop-filter, backdrop-filter, display, content-visibility, overlay, pointer-events;
     transition-timing-function: var(--tw-ease, var(--default-transition-timing-function));
     transition-duration: var(--tw-duration, var(--default-transition-duration));
+  }
+  .marker\:text-\[\#1DB954\] {
+    & *::marker {
+      color: #1DB954;
+    }
+    &::marker {
+      color: #1DB954;
+    }
+    & *::-webkit-details-marker {
+      color: #1DB954;
+    }
+    &::-webkit-details-marker {
+      color: #1DB954;
+    }
+  }
+  .marker\:text-gray-400 {
+    & *::marker {
+      color: var(--color-gray-400);
+    }
+    &::marker {
+      color: var(--color-gray-400);
+    }
+    & *::-webkit-details-marker {
+      color: var(--color-gray-400);
+    }
+    &::-webkit-details-marker {
+      color: var(--color-gray-400);
+    }
   }
   .hover\:opacity-90 {
     &:hover {

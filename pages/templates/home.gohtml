@@ -16,40 +16,60 @@
   <p class="mb-2">You're logged in!</p>
   <ul class="list-disc pl-5 mb-3">
     {{ if .NavBar.SpotifyEnabled }}
-    <li>
+    <li class="{{ template "components/bullet" .NavBar.SpotifyConnected }}">
       <a class="text-[#1DB954] font-bold" href="/login/spotify"
         >Connect your Spotify account</a
       >
       to start tracking.
     </li>
     {{ else }}
-    <li class="text-gray-400">
+    <li class="text-gray-400 {{ template "components/bullet" false }}">
       <span title="Spotify is disabled on this server">Spotify tracking (disabled on this server)</span>
     </li>
     {{ end }}
 
     {{ if .NavBar.LastFMEnabled }}
-    <li>
+    {{ if .NavBar.LastFMUsername }}
+    <li class="{{ template "components/bullet" .NavBar.LastFMConnected }}">
+      <span class="inline-flex items-center gap-2 align-middle">
+        {{ if .NavBar.LastFMAvatarURL }}
+        <img
+          class="w-5 h-5 rounded-full object-cover shrink-0"
+          src="{{ .NavBar.LastFMAvatarURL }}"
+          alt=""
+          loading="lazy"
+        />
+        {{ end }}
+        <span>
+          Last.fm connected as
+          <span class="font-bold">{{ .NavBar.LastFMUsername }}</span>.
+          <a class="text-[#1DB954] font-bold" href="/link-lastfm">Change account</a>.
+        </span>
+      </span>
+    </li>
+    {{ else }}
+    <li class="{{ template "components/bullet" .NavBar.LastFMConnected }}">
       <a class="text-[#1DB954] font-bold" href="/link-lastfm"
         >Link your Last.fm account</a
       >
       to track scrobbles.
     </li>
+    {{ end }}
     {{ else }}
-    <li class="text-gray-400">
+    <li class="text-gray-400 {{ template "components/bullet" false }}">
       <span title="Last.fm is disabled on this server">Last.fm tracking (disabled on this server)</span>
     </li>
     {{ end }}
 
     {{ if .NavBar.AppleMusicEnabled }}
-    <li>
+    <li class="{{ template "components/bullet" .NavBar.AppleMusicConnected }}">
       <a class="text-[#1DB954] font-bold" href="/link-applemusic"
         >Link your Apple Music account</a
       >
       to fetch recently played.
     </li>
     {{ else }}
-    <li class="text-gray-400">
+    <li class="text-gray-400 {{ template "components/bullet" false }}">
       <span title="Apple Music is disabled on this server">Apple Music tracking (disabled on this server)</span>
     </li>
     {{ end }}
@@ -78,14 +98,6 @@
     <a class="text-[#1DB954] font-bold" href="/api-keys">API keys</a> for
     programmatic access.
   </p>
-
-  {{ if .NavBar.LastFMUsername }}
-  <p class="italic text-gray-600">
-    Last.fm Username: {{ .NavBar.LastFMUsername }}
-  </p>
-  {{else }}
-  <p class="italic text-gray-600">Last.fm account not linked.</p>
-  {{ end }}
 
   {{ else }}
 

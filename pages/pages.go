@@ -163,9 +163,15 @@ type NavBar struct {
 	DisplayName       string
 	AvatarURL         string
 	LastFMUsername    string
+	LastFMAvatarURL   string
 	SpotifyEnabled    bool
 	LastFMEnabled     bool
 	AppleMusicEnabled bool
+	// *Connected report whether this user has linked the service, as opposed to
+	// *Enabled, which reports whether the server offers it at all.
+	SpotifyConnected    bool
+	LastFMConnected     bool
+	AppleMusicConnected bool
 }
 
 // NewNavBar builds the shared nav params from the current user. user may be nil
@@ -195,6 +201,13 @@ func NewNavBar(user *models.User, isLoggedIn bool) NavBar {
 	if user.LastFMUsername != nil {
 		nav.LastFMUsername = *user.LastFMUsername
 	}
+	if user.LastFMAvatarURL != nil {
+		nav.LastFMAvatarURL = *user.LastFMAvatarURL
+	}
+
+	nav.SpotifyConnected = user.SpotifyID != nil
+	nav.LastFMConnected = user.LastFMUsername != nil
+	nav.AppleMusicConnected = user.AppleMusicUserToken != nil
 
 	return nav
 }

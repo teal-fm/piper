@@ -7,10 +7,25 @@ import (
 )
 
 func (db *DB) AddLastFMUsername(userID int64, lastfmUsername string) error {
+	// Clearing the cached avatar makes the next page load re-fetch it, so
+	// pointing piper at a different Last.fm account shows the right picture.
 	_, err := db.Exec(`
     UPDATE users
-    SET lastfm_username = ?
+    SET lastfm_username = ?,
+        lastfm_avatar_url = NULL
     WHERE id = ?`, lastfmUsername, userID)
+
+	return err
+}
+
+// SaveLastFMAvatarURL caches the avatar from user.getinfo. An empty url is
+// stored deliberately: it records that the account simply has no avatar, so we
+// stop asking on every page load.
+func (db *DB) SaveLastFMAvatarURL(userID int64, avatarURL string) error {
+	_, err := db.Exec(`
+    UPDATE users
+    SET lastfm_avatar_url = ?
+    WHERE id = ?`, avatarURL, userID)
 
 	return err
 }
