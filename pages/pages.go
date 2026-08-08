@@ -12,6 +12,9 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/spf13/viper"
+	"github.com/teal-fm/piper/models"
 )
 
 //go:embed templates/* static/*
@@ -156,8 +159,42 @@ func (p *Pages) Execute(name string, w io.Writer, params any) error {
 
 type NavBar struct {
 	IsLoggedIn        bool
+	Handle            string
+	DisplayName       string
+	AvatarURL         string
 	LastFMUsername    string
 	SpotifyEnabled    bool
 	LastFMEnabled     bool
 	AppleMusicEnabled bool
+}
+
+// NewNavBar builds the shared nav params from the current user. user may be nil
+// (logged out, or the lookup failed), in which case only the server's enabled
+// services are filled in.
+func NewNavBar(user *models.User, isLoggedIn bool) NavBar {
+	nav := NavBar{
+		IsLoggedIn:        isLoggedIn,
+		SpotifyEnabled:    viper.GetBool("enable_spotify"),
+		LastFMEnabled:     viper.GetBool("enable_lastfm"),
+		AppleMusicEnabled: viper.GetBool("enable_applemusic"),
+	}
+
+	if user == nil {
+		return nav
+	}
+
+	if user.Handle != nil {
+		nav.Handle = *user.Handle
+	}
+	if user.DisplayName != nil {
+		nav.DisplayName = *user.DisplayName
+	}
+	if user.AvatarURL != nil {
+		nav.AvatarURL = *user.AvatarURL
+	}
+	if user.LastFMUsername != nil {
+		nav.LastFMUsername = *user.LastFMUsername
+	}
+
+	return nav
 }

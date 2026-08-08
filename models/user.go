@@ -25,6 +25,13 @@ type User struct {
 	//This is meant to only be used by the automated music stamping service. If the user ever does an
 	//atproto action from the web ui use the atproto session id for the logged-in session
 	MostRecentAtProtoSessionID *string
+
+	// Public profile, fetched from the Bluesky AppView and cached here so we
+	// don't hit the network on every page render
+	Handle           *string
+	DisplayName      *string
+	AvatarURL        *string
+	ProfileFetchedAt *time.Time
 	//ATProtoAccessToken  *string
 	//ATProtoRefreshToken *string
 	//ATProtoTokenExpiry  *time.Time

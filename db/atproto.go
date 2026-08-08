@@ -83,6 +83,41 @@ func (db *DB) SetLatestATProtoSessionId(did string, atProtoSessionID string) err
 	return nil
 }
 
+// SaveATProtoProfile caches the public profile piper renders in the nav bar.
+// It is written at login and never read back from the network per request.
+func (db *DB) SaveATProtoProfile(did string, handle string, displayName string, avatarURL string) error {
+	now := time.Now().UTC()
+
+	result, err := db.Exec(`
+		UPDATE users
+		SET handle = ?,
+		    display_name = ?,
+		    avatar_url = ?,
+		    profile_fetched_at = ?,
+		    updated_at = ?
+		WHERE atproto_did = ?`,
+		handle,
+		displayName,
+		avatarURL,
+		now,
+		now,
+		did,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save profile for did %s: %w", did, err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected after saving profile for did %s: %w", did, err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("no user found with did %s to save profile", did)
+	}
+
+	return nil
+}
+
 type SqliteATProtoStore struct {
 	db *sql.DB
 }

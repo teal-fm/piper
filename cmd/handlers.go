@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/spf13/viper"
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/db/apikey"
 	"github.com/teal-fm/piper/models"
@@ -17,6 +16,7 @@ import (
 	"github.com/teal-fm/piper/pages"
 	"github.com/teal-fm/piper/service/applemusic"
 	atprotoservice "github.com/teal-fm/piper/service/atproto"
+	"github.com/teal-fm/piper/service/bsky"
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"github.com/teal-fm/piper/service/playingnow"
 	"github.com/teal-fm/piper/service/spotify"
@@ -32,33 +32,52 @@ func home(database *db.DB, pg *pages.Pages) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "text/html")
 
-		userID, authenticated := session.GetUserID(r.Context())
-		isLoggedIn := authenticated
-		lastfmUsername := ""
+		userID, isLoggedIn := session.GetUserID(r.Context())
 
+		var user *models.User
 		if isLoggedIn {
-			user, err := database.GetUserByID(userID)
-			fmt.Printf("User: %+v\n", user)
-			if err == nil && user != nil && user.LastFMUsername != nil {
-				lastfmUsername = *user.LastFMUsername
-			} else if err != nil {
+			var err error
+			user, err = database.GetUserByID(userID)
+			if err != nil {
 				log.Printf("Error fetching user %d details for home page: %v", userID, err)
 			}
+			user = backfillProfile(r.Context(), database, user)
 		}
+
 		params := HomeParams{
-			NavBar: pages.NavBar{
-				IsLoggedIn:        isLoggedIn,
-				LastFMUsername:    lastfmUsername,
-				SpotifyEnabled:    viper.GetBool("enable_spotify"),
-				LastFMEnabled:     viper.GetBool("enable_lastfm"),
-				AppleMusicEnabled: viper.GetBool("enable_applemusic"),
-			},
+			NavBar: pages.NewNavBar(user, isLoggedIn),
 		}
 		err := pg.Execute("home", w, params)
 		if err != nil {
 			log.Printf("Error executing template: %v", err)
 		}
 	}
+}
+
+// backfillProfile fills in the cached handle and avatar for users who logged in
+// before piper started storing them. Profiles are normally cached during the
+// ATProto callback, so this runs at most once per user and is best-effort: on
+// failure the nav bar just falls back to a placeholder.
+func backfillProfile(ctx context.Context, database *db.DB, user *models.User) *models.User {
+	if user == nil || user.ATProtoDID == nil || user.ProfileFetchedAt != nil {
+		return user
+	}
+
+	profile, err := bsky.FetchProfile(ctx, nil, *user.ATProtoDID)
+	if err != nil {
+		log.Printf("Error fetching profile for DID %s: %v", *user.ATProtoDID, err)
+		return user
+	}
+
+	if err := database.SaveATProtoProfile(*user.ATProtoDID, profile.Handle, profile.DisplayName, profile.Avatar); err != nil {
+		log.Printf("Error saving profile for DID %s: %v", *user.ATProtoDID, err)
+		return user
+	}
+
+	user.Handle = &profile.Handle
+	user.DisplayName = &profile.DisplayName
+	user.AvatarURL = &profile.Avatar
+	return user
 }
 
 func handleLinkLastfmForm(database *db.DB, pg *pages.Pages) http.HandlerFunc {
@@ -103,13 +122,7 @@ func handleLinkLastfmForm(database *db.DB, pg *pages.Pages) http.HandlerFunc {
 			NavBar          pages.NavBar
 			CurrentUsername string
 		}{
-			NavBar: pages.NavBar{
-				IsLoggedIn:        authenticated,
-				LastFMUsername:    currentUsername,
-				SpotifyEnabled:    viper.GetBool("enable_spotify"),
-				LastFMEnabled:     viper.GetBool("enable_lastfm"),
-				AppleMusicEnabled: viper.GetBool("enable_applemusic"),
-			},
+			NavBar:          pages.NewNavBar(currentUser, authenticated),
 			CurrentUsername: currentUsername,
 		}
 		err = pg.Execute("lastFMForm", w, pageParams)
@@ -147,27 +160,38 @@ func handleLinkLastfmSubmit(database *db.DB) http.HandlerFunc {
 	}
 }
 
-func handleAppleMusicLink(pg *pages.Pages, am *applemusic.Service) http.HandlerFunc {
+func handleAppleMusicLink(database *db.DB, pg *pages.Pages, am *applemusic.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
+
+		// The service is left nil when Apple Music is enabled but its credentials
+		// are missing, the same as the Spotify and Last.fm services.
+		if am == nil {
+			http.Error(w, "Apple Music is not configured on this server", http.StatusServiceUnavailable)
+			return
+		}
+
 		devToken, _, errTok := am.GenerateDeveloperToken()
 		if errTok != nil {
 			log.Printf("Error generating Apple Music developer token: %v", errTok)
 			http.Error(w, "Failed to prepare Apple Music", http.StatusInternalServerError)
 			return
 		}
+
+		userID, authenticated := session.GetUserID(r.Context())
+		user, err := database.GetUserByID(userID)
+		if err != nil {
+			log.Printf("Error fetching user %d for Apple Music link page: %v", userID, err)
+		}
+
 		data := struct {
 			NavBar   pages.NavBar
 			DevToken string
 		}{
 			DevToken: devToken,
-			NavBar: pages.NavBar{
-				SpotifyEnabled:    viper.GetBool("enable_spotify"),
-				LastFMEnabled:     viper.GetBool("enable_lastfm"),
-				AppleMusicEnabled: viper.GetBool("enable_applemusic"),
-			},
+			NavBar:   pages.NewNavBar(user, authenticated),
 		}
-		err := pg.Execute("applemusic_link", w, data)
+		err = pg.Execute("applemusic_link", w, data)
 		if err != nil {
 			log.Printf("Error executing template: %v", err)
 		}

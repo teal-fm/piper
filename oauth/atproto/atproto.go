@@ -9,6 +9,7 @@ import (
 	"github.com/bluesky-social/indigo/atproto/crypto"
 	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/teal-fm/piper/db"
+	"github.com/teal-fm/piper/service/bsky"
 
 	"github.com/teal-fm/piper/session"
 
@@ -17,7 +18,12 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"time"
 )
+
+// profileFetchTimeout bounds the AppView lookup that runs inside the login
+// redirect, so a stalled AppView doesn't leave the user staring at a blank page.
+const profileFetchTimeout = 5 * time.Second
 
 type AuthService struct {
 	clientApp      *oauth.ClientApp
@@ -169,6 +175,25 @@ func (a *AuthService) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+// cacheProfile refreshes the user's cached handle and avatar from the AppView.
+// It is best-effort on purpose: a slow or unreachable AppView must never block
+// or fail a login, so failures are logged and the nav bar falls back to a
+// placeholder until the next attempt.
+func (a *AuthService) cacheProfile(ctx context.Context, did string) {
+	ctx, cancel := context.WithTimeout(ctx, profileFetchTimeout)
+	defer cancel()
+
+	profile, err := bsky.FetchProfile(ctx, nil, did)
+	if err != nil {
+		a.logger.Printf("Failed to fetch profile for DID %s: %v", did, err)
+		return
+	}
+
+	if err := a.DB.SaveATProtoProfile(did, profile.Handle, profile.DisplayName, profile.Avatar); err != nil {
+		a.logger.Printf("Failed to save profile for DID %s: %v", did, err)
+	}
+}
+
 func (a *AuthService) HandleCallback(w http.ResponseWriter, r *http.Request) (int64, error) {
 	ctx := r.Context()
 
@@ -201,6 +226,8 @@ func (a *AuthService) HandleCallback(w http.ResponseWriter, r *http.Request) (in
 	if err != nil {
 		a.logger.Printf("Failed to set latest atproto session id for user %d: %v", user.ID, err)
 	}
+
+	a.cacheProfile(ctx, sessData.AccountDID.String())
 
 	a.logger.Printf("ATProto Callback Success: User %d (DID: %v) authenticated.", user.ID, user.ATProtoDID)
 	return user.ID, nil

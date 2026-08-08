@@ -71,6 +71,20 @@ func (db *DB) Initialize() error {
 		return err
 	}
 
+	// Cached ATProto public profile
+	for _, column := range []string{
+		"handle TEXT",
+		"display_name TEXT",
+		"avatar_url TEXT",
+		"profile_fetched_at TIMESTAMP",
+	} {
+		name := strings.Fields(column)[0]
+		_, err = db.Exec(`ALTER TABLE users ADD COLUMN ` + column)
+		if err != nil && err.Error() != "duplicate column name: "+name {
+			return err
+		}
+	}
+
 	_, err = db.Exec(`
 	CREATE TABLE IF NOT EXISTS tracks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -314,12 +328,17 @@ func (db *DB) GetUserByID(ID int64) (*models.User, error) {
            token_expiry,
            lastfm_username,
            applemusic_user_token,
+           handle,
+           display_name,
+           avatar_url,
+           profile_fetched_at,
            created_at,
            updated_at
     FROM users WHERE id = ?`, ID).Scan(
 		&user.ID, &user.Username, &user.Email, &user.ATProtoDID, &user.MostRecentAtProtoSessionID, &user.SpotifyID,
 		&user.AccessToken, &user.RefreshToken, &user.TokenExpiry,
 		&user.LastFMUsername, &user.AppleMusicUserToken,
+		&user.Handle, &user.DisplayName, &user.AvatarURL, &user.ProfileFetchedAt,
 		&user.CreatedAt, &user.UpdatedAt)
 
 	if errors.Is(err, sql.ErrNoRows) {

@@ -41,10 +41,35 @@
 
   <a class="text-[#1DB954] font-bold no-underline" href="/api-keys">API Keys</a>
   <a class="text-[#1DB954] font-bold no-underline" href="/logout">Logout</a>
+
+  {{ if .Handle }}
+  <span class="ml-auto flex items-center gap-2 min-w-0">
+    {{ if .AvatarURL }}
+    <img
+      class="w-6 h-6 rounded-full object-cover shrink-0"
+      src="{{ .AvatarURL }}"
+      alt=""
+      loading="lazy"
+    />
+    {{ else }}
+    <span
+      class="w-6 h-6 rounded-full bg-gray-200 text-gray-600 text-xs uppercase flex items-center justify-center shrink-0"
+      aria-hidden="true"
+      >{{ slice .Handle 0 1 }}</span
+    >
+    {{ end }}
+    <span class="truncate max-w-[12rem]" title="@{{ .Handle }}">
+      <span class="text-gray-600">
+        @{{ .Handle }}
+      </span
+      >
+    </span>
+  </span>
+  {{ end }}
   {{ else }}
-  <a class="text-[#1DB954] font-bold no-underline" href="/login/atproto"
-    >Login with ATProto</a
-  >
+  <a class="text-[#1DB954] font-bold no-underline" href="/login/atproto">
+    Login with ATProto
+  </a>
   {{ end }}
 </nav>
 {{ end }}
