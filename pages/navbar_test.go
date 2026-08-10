@@ -4,11 +4,18 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/teal-fm/piper/models"
 )
 
 func ptr(s string) *string { return &s }
+
+// homeParams mirrors cmd.HomeParams, which this package can't import.
+type homeParams struct {
+	NavBar    NavBar
+	BuildTime time.Time
+}
 
 func TestNewNavBar(t *testing.T) {
 	t.Run("nil user", func(t *testing.T) {
@@ -89,7 +96,7 @@ func TestHomeServiceBullets(t *testing.T) {
 	render := func(t *testing.T, nav NavBar) string {
 		t.Helper()
 		var buf bytes.Buffer
-		params := struct{ NavBar NavBar }{NavBar: nav}
+		params := homeParams{NavBar: nav}
 		if err := pages.Execute("home", &buf, params); err != nil {
 			t.Fatalf("failed to render home: %v", err)
 		}
@@ -224,7 +231,7 @@ func TestNavBarChipRendering(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			params := struct{ NavBar NavBar }{NavBar: tt.nav}
+			params := homeParams{NavBar: tt.nav}
 			if err := pages.Execute("home", &buf, params); err != nil {
 				t.Fatalf("failed to render home: %v", err)
 			}
@@ -242,4 +249,37 @@ func TestNavBarChipRendering(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHomeBuildTime(t *testing.T) {
+	pages := NewPages()
+
+	render := func(t *testing.T, params homeParams) string {
+		t.Helper()
+		var buf bytes.Buffer
+		if err := pages.Execute("home", &buf, params); err != nil {
+			t.Fatalf("failed to render home: %v", err)
+		}
+		return buf.String()
+	}
+
+	t.Run("shows the build time", func(t *testing.T) {
+		built := time.Date(2026, time.August, 10, 21, 25, 0, 0, time.UTC)
+		out := render(t, homeParams{BuildTime: built})
+		if !strings.Contains(out, "Built Aug 10, 2026 21:25 UTC") {
+			t.Error("expected the formatted build time in the footer")
+		}
+	})
+
+	// os.Executable and stat both have to fail for this, but "unknown" beats
+	// the "N/A UTC" that formatTime would produce on its own.
+	t.Run("unknown build time", func(t *testing.T) {
+		out := render(t, homeParams{})
+		if !strings.Contains(out, "Built unknown") {
+			t.Error("expected the footer to degrade to 'unknown'")
+		}
+		if strings.Contains(out, "UTC") {
+			t.Error("did not expect a timezone with no build time")
+		}
+	})
 }

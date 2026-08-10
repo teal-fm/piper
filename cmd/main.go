@@ -39,6 +39,7 @@ type application struct {
 	playingNowService *playingnow.Service
 	appleMusicService *applemusic.Service
 	pages             *pages.Pages
+	buildTime         time.Time
 }
 
 // JSON API handlers
@@ -218,6 +219,7 @@ func main() {
 		playingNowService: playingNowService,
 		appleMusicService: appleMusicService,
 		pages:             pages.NewPages(),
+		buildTime:         resolveBuildTime(),
 	}
 
 	trackerInterval := time.Duration(viper.GetInt("tracker.interval")) * time.Second

@@ -136,4 +136,8 @@
 </div>
 <!-- Close card div -->
 
+<footer class="text-sm text-gray-400">
+  Built {{ if .BuildTime.IsZero }}unknown{{ else }}{{ formatTime .BuildTime }} UTC{{ end }}
+</footer>
+
 {{ end }}

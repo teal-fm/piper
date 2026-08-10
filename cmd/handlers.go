@@ -25,10 +25,11 @@ import (
 )
 
 type HomeParams struct {
-	NavBar pages.NavBar
+	NavBar    pages.NavBar
+	BuildTime time.Time
 }
 
-func home(database *db.DB, pg *pages.Pages, lastfmService *lastfm.Service) http.HandlerFunc {
+func home(database *db.DB, pg *pages.Pages, lastfmService *lastfm.Service, buildTime time.Time) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "text/html")
@@ -47,7 +48,8 @@ func home(database *db.DB, pg *pages.Pages, lastfmService *lastfm.Service) http.
 		}
 
 		params := HomeParams{
-			NavBar: pages.NewNavBar(user, isLoggedIn),
+			NavBar:    pages.NewNavBar(user, isLoggedIn),
+			BuildTime: buildTime,
 		}
 		err := pg.Execute("home", w, params)
 		if err != nil {
