@@ -27,6 +27,7 @@ func (app *application) routes() http.Handler {
 
 	mux.HandleFunc("/login/spotify", session.WithAuth(app.oauthManager.HandleLogin("spotify"), app.sessionManager))
 	mux.HandleFunc("/callback/spotify", session.WithAuth(app.oauthManager.HandleCallback("spotify"), app.sessionManager))
+	mux.HandleFunc("/unlink-spotify", session.WithAuth(handleUnlinkSpotify(app.database, app.spotifyService), app.sessionManager))
 
 	mux.HandleFunc("/link-lastfm", session.WithAuth(handleLinkLastfmForm(app.database, app.pages), app.sessionManager)) // GET form
 	mux.HandleFunc("/link-lastfm/submit", session.WithAuth(handleLinkLastfmSubmit(app.database), app.sessionManager))   // POST submit - Changed route slightly

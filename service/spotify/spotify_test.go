@@ -1633,3 +1633,100 @@ func TestIsRefreshTokenRejected(t *testing.T) {
 		})
 	}
 }
+
+// ===== Unlink Tests =====
+
+// Unlinking has to clear both halves of the link: the DB row, and the
+// in-memory caches the polling loop walks.
+func TestUnlinkSpotify(t *testing.T) {
+	database := setupTestDB(t)
+	userID := createTestUser(t, database)
+
+	if _, err := database.AddSpotifySession(userID, "NATO", "night@the.opera", "nato", "access", "refresh", time.Now().UTC().Add(time.Hour)); err != nil {
+		t.Fatalf("Failed to link Spotify session: %v", err)
+	}
+
+	service := newTestService(database, &mockPlayingNowService{})
+	service.userTokens[userID] = "access"
+	service.userPlayStates[userID] = &userPlayState{}
+
+	if err := database.ClearSpotifySession(userID); err != nil {
+		t.Fatalf("ClearSpotifySession failed: %v", err)
+	}
+	service.UnloadUser(userID)
+
+	user, err := database.GetUserByID(userID)
+	if err != nil {
+		t.Fatalf("Failed to reload user: %v", err)
+	}
+	if user.SpotifyID != nil {
+		t.Errorf("SpotifyID = %v, want nil", *user.SpotifyID)
+	}
+	if user.AccessToken != nil {
+		t.Errorf("AccessToken = %v, want nil", *user.AccessToken)
+	}
+	if user.RefreshToken != nil {
+		t.Errorf("RefreshToken = %v, want nil", *user.RefreshToken)
+	}
+	if user.TokenExpiry != nil {
+		t.Errorf("TokenExpiry = %v, want nil", *user.TokenExpiry)
+	}
+	// username/email are copied off the Spotify profile, so they go too.
+	if user.Username != nil {
+		t.Errorf("Username = %v, want nil", *user.Username)
+	}
+
+	if _, exists := service.userTokens[userID]; exists {
+		t.Error("expected the cached token to be dropped")
+	}
+	if _, exists := service.userPlayStates[userID]; exists {
+		t.Error("expected the cached play state to be dropped")
+	}
+
+	// A cleared link must not look active to the pollers, which filter on
+	// access_token IS NOT NULL.
+	active, err := database.GetAllActiveUsers()
+	if err != nil {
+		t.Fatalf("GetAllActiveUsers failed: %v", err)
+	}
+	for _, u := range active {
+		if u.ID == userID {
+			t.Error("unlinked user still counts as active")
+		}
+	}
+}
+
+// The user must be able to reconnect afterwards; Spotify still remembers the
+// approval, so this is the common path back.
+func TestUnlinkSpotifyThenRelink(t *testing.T) {
+	database := setupTestDB(t)
+	userID := createTestUser(t, database)
+
+	if _, err := database.AddSpotifySession(userID, "PATD", "panic@the.disco", "patd", "access", "refresh", time.Now().UTC().Add(time.Hour)); err != nil {
+		t.Fatalf("Failed to link Spotify session: %v", err)
+	}
+	if err := database.ClearSpotifySession(userID); err != nil {
+		t.Fatalf("ClearSpotifySession failed: %v", err)
+	}
+
+	// The lookup the OAuth callback does must miss, so it takes the
+	// AddSpotifySession branch rather than the "existing user" one.
+	found, err := database.GetUserBySpotifyID("patd")
+	if err != nil {
+		t.Fatalf("GetUserBySpotifyID failed: %v", err)
+	}
+	if found != nil {
+		t.Fatalf("expected no user for the unlinked Spotify ID, got %d", found.ID)
+	}
+
+	user, err := database.AddSpotifySession(userID, "LAW", "live@wemb.ly", "law", "access2", "refresh2", time.Now().UTC().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("Failed to re-link Spotify session: %v", err)
+	}
+	if user.SpotifyID == nil || *user.SpotifyID != "law" {
+		t.Error("expected the Spotify ID to be restored on re-link")
+	}
+	if user.Username == nil || *user.Username != "LAW" {
+		t.Error("expected the username to be restored on re-link")
+	}
+}

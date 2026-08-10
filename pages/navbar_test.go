@@ -127,6 +127,21 @@ func TestHomeServiceBullets(t *testing.T) {
 		if strings.Contains(out, "Connect your Spotify account") {
 			t.Error("did not expect the connect CTA for a linked account")
 		}
+		// Unlinking is destructive, so it has to be a POST form rather than a
+		// link the browser might prefetch.
+		if !strings.Contains(out, `<form class="inline" method="post" action="/unlink-spotify">`) {
+			t.Error("expected the unlink form to POST to /unlink-spotify")
+		}
+	})
+
+	t.Run("unlinked Spotify account offers no unlink", func(t *testing.T) {
+		out := render(t, NavBar{IsLoggedIn: true, SpotifyEnabled: true})
+		if !strings.Contains(out, "Connect your Spotify account") {
+			t.Error("expected the connect CTA for an unlinked account")
+		}
+		if strings.Contains(out, "/unlink-spotify") {
+			t.Error("did not expect an unlink form with nothing connected")
+		}
 	})
 
 	t.Run("unlinked service is grey", func(t *testing.T) {

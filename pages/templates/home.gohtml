@@ -20,7 +20,14 @@
     <li class="{{ template "components/bullet" .NavBar.SpotifyConnected }}">
       Spotify connected as
       <span class="font-bold">{{ .NavBar.SpotifyUsername }}</span>.
-      <a class="text-[#1DB954] font-bold" href="/login/spotify">Change account</a>.
+      <form class="inline" method="post" action="/unlink-spotify">
+        <button
+          class="text-[#1DB954] font-bold underline p-0 cursor-pointer"
+          type="submit"
+        >
+          Unlink</button
+        >.
+      </form>
     </li>
     {{ else }}
     <li class="{{ template "components/bullet" .NavBar.SpotifyConnected }}">

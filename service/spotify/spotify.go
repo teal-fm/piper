@@ -212,6 +212,14 @@ func (s *Service) UnloadAllUsers() error {
 	return nil
 }
 
+// UnloadUser drops a single user's cached token and play state.
+func (s *Service) UnloadUser(userID int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.userTokens, userID)
+	delete(s.userPlayStates, userID)
+}
+
 // refreshTokenInner handles the actual Spotify token refresh logic.
 // It returns the new access token or an error.
 func (s *Service) refreshTokenInner(userID int64) (string, error) {

@@ -186,6 +186,33 @@ func handleLinkLastfmSubmit(database *db.DB) http.HandlerFunc {
 	}
 }
 
+// handleUnlinkSpotify logs the user out of Spotify. Note that the application is still
+// authorised on the Spotify end!
+func handleUnlinkSpotify(database *db.DB, spotifyService *spotify.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		userID, _ := session.GetUserID(r.Context()) // Auth middleware ensures this exists
+
+		if err := database.ClearSpotifySession(userID); err != nil {
+			log.Printf("Error unlinking Spotify for user %d: %v", userID, err)
+			http.Error(w, "Failed to unlink Spotify", http.StatusInternalServerError)
+			return
+		}
+
+		if spotifyService != nil {
+			spotifyService.UnloadUser(userID)
+		}
+
+		log.Printf("Successfully unlinked Spotify for user ID %d", userID)
+
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	}
+}
+
 func handleAppleMusicLink(database *db.DB, pg *pages.Pages, am *applemusic.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")

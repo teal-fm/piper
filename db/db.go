@@ -314,6 +314,23 @@ func (db *DB) AddSpotifySession(userID int64, username, email, spotifyId, access
 	return user, err
 }
 
+// ClearSpotifySession removes the user's Spotify link. Only spotify sets
+// username and email, so these gotta be deleted as well.
+func (db *DB) ClearSpotifySession(userID int64) error {
+	_, err := db.Exec(`
+	UPDATE users
+	SET username = NULL,
+	    email = NULL,
+	    spotify_id = NULL,
+	    access_token = NULL,
+	    refresh_token = NULL,
+	    token_expiry = NULL,
+	    updated_at = ?
+	WHERE id = ?`, time.Now().UTC(), userID)
+
+	return err
+}
+
 func (db *DB) GetUserByID(ID int64) (*models.User, error) {
 	user := &models.User{}
 
