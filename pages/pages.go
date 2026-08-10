@@ -162,6 +162,7 @@ type NavBar struct {
 	Handle            string
 	DisplayName       string
 	AvatarURL         string
+	SpotifyUsername   string
 	LastFMUsername    string
 	LastFMAvatarURL   string
 	SpotifyEnabled    bool
@@ -197,6 +198,9 @@ func NewNavBar(user *models.User, isLoggedIn bool) NavBar {
 	}
 	if user.AvatarURL != nil {
 		nav.AvatarURL = *user.AvatarURL
+	}
+	if user.SpotifyID != nil && user.Username != nil {
+		nav.SpotifyUsername = *user.Username
 	}
 	if user.LastFMUsername != nil {
 		nav.LastFMUsername = *user.LastFMUsername

@@ -16,12 +16,20 @@
   <p class="mb-2">You're logged in!</p>
   <ul class="list-disc pl-5 mb-3">
     {{ if .NavBar.SpotifyEnabled }}
+    {{ if .NavBar.SpotifyUsername }}
+    <li class="{{ template "components/bullet" .NavBar.SpotifyConnected }}">
+      Spotify connected as
+      <span class="font-bold">{{ .NavBar.SpotifyUsername }}</span>.
+      <a class="text-[#1DB954] font-bold" href="/login/spotify">Change account</a>.
+    </li>
+    {{ else }}
     <li class="{{ template "components/bullet" .NavBar.SpotifyConnected }}">
       <a class="text-[#1DB954] font-bold" href="/login/spotify"
         >Connect your Spotify account</a
       >
       to start tracking.
     </li>
+    {{ end }}
     {{ else }}
     <li class="text-gray-400 {{ template "components/bullet" false }}">
       <span title="Spotify is disabled on this server">Spotify tracking (disabled on this server)</span>

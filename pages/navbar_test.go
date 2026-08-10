@@ -40,6 +40,33 @@ func TestNewNavBar(t *testing.T) {
 		}
 	})
 
+	// users.username holds Spotify's display name, but only once the Spotify
+	// callback has run — so the ID is what says the name is really Spotify's.
+	t.Run("user with a linked Spotify account", func(t *testing.T) {
+		nav := NewNavBar(&models.User{
+			Username:  ptr("Charles"),
+			SpotifyID: ptr("spotify:user:x"),
+		}, true)
+
+		if nav.SpotifyUsername != "Charles" {
+			t.Errorf("SpotifyUsername = %q, want %q", nav.SpotifyUsername, "Charles")
+		}
+		if !nav.SpotifyConnected {
+			t.Error("SpotifyConnected = false, want true")
+		}
+	})
+
+	t.Run("username without a Spotify ID is not Spotify's", func(t *testing.T) {
+		nav := NewNavBar(&models.User{Username: ptr("Charles")}, true)
+
+		if nav.SpotifyUsername != "" {
+			t.Errorf("SpotifyUsername = %q, want empty", nav.SpotifyUsername)
+		}
+		if nav.SpotifyConnected {
+			t.Error("SpotifyConnected = true, want false")
+		}
+	})
+
 	t.Run("user without a profile", func(t *testing.T) {
 		nav := NewNavBar(&models.User{ATProtoDID: ptr("did:plc:x")}, true)
 		if nav.Handle != "" || nav.DisplayName != "" || nav.AvatarURL != "" {
@@ -78,6 +105,27 @@ func TestHomeServiceBullets(t *testing.T) {
 		})
 		if !strings.Contains(out, `<li class="`+green+`">`) {
 			t.Error("expected a green bullet for the linked Last.fm account")
+		}
+	})
+
+	t.Run("linked Spotify account shows its username", func(t *testing.T) {
+		out := render(t, NavBar{
+			IsLoggedIn:       true,
+			SpotifyEnabled:   true,
+			SpotifyConnected: true,
+			SpotifyUsername:  "charles",
+		})
+		if !strings.Contains(out, `<li class="`+green+`">`) {
+			t.Error("expected a green bullet for the linked Spotify account")
+		}
+		if !strings.Contains(out, "Spotify connected as") {
+			t.Error("expected the connected Spotify row")
+		}
+		if !strings.Contains(out, `<span class="font-bold">charles</span>`) {
+			t.Error("expected the Spotify username")
+		}
+		if strings.Contains(out, "Connect your Spotify account") {
+			t.Error("did not expect the connect CTA for a linked account")
 		}
 	})
 
