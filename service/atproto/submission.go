@@ -81,10 +81,7 @@ func TrackToPlayRecord(track *models.Track) (*teal.FeedPlay, error) {
 		isrcPtr = &track.ISRC
 	}
 
-	var originURI *string
-	if track.URL != "" {
-		originURI = &track.URL
-	}
+	originURI := models.FormatOriginURI(track.URL)
 
 	serviceURI := models.FormatMusicServiceURI(track.ServiceBaseUrl)
 

@@ -45,6 +45,26 @@ func TestFormatMusicServiceURI(t *testing.T) {
 	}
 }
 
+func TestFormatOriginURI(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want *string
+	}{
+		{name: "empty"},
+		{name: "internal hash", in: "am_uploaded_abc123"},
+		{name: "https URL", in: "https://music.apple.com/us/song/test", want: strPtr("https://music.apple.com/us/song/test")},
+		{name: "app URI", in: "spotify:track:test", want: strPtr("spotify:track:test")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FormatOriginURI(tt.in)
+			assertStringPtr(t, got, tt.want)
+		})
+	}
+}
+
 func assertStringPtr(t *testing.T, got, want *string) {
 	t.Helper()
 	if got == nil || want == nil {

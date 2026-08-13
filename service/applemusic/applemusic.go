@@ -280,8 +280,9 @@ type AppleRecentTrack struct {
 		Isrc             *string `json:"isrc"`
 		URL              string  `json:"url"`
 		PlayParams       *struct {
-			ID   string `json:"id"`
-			Kind string `json:"kind"`
+			ID        string `json:"id"`
+			Kind      string `json:"kind"`
+			CatalogID string `json:"catalogId"`
 		} `json:"playParams"`
 	} `json:"attributes"`
 }
@@ -440,7 +441,106 @@ func (s *Service) GetCurrentAppleMusicTrack(ctx context.Context, user *models.Us
 		return nil, nil
 	}
 
+	// Library songs may omit attributes.url even when they correspond to a
+	// catalog song. Resolve the catalog URL before the track is persisted.
+	if err := s.populateCatalogURL(ctx, *user.AppleMusicUserToken, &items[0]); err != nil {
+		s.logger.Printf("failed to resolve Apple Music catalog URL for %q: %v", items[0].Attributes.Name, err)
+	}
+
 	return &items[0], nil
+}
+
+// populateCatalogURL fills in the share URL for a library song when Apple
+// provides the corresponding catalog ID in its play parameters.
+func (s *Service) populateCatalogURL(ctx context.Context, userToken string, track *AppleRecentTrack) error {
+	if track == nil || track.Attributes.URL != "" || track.Attributes.PlayParams == nil || track.Attributes.PlayParams.CatalogID == "" {
+		return nil
+	}
+
+	devToken, _, err := s.GenerateDeveloperToken()
+	if err != nil {
+		return err
+	}
+
+	storefrontEndpoint := &url.URL{Scheme: "https", Host: "api.music.apple.com", Path: "/v1/me/storefront"}
+	storefrontReq, err := http.NewRequestWithContext(ctx, http.MethodGet, storefrontEndpoint.String(), nil)
+	if err != nil {
+		return err
+	}
+	storefrontReq.Header.Set("Authorization", "Bearer "+devToken)
+	storefrontReq.Header.Set("Music-User-Token", userToken)
+
+	storefrontResp, err := s.httpClient.Do(storefrontReq)
+	if err != nil {
+		return err
+	}
+	defer storefrontResp.Body.Close()
+
+	storefrontBody, err := io.ReadAll(storefrontResp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read storefront response: %w", err)
+	}
+	if storefrontResp.StatusCode != http.StatusOK {
+		return newAppleMusicAPIError(storefrontResp.Status, storefrontBody)
+	}
+
+	var storefront struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(storefrontBody, &storefront); err != nil {
+		return fmt.Errorf("failed to decode storefront response: %w", err)
+	}
+	if len(storefront.Data) == 0 || storefront.Data[0].ID == "" {
+		return errors.New("Apple Music storefront response contained no storefront")
+	}
+
+	catalogEndpoint := &url.URL{
+		Scheme: "https",
+		Host:   "api.music.apple.com",
+		Path:   "/v1/catalog/" + url.PathEscape(storefront.Data[0].ID) + "/songs",
+	}
+	query := catalogEndpoint.Query()
+	query.Set("ids", track.Attributes.PlayParams.CatalogID)
+	catalogEndpoint.RawQuery = query.Encode()
+
+	catalogReq, err := http.NewRequestWithContext(ctx, http.MethodGet, catalogEndpoint.String(), nil)
+	if err != nil {
+		return err
+	}
+	catalogReq.Header.Set("Authorization", "Bearer "+devToken)
+
+	catalogResp, err := s.httpClient.Do(catalogReq)
+	if err != nil {
+		return err
+	}
+	defer catalogResp.Body.Close()
+
+	catalogBody, err := io.ReadAll(catalogResp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read catalog song response: %w", err)
+	}
+	if catalogResp.StatusCode != http.StatusOK {
+		return newAppleMusicAPIError(catalogResp.Status, catalogBody)
+	}
+
+	var catalog struct {
+		Data []struct {
+			Attributes struct {
+				URL string `json:"url"`
+			} `json:"attributes"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(catalogBody, &catalog); err != nil {
+		return fmt.Errorf("failed to decode catalog song response: %w", err)
+	}
+	if len(catalog.Data) == 0 || catalog.Data[0].Attributes.URL == "" {
+		return errors.New("Apple Music catalog response contained no song URL")
+	}
+
+	track.Attributes.URL = catalog.Data[0].Attributes.URL
+	return nil
 }
 
 // ProcessUser checks for new Apple Music tracks and processes them
