@@ -87,11 +87,11 @@ func TestTrackToPlayView(t *testing.T) {
 		t.Errorf("ISRC not set correctly")
 	}
 
-	if playView.OriginUrl == nil || *playView.OriginUrl != "https://open.spotify.com/track/test" {
+	if playView.OriginUri == nil || *playView.OriginUri != "https://open.spotify.com/track/test" {
 		t.Errorf("Origin URL not set correctly")
 	}
 
-	if playView.MusicServiceBaseDomain == nil || *playView.MusicServiceBaseDomain != "spotify.com" {
+	if playView.MusicServiceUri == nil || *playView.MusicServiceUri != "https://spotify.com" {
 		t.Errorf("Music service not set correctly")
 	}
 }

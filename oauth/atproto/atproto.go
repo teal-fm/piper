@@ -32,7 +32,7 @@ type AuthService struct {
 func NewATprotoAuthService(database *db.DB, sessionManager *session.Manager, clientSecretKey string, clientId string, callbackUrl string, clientSecretId string, allowedDids []string) (*AuthService, error) {
 	fmt.Println(clientId, callbackUrl)
 
-	scopes := []string{"atproto", "repo:fm.teal.alpha.feed.play", "repo:fm.teal.alpha.actor.status"}
+	scopes := []string{"atproto", "repo:fm.teal.feed.play", "repo:fm.teal.actor.status"}
 
 	var config oauth.ClientConfig
 	config = oauth.NewPublicConfig(clientId, callbackUrl, scopes)

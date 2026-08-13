@@ -2,7 +2,7 @@
 
 package teal
 
-// schema: fm.teal.alpha.feed.getActorFeed
+// schema: fm.teal.feed.getActorFeed
 
 import (
 	"context"
@@ -10,18 +10,18 @@ import (
 	"github.com/bluesky-social/indigo/lex/util"
 )
 
-// AlphaFeedGetActorFeed_Output is the output of a fm.teal.alpha.feed.getActorFeed call.
-type AlphaFeedGetActorFeed_Output struct {
-	Plays []*AlphaFeedDefs_PlayView `json:"plays" cborgen:"plays"`
+// FeedGetActorFeed_Output is the output of a fm.teal.feed.getActorFeed call.
+type FeedGetActorFeed_Output struct {
+	Plays []*FeedDefs_PlayView `json:"plays" cborgen:"plays"`
 }
 
-// AlphaFeedGetActorFeed calls the XRPC method "fm.teal.alpha.feed.getActorFeed".
+// FeedGetActorFeed calls the XRPC method "fm.teal.feed.getActorFeed".
 //
 // authorDID: The author's DID for the play
 // cursor: The cursor to start the query from
 // limit: The upper limit of tracks to get per request. Default is 20, max is 50.
-func AlphaFeedGetActorFeed(ctx context.Context, c util.LexClient, authorDID string, cursor string, limit int64) (*AlphaFeedGetActorFeed_Output, error) {
-	var out AlphaFeedGetActorFeed_Output
+func FeedGetActorFeed(ctx context.Context, c util.LexClient, authorDID string, cursor string, limit int64) (*FeedGetActorFeed_Output, error) {
+	var out FeedGetActorFeed_Output
 
 	params := map[string]interface{}{}
 	params["authorDID"] = authorDID
@@ -31,7 +31,7 @@ func AlphaFeedGetActorFeed(ctx context.Context, c util.LexClient, authorDID stri
 	if limit != 0 {
 		params["limit"] = limit
 	}
-	if err := c.LexDo(ctx, util.Query, "", "fm.teal.alpha.feed.getActorFeed", params, nil, &out); err != nil {
+	if err := c.LexDo(ctx, util.Query, "", "fm.teal.feed.getActorFeed", params, nil, &out); err != nil {
 		return nil, err
 	}
 

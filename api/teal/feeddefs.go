@@ -2,29 +2,29 @@
 
 package teal
 
-// schema: fm.teal.alpha.feed.defs
+// schema: fm.teal.feed.defs
 
-// AlphaFeedDefs_Artist is a "artist" in the fm.teal.alpha.feed.defs schema.
-type AlphaFeedDefs_Artist struct {
+// FeedDefs_Artist is a "artist" in the fm.teal.feed.defs schema.
+type FeedDefs_Artist struct {
 	// artistMbId: The MusicBrainz artist ID URI, formatted as mbid:<uuid>
 	ArtistMbId *string `json:"artistMbId,omitempty" cborgen:"artistMbId,omitempty"`
 	// artistName: The name of the artist
 	ArtistName string `json:"artistName" cborgen:"artistName"`
 }
 
-// AlphaFeedDefs_PlayView is a "playView" in the fm.teal.alpha.feed.defs schema.
-type AlphaFeedDefs_PlayView struct {
+// FeedDefs_PlayView is a "playView" in the fm.teal.feed.defs schema.
+type FeedDefs_PlayView struct {
 	// artists: Array of artists in order of original appearance.
-	Artists []*AlphaFeedDefs_Artist `json:"artists" cborgen:"artists"`
+	Artists []*FeedDefs_Artist `json:"artists" cborgen:"artists"`
 	// duration: The length of the track in seconds
 	Duration *int64 `json:"duration,omitempty" cborgen:"duration,omitempty"`
 	// isrc: The ISRC code associated with the recording
 	Isrc *string `json:"isrc,omitempty" cborgen:"isrc,omitempty"`
-	// musicServiceBaseDomain: The base domain of the music service. e.g. music.apple.com, tidal.com, spotify.com. Defaults to 'local' if not provided.
-	MusicServiceBaseDomain *string `json:"musicServiceBaseDomain,omitempty" cborgen:"musicServiceBaseDomain,omitempty"`
-	// originUrl: The URL associated with this track
-	OriginUrl *string `json:"originUrl,omitempty" cborgen:"originUrl,omitempty"`
-	// playedTime: The unix timestamp of when the track was played
+	// musicServiceUri: The canonical URI identifying the listening surface or music service.
+	MusicServiceUri *string `json:"musicServiceUri,omitempty" cborgen:"musicServiceUri,omitempty"`
+	// originUri: The exact URI where the listening event originated.
+	OriginUri *string `json:"originUri,omitempty" cborgen:"originUri,omitempty"`
+	// playedTime: The datetime at which playback began.
 	PlayedTime *string `json:"playedTime,omitempty" cborgen:"playedTime,omitempty"`
 	// recordingMbId: The MusicBrainz recording ID URI of the track, formatted as mbid:<uuid>
 	RecordingMbId *string `json:"recordingMbId,omitempty" cborgen:"recordingMbId,omitempty"`

@@ -86,8 +86,8 @@ func (p *Service) PublishPlayingNow(ctx context.Context, userID int64, track *mo
 	now := time.Now()
 	expiry := now.Add(10 * time.Minute) // Default 10 minutes as mentioned in schema
 
-	status := &teal.AlphaActorStatus{
-		LexiconTypeID: "fm.teal.alpha.actor.status",
+	status := &teal.ActorStatus{
+		LexiconTypeID: "fm.teal.actor.status",
 		Time:          now.Format(time.RFC3339),
 		Expiry:        func() *string { s := expiry.Format(time.RFC3339); return &s }(),
 		Item:          playView,
@@ -108,7 +108,7 @@ func (p *Service) PublishPlayingNow(ctx context.Context, userID int64, track *mo
 
 	// Create the record input
 	input := comatproto.RepoPutRecord_Input{
-		Collection: "fm.teal.alpha.actor.status",
+		Collection: "fm.teal.actor.status",
 		Repo:       atProtoClient.AccountDID.String(),
 		Rkey:       "self", // Use "self" as the record key for current status
 		Record:     &lexutil.LexiconTypeDecoder{Val: status},
@@ -169,13 +169,13 @@ func (p *Service) ClearPlayingNow(ctx context.Context, userID int64) error {
 	expiredTime := now.Add(-1 * time.Minute) // Set expiry to 1 minute ago
 
 	// Create empty play view
-	emptyPlayView := &teal.AlphaFeedDefs_PlayView{
+	emptyPlayView := &teal.FeedDefs_PlayView{
 		TrackName: "", // Empty track indicates no current playing
-		Artists:   []*teal.AlphaFeedDefs_Artist{},
+		Artists:   []*teal.FeedDefs_Artist{},
 	}
 
-	status := &teal.AlphaActorStatus{
-		LexiconTypeID: "fm.teal.alpha.actor.status",
+	status := &teal.ActorStatus{
+		LexiconTypeID: "fm.teal.actor.status",
 		Time:          now.Format(time.RFC3339),
 		Expiry:        func() *string { s := expiredTime.Format(time.RFC3339); return &s }(),
 		Item:          emptyPlayView,
@@ -195,7 +195,7 @@ func (p *Service) ClearPlayingNow(ctx context.Context, userID int64) error {
 
 	// Update the record
 	input := comatproto.RepoPutRecord_Input{
-		Collection: "fm.teal.alpha.actor.status",
+		Collection: "fm.teal.actor.status",
 		Repo:       atProtoClient.AccountDID.String(),
 		Rkey:       "self",
 		Record:     &lexutil.LexiconTypeDecoder{Val: status},
@@ -217,16 +217,16 @@ func (p *Service) ClearPlayingNow(ctx context.Context, userID int64) error {
 	return nil
 }
 
-// trackToPlayView converts a models.Track to teal.AlphaFeedDefs_PlayView
-func (p *Service) trackToPlayView(track *models.Track) (*teal.AlphaFeedDefs_PlayView, error) {
+// trackToPlayView converts a models.Track to teal.FeedDefs_PlayView
+func (p *Service) trackToPlayView(track *models.Track) (*teal.FeedDefs_PlayView, error) {
 	if track.Name == "" {
 		return nil, fmt.Errorf("track name cannot be empty")
 	}
 
 	// Convert artists
-	artists := make([]*teal.AlphaFeedDefs_Artist, 0, len(track.Artist))
+	artists := make([]*teal.FeedDefs_Artist, 0, len(track.Artist))
 	for _, a := range track.Artist {
-		artist := &teal.AlphaFeedDefs_Artist{
+		artist := &teal.FeedDefs_Artist{
 			ArtistName: a.Name,
 			ArtistMbId: models.FormatMBIDURI(a.MBID),
 		}
@@ -251,12 +251,12 @@ func (p *Service) trackToPlayView(track *models.Track) (*teal.AlphaFeedDefs_Play
 		isrcPtr = &track.ISRC
 	}
 
-	var originUrlPtr *string
+	var originURI *string
 	if track.URL != "" {
-		originUrlPtr = &track.URL
+		originURI = &track.URL
 	}
 
-	servicePtr := models.FormatMusicServiceBaseDomain(track.ServiceBaseUrl)
+	serviceURI := models.FormatMusicServiceURI(track.ServiceBaseUrl)
 
 	var releaseNamePtr *string
 	if track.Album != "" {
@@ -269,18 +269,18 @@ func (p *Service) trackToPlayView(track *models.Track) (*teal.AlphaFeedDefs_Play
 		submissionAgent = models.SubmissionAgent
 	}
 
-	playView := &teal.AlphaFeedDefs_PlayView{
-		TrackName:              track.Name,
-		Artists:                artists,
-		Duration:               durationPtr,
-		PlayedTime:             playedTimeStr,
-		RecordingMbId:          models.FormatMBIDURI(track.RecordingMBID),
-		ReleaseMbId:            models.FormatMBIDURI(track.ReleaseMBID),
-		ReleaseName:            releaseNamePtr,
-		Isrc:                   isrcPtr,
-		OriginUrl:              originUrlPtr,
-		MusicServiceBaseDomain: servicePtr,
-		SubmissionClientAgent:  &submissionAgent,
+	playView := &teal.FeedDefs_PlayView{
+		TrackName:             track.Name,
+		Artists:               artists,
+		Duration:              durationPtr,
+		PlayedTime:            playedTimeStr,
+		RecordingMbId:         models.FormatMBIDURI(track.RecordingMBID),
+		ReleaseMbId:           models.FormatMBIDURI(track.ReleaseMBID),
+		ReleaseName:           releaseNamePtr,
+		Isrc:                  isrcPtr,
+		OriginUri:             originURI,
+		MusicServiceUri:       serviceURI,
+		SubmissionClientAgent: &submissionAgent,
 	}
 
 	return playView, nil
@@ -289,7 +289,7 @@ func (p *Service) trackToPlayView(track *models.Track) (*teal.AlphaFeedDefs_Play
 // getStatusSwapRecord retrieves the current swap record (CID) for the actor status record.
 // Returns (nil, nil) if the record does not exist yet.
 func (p *Service) getStatusSwapRecord(ctx context.Context, atApiClient *client.APIClient) (*comatproto.RepoGetRecord_Output, error) {
-	result, err := comatproto.RepoGetRecord(ctx, atApiClient, "", "fm.teal.alpha.actor.status", atApiClient.AccountDID.String(), "self")
+	result, err := comatproto.RepoGetRecord(ctx, atApiClient, "", "fm.teal.actor.status", atApiClient.AccountDID.String(), "self")
 
 	if err != nil {
 		var xErr *client.APIError

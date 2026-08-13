@@ -2,14 +2,14 @@
 
 package teal
 
-// schema: fm.teal.alpha.actor.defs
+// schema: fm.teal.actor.defs
 
 import (
 	appbskytypes "github.com/bluesky-social/indigo/api/bsky"
 )
 
-// AlphaActorDefs_MiniProfileView is a "miniProfileView" in the fm.teal.alpha.actor.defs schema.
-type AlphaActorDefs_MiniProfileView struct {
+// ActorDefs_MiniProfileView is a "miniProfileView" in the fm.teal.actor.defs schema.
+type ActorDefs_MiniProfileView struct {
 	// avatar: IPLD of the avatar
 	Avatar *string `json:"avatar,omitempty" cborgen:"avatar,omitempty"`
 	// did: The decentralized identifier of the actor
@@ -18,8 +18,8 @@ type AlphaActorDefs_MiniProfileView struct {
 	Handle      *string `json:"handle,omitempty" cborgen:"handle,omitempty"`
 }
 
-// AlphaActorDefs_ProfileView is a "profileView" in the fm.teal.alpha.actor.defs schema.
-type AlphaActorDefs_ProfileView struct {
+// ActorDefs_ProfileView is a "profileView" in the fm.teal.actor.defs schema.
+type ActorDefs_ProfileView struct {
 	// avatar: IPLD of the avatar
 	Avatar *string `json:"avatar,omitempty" cborgen:"avatar,omitempty"`
 	// banner: IPLD of the banner image
@@ -33,17 +33,17 @@ type AlphaActorDefs_ProfileView struct {
 	Did         *string `json:"did,omitempty" cborgen:"did,omitempty"`
 	DisplayName *string `json:"displayName,omitempty" cborgen:"displayName,omitempty"`
 	// featuredItem: The user's most recent item featured on their profile.
-	FeaturedItem *AlphaActorProfile_FeaturedItem `json:"featuredItem,omitempty" cborgen:"featuredItem,omitempty"`
-	Status       *AlphaActorDefs_StatusView      `json:"status,omitempty" cborgen:"status,omitempty"`
+	FeaturedItem *ActorProfile_FeaturedItem `json:"featuredItem,omitempty" cborgen:"featuredItem,omitempty"`
+	Status       *ActorDefs_StatusView      `json:"status,omitempty" cborgen:"status,omitempty"`
 }
 
-// AlphaActorDefs_StatusView is a "statusView" in the fm.teal.alpha.actor.defs schema.
+// ActorDefs_StatusView is a "statusView" in the fm.teal.actor.defs schema.
 //
 // A declaration of the status of the actor.
-type AlphaActorDefs_StatusView struct {
+type ActorDefs_StatusView struct {
 	// expiry: The unix timestamp of the expiry time of the item. If unavailable, default to 10 minutes past the start time.
-	Expiry *string                 `json:"expiry,omitempty" cborgen:"expiry,omitempty"`
-	Item   *AlphaFeedDefs_PlayView `json:"item,omitempty" cborgen:"item,omitempty"`
+	Expiry *string            `json:"expiry,omitempty" cborgen:"expiry,omitempty"`
+	Item   *FeedDefs_PlayView `json:"item,omitempty" cborgen:"item,omitempty"`
 	// time: The unix timestamp of when the item was recorded
 	Time *string `json:"time,omitempty" cborgen:"time,omitempty"`
 }

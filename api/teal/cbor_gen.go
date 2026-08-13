@@ -20,7 +20,7 @@ var _ = cid.Undef
 var _ = math.E
 var _ = sort.Sort
 
-func (t *AlphaFeedPlay) MarshalCBOR(w io.Writer) error {
+func (t *FeedPlay) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -49,11 +49,11 @@ func (t *AlphaFeedPlay) MarshalCBOR(w io.Writer) error {
 		fieldCount--
 	}
 
-	if t.MusicServiceBaseDomain == nil {
+	if t.MusicServiceUri == nil {
 		fieldCount--
 	}
 
-	if t.OriginUrl == nil {
+	if t.OriginUri == nil {
 		fieldCount--
 	}
 
@@ -137,14 +137,14 @@ func (t *AlphaFeedPlay) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("fm.teal.alpha.feed.play"))); err != nil {
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("fm.teal.feed.play"))); err != nil {
 		return err
 	}
-	if _, err := cw.WriteString(string("fm.teal.alpha.feed.play")); err != nil {
+	if _, err := cw.WriteString(string("fm.teal.feed.play")); err != nil {
 		return err
 	}
 
-	// t.Artists ([]*teal.AlphaFeedDefs_Artist) (slice)
+	// t.Artists ([]*teal.FeedDefs_Artist) (slice)
 	if t.Artists != nil {
 
 		if len("artists") > 1000000 {
@@ -205,33 +205,33 @@ func (t *AlphaFeedPlay) MarshalCBOR(w io.Writer) error {
 
 	}
 
-	// t.OriginUrl (string) (string)
-	if t.OriginUrl != nil {
+	// t.OriginUri (string) (string)
+	if t.OriginUri != nil {
 
-		if len("originUrl") > 1000000 {
-			return xerrors.Errorf("Value in field \"originUrl\" was too long")
+		if len("originUri") > 1000000 {
+			return xerrors.Errorf("Value in field \"originUri\" was too long")
 		}
 
-		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("originUrl"))); err != nil {
+		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("originUri"))); err != nil {
 			return err
 		}
-		if _, err := cw.WriteString(string("originUrl")); err != nil {
+		if _, err := cw.WriteString(string("originUri")); err != nil {
 			return err
 		}
 
-		if t.OriginUrl == nil {
+		if t.OriginUri == nil {
 			if _, err := cw.Write(cbg.CborNull); err != nil {
 				return err
 			}
 		} else {
-			if len(*t.OriginUrl) > 1000000 {
-				return xerrors.Errorf("Value in field t.OriginUrl was too long")
+			if len(*t.OriginUri) > 1000000 {
+				return xerrors.Errorf("Value in field t.OriginUri was too long")
 			}
 
-			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(*t.OriginUrl))); err != nil {
+			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(*t.OriginUri))); err != nil {
 				return err
 			}
-			if _, err := cw.WriteString(string(*t.OriginUrl)); err != nil {
+			if _, err := cw.WriteString(string(*t.OriginUri)); err != nil {
 				return err
 			}
 		}
@@ -492,6 +492,38 @@ func (t *AlphaFeedPlay) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
+	// t.MusicServiceUri (string) (string)
+	if t.MusicServiceUri != nil {
+
+		if len("musicServiceUri") > 1000000 {
+			return xerrors.Errorf("Value in field \"musicServiceUri\" was too long")
+		}
+
+		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("musicServiceUri"))); err != nil {
+			return err
+		}
+		if _, err := cw.WriteString(string("musicServiceUri")); err != nil {
+			return err
+		}
+
+		if t.MusicServiceUri == nil {
+			if _, err := cw.Write(cbg.CborNull); err != nil {
+				return err
+			}
+		} else {
+			if len(*t.MusicServiceUri) > 1000000 {
+				return xerrors.Errorf("Value in field t.MusicServiceUri was too long")
+			}
+
+			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(*t.MusicServiceUri))); err != nil {
+				return err
+			}
+			if _, err := cw.WriteString(string(*t.MusicServiceUri)); err != nil {
+				return err
+			}
+		}
+	}
+
 	// t.TrackDiscriminant (string) (string)
 	if t.TrackDiscriminant != nil {
 
@@ -587,43 +619,11 @@ func (t *AlphaFeedPlay) MarshalCBOR(w io.Writer) error {
 			}
 		}
 	}
-
-	// t.MusicServiceBaseDomain (string) (string)
-	if t.MusicServiceBaseDomain != nil {
-
-		if len("musicServiceBaseDomain") > 1000000 {
-			return xerrors.Errorf("Value in field \"musicServiceBaseDomain\" was too long")
-		}
-
-		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("musicServiceBaseDomain"))); err != nil {
-			return err
-		}
-		if _, err := cw.WriteString(string("musicServiceBaseDomain")); err != nil {
-			return err
-		}
-
-		if t.MusicServiceBaseDomain == nil {
-			if _, err := cw.Write(cbg.CborNull); err != nil {
-				return err
-			}
-		} else {
-			if len(*t.MusicServiceBaseDomain) > 1000000 {
-				return xerrors.Errorf("Value in field t.MusicServiceBaseDomain was too long")
-			}
-
-			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(*t.MusicServiceBaseDomain))); err != nil {
-				return err
-			}
-			if _, err := cw.WriteString(string(*t.MusicServiceBaseDomain)); err != nil {
-				return err
-			}
-		}
-	}
 	return nil
 }
 
-func (t *AlphaFeedPlay) UnmarshalCBOR(r io.Reader) (err error) {
-	*t = AlphaFeedPlay{}
+func (t *FeedPlay) UnmarshalCBOR(r io.Reader) (err error) {
+	*t = FeedPlay{}
 
 	cr := cbg.NewCborReader(r)
 
@@ -642,12 +642,12 @@ func (t *AlphaFeedPlay) UnmarshalCBOR(r io.Reader) (err error) {
 	}
 
 	if extra > cbg.MaxLength {
-		return fmt.Errorf("AlphaFeedPlay: map struct too large (%d)", extra)
+		return fmt.Errorf("FeedPlay: map struct too large (%d)", extra)
 	}
 
 	n := extra
 
-	nameBuf := make([]byte, 22)
+	nameBuf := make([]byte, 21)
 	for i := uint64(0); i < n; i++ {
 		nameLen, ok, err := cbg.ReadFullStringIntoBuf(cr, nameBuf, 1000000)
 		if err != nil {
@@ -695,7 +695,7 @@ func (t *AlphaFeedPlay) UnmarshalCBOR(r io.Reader) (err error) {
 
 				t.LexiconTypeID = string(sval)
 			}
-			// t.Artists ([]*teal.AlphaFeedDefs_Artist) (slice)
+			// t.Artists ([]*teal.FeedDefs_Artist) (slice)
 		case "artists":
 
 			maj, extra, err = cr.ReadHeader()
@@ -712,7 +712,7 @@ func (t *AlphaFeedPlay) UnmarshalCBOR(r io.Reader) (err error) {
 			}
 
 			if extra > 0 {
-				t.Artists = make([]*AlphaFeedDefs_Artist, extra)
+				t.Artists = make([]*FeedDefs_Artist, extra)
 			}
 
 			for i := 0; i < int(extra); i++ {
@@ -734,7 +734,7 @@ func (t *AlphaFeedPlay) UnmarshalCBOR(r io.Reader) (err error) {
 							if err := cr.UnreadByte(); err != nil {
 								return err
 							}
-							t.Artists[i] = new(AlphaFeedDefs_Artist)
+							t.Artists[i] = new(FeedDefs_Artist)
 							if err := t.Artists[i].UnmarshalCBOR(cr); err != nil {
 								return xerrors.Errorf("unmarshaling t.Artists[i] pointer: %w", err)
 							}
@@ -780,8 +780,8 @@ func (t *AlphaFeedPlay) UnmarshalCBOR(r io.Reader) (err error) {
 					t.Duration = (*int64)(&extraI)
 				}
 			}
-			// t.OriginUrl (string) (string)
-		case "originUrl":
+			// t.OriginUri (string) (string)
+		case "originUri":
 
 			{
 				b, err := cr.ReadByte()
@@ -798,7 +798,7 @@ func (t *AlphaFeedPlay) UnmarshalCBOR(r io.Reader) (err error) {
 						return err
 					}
 
-					t.OriginUrl = (*string)(&sval)
+					t.OriginUri = (*string)(&sval)
 				}
 			}
 			// t.TrackMbId (string) (string)
@@ -997,6 +997,27 @@ func (t *AlphaFeedPlay) UnmarshalCBOR(r io.Reader) (err error) {
 					t.RecordingMbId = (*string)(&sval)
 				}
 			}
+			// t.MusicServiceUri (string) (string)
+		case "musicServiceUri":
+
+			{
+				b, err := cr.ReadByte()
+				if err != nil {
+					return err
+				}
+				if b != cbg.CborNull[0] {
+					if err := cr.UnreadByte(); err != nil {
+						return err
+					}
+
+					sval, err := cbg.ReadStringWithMax(cr, 1000000)
+					if err != nil {
+						return err
+					}
+
+					t.MusicServiceUri = (*string)(&sval)
+				}
+			}
 			// t.TrackDiscriminant (string) (string)
 		case "trackDiscriminant":
 
@@ -1060,27 +1081,6 @@ func (t *AlphaFeedPlay) UnmarshalCBOR(r io.Reader) (err error) {
 					t.SubmissionClientAgent = (*string)(&sval)
 				}
 			}
-			// t.MusicServiceBaseDomain (string) (string)
-		case "musicServiceBaseDomain":
-
-			{
-				b, err := cr.ReadByte()
-				if err != nil {
-					return err
-				}
-				if b != cbg.CborNull[0] {
-					if err := cr.UnreadByte(); err != nil {
-						return err
-					}
-
-					sval, err := cbg.ReadStringWithMax(cr, 1000000)
-					if err != nil {
-						return err
-					}
-
-					t.MusicServiceBaseDomain = (*string)(&sval)
-				}
-			}
 
 		default:
 			// Field doesn't exist on this type, so ignore it
@@ -1092,7 +1092,7 @@ func (t *AlphaFeedPlay) UnmarshalCBOR(r io.Reader) (err error) {
 
 	return nil
 }
-func (t *AlphaActorProfile) MarshalCBOR(w io.Writer) error {
+func (t *ActorProfile) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -1145,10 +1145,10 @@ func (t *AlphaActorProfile) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("fm.teal.alpha.actor.profile"))); err != nil {
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("fm.teal.actor.profile"))); err != nil {
 		return err
 	}
-	if _, err := cw.WriteString(string("fm.teal.alpha.actor.profile")); err != nil {
+	if _, err := cw.WriteString(string("fm.teal.actor.profile")); err != nil {
 		return err
 	}
 
@@ -1286,7 +1286,7 @@ func (t *AlphaActorProfile) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.FeaturedItem (teal.AlphaActorProfile_FeaturedItem) (struct)
+	// t.FeaturedItem (teal.ActorProfile_FeaturedItem) (struct)
 	if t.FeaturedItem != nil {
 
 		if len("featuredItem") > 1000000 {
@@ -1336,8 +1336,8 @@ func (t *AlphaActorProfile) MarshalCBOR(w io.Writer) error {
 	return nil
 }
 
-func (t *AlphaActorProfile) UnmarshalCBOR(r io.Reader) (err error) {
-	*t = AlphaActorProfile{}
+func (t *ActorProfile) UnmarshalCBOR(r io.Reader) (err error) {
+	*t = ActorProfile{}
 
 	cr := cbg.NewCborReader(r)
 
@@ -1356,7 +1356,7 @@ func (t *AlphaActorProfile) UnmarshalCBOR(r io.Reader) (err error) {
 	}
 
 	if extra > cbg.MaxLength {
-		return fmt.Errorf("AlphaActorProfile: map struct too large (%d)", extra)
+		return fmt.Errorf("ActorProfile: map struct too large (%d)", extra)
 	}
 
 	n := extra
@@ -1491,7 +1491,7 @@ func (t *AlphaActorProfile) UnmarshalCBOR(r io.Reader) (err error) {
 					t.DisplayName = (*string)(&sval)
 				}
 			}
-			// t.FeaturedItem (teal.AlphaActorProfile_FeaturedItem) (struct)
+			// t.FeaturedItem (teal.ActorProfile_FeaturedItem) (struct)
 		case "featuredItem":
 
 			{
@@ -1504,7 +1504,7 @@ func (t *AlphaActorProfile) UnmarshalCBOR(r io.Reader) (err error) {
 					if err := cr.UnreadByte(); err != nil {
 						return err
 					}
-					t.FeaturedItem = new(AlphaActorProfile_FeaturedItem)
+					t.FeaturedItem = new(ActorProfile_FeaturedItem)
 					if err := t.FeaturedItem.UnmarshalCBOR(cr); err != nil {
 						return xerrors.Errorf("unmarshaling t.FeaturedItem pointer: %w", err)
 					}
@@ -1571,7 +1571,7 @@ func (t *AlphaActorProfile) UnmarshalCBOR(r io.Reader) (err error) {
 
 	return nil
 }
-func (t *AlphaActorStatus) MarshalCBOR(w io.Writer) error {
+func (t *ActorStatus) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -1588,7 +1588,7 @@ func (t *AlphaActorStatus) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	// t.Item (teal.AlphaFeedDefs_PlayView) (struct)
+	// t.Item (teal.FeedDefs_PlayView) (struct)
 	if len("item") > 1000000 {
 		return xerrors.Errorf("Value in field \"item\" was too long")
 	}
@@ -1639,10 +1639,10 @@ func (t *AlphaActorStatus) MarshalCBOR(w io.Writer) error {
 		return err
 	}
 
-	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("fm.teal.alpha.actor.status"))); err != nil {
+	if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("fm.teal.actor.status"))); err != nil {
 		return err
 	}
-	if _, err := cw.WriteString(string("fm.teal.alpha.actor.status")); err != nil {
+	if _, err := cw.WriteString(string("fm.teal.actor.status")); err != nil {
 		return err
 	}
 
@@ -1680,8 +1680,8 @@ func (t *AlphaActorStatus) MarshalCBOR(w io.Writer) error {
 	return nil
 }
 
-func (t *AlphaActorStatus) UnmarshalCBOR(r io.Reader) (err error) {
-	*t = AlphaActorStatus{}
+func (t *ActorStatus) UnmarshalCBOR(r io.Reader) (err error) {
+	*t = ActorStatus{}
 
 	cr := cbg.NewCborReader(r)
 
@@ -1700,7 +1700,7 @@ func (t *AlphaActorStatus) UnmarshalCBOR(r io.Reader) (err error) {
 	}
 
 	if extra > cbg.MaxLength {
-		return fmt.Errorf("AlphaActorStatus: map struct too large (%d)", extra)
+		return fmt.Errorf("ActorStatus: map struct too large (%d)", extra)
 	}
 
 	n := extra
@@ -1721,7 +1721,7 @@ func (t *AlphaActorStatus) UnmarshalCBOR(r io.Reader) (err error) {
 		}
 
 		switch string(nameBuf[:nameLen]) {
-		// t.Item (teal.AlphaFeedDefs_PlayView) (struct)
+		// t.Item (teal.FeedDefs_PlayView) (struct)
 		case "item":
 
 			{
@@ -1734,7 +1734,7 @@ func (t *AlphaActorStatus) UnmarshalCBOR(r io.Reader) (err error) {
 					if err := cr.UnreadByte(); err != nil {
 						return err
 					}
-					t.Item = new(AlphaFeedDefs_PlayView)
+					t.Item = new(FeedDefs_PlayView)
 					if err := t.Item.UnmarshalCBOR(cr); err != nil {
 						return xerrors.Errorf("unmarshaling t.Item pointer: %w", err)
 					}
@@ -1795,7 +1795,7 @@ func (t *AlphaActorStatus) UnmarshalCBOR(r io.Reader) (err error) {
 
 	return nil
 }
-func (t *AlphaActorProfile_FeaturedItem) MarshalCBOR(w io.Writer) error {
+func (t *ActorProfile_FeaturedItem) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -1855,8 +1855,8 @@ func (t *AlphaActorProfile_FeaturedItem) MarshalCBOR(w io.Writer) error {
 	return nil
 }
 
-func (t *AlphaActorProfile_FeaturedItem) UnmarshalCBOR(r io.Reader) (err error) {
-	*t = AlphaActorProfile_FeaturedItem{}
+func (t *ActorProfile_FeaturedItem) UnmarshalCBOR(r io.Reader) (err error) {
+	*t = ActorProfile_FeaturedItem{}
 
 	cr := cbg.NewCborReader(r)
 
@@ -1875,7 +1875,7 @@ func (t *AlphaActorProfile_FeaturedItem) UnmarshalCBOR(r io.Reader) (err error) 
 	}
 
 	if extra > cbg.MaxLength {
-		return fmt.Errorf("AlphaActorProfile_FeaturedItem: map struct too large (%d)", extra)
+		return fmt.Errorf("ActorProfile_FeaturedItem: map struct too large (%d)", extra)
 	}
 
 	n := extra
@@ -1929,7 +1929,7 @@ func (t *AlphaActorProfile_FeaturedItem) UnmarshalCBOR(r io.Reader) (err error) 
 
 	return nil
 }
-func (t *AlphaFeedDefs_PlayView) MarshalCBOR(w io.Writer) error {
+func (t *FeedDefs_PlayView) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -1946,11 +1946,11 @@ func (t *AlphaFeedDefs_PlayView) MarshalCBOR(w io.Writer) error {
 		fieldCount--
 	}
 
-	if t.MusicServiceBaseDomain == nil {
+	if t.MusicServiceUri == nil {
 		fieldCount--
 	}
 
-	if t.OriginUrl == nil {
+	if t.OriginUri == nil {
 		fieldCount--
 	}
 
@@ -2014,7 +2014,7 @@ func (t *AlphaFeedDefs_PlayView) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
-	// t.Artists ([]*teal.AlphaFeedDefs_Artist) (slice)
+	// t.Artists ([]*teal.FeedDefs_Artist) (slice)
 	if len("artists") > 1000000 {
 		return xerrors.Errorf("Value in field \"artists\" was too long")
 	}
@@ -2072,33 +2072,33 @@ func (t *AlphaFeedDefs_PlayView) MarshalCBOR(w io.Writer) error {
 
 	}
 
-	// t.OriginUrl (string) (string)
-	if t.OriginUrl != nil {
+	// t.OriginUri (string) (string)
+	if t.OriginUri != nil {
 
-		if len("originUrl") > 1000000 {
-			return xerrors.Errorf("Value in field \"originUrl\" was too long")
+		if len("originUri") > 1000000 {
+			return xerrors.Errorf("Value in field \"originUri\" was too long")
 		}
 
-		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("originUrl"))); err != nil {
+		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("originUri"))); err != nil {
 			return err
 		}
-		if _, err := cw.WriteString(string("originUrl")); err != nil {
+		if _, err := cw.WriteString(string("originUri")); err != nil {
 			return err
 		}
 
-		if t.OriginUrl == nil {
+		if t.OriginUri == nil {
 			if _, err := cw.Write(cbg.CborNull); err != nil {
 				return err
 			}
 		} else {
-			if len(*t.OriginUrl) > 1000000 {
-				return xerrors.Errorf("Value in field t.OriginUrl was too long")
+			if len(*t.OriginUri) > 1000000 {
+				return xerrors.Errorf("Value in field t.OriginUri was too long")
 			}
 
-			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(*t.OriginUrl))); err != nil {
+			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(*t.OriginUri))); err != nil {
 				return err
 			}
-			if _, err := cw.WriteString(string(*t.OriginUrl)); err != nil {
+			if _, err := cw.WriteString(string(*t.OriginUri)); err != nil {
 				return err
 			}
 		}
@@ -2287,6 +2287,38 @@ func (t *AlphaFeedDefs_PlayView) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
+	// t.MusicServiceUri (string) (string)
+	if t.MusicServiceUri != nil {
+
+		if len("musicServiceUri") > 1000000 {
+			return xerrors.Errorf("Value in field \"musicServiceUri\" was too long")
+		}
+
+		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("musicServiceUri"))); err != nil {
+			return err
+		}
+		if _, err := cw.WriteString(string("musicServiceUri")); err != nil {
+			return err
+		}
+
+		if t.MusicServiceUri == nil {
+			if _, err := cw.Write(cbg.CborNull); err != nil {
+				return err
+			}
+		} else {
+			if len(*t.MusicServiceUri) > 1000000 {
+				return xerrors.Errorf("Value in field t.MusicServiceUri was too long")
+			}
+
+			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(*t.MusicServiceUri))); err != nil {
+				return err
+			}
+			if _, err := cw.WriteString(string(*t.MusicServiceUri)); err != nil {
+				return err
+			}
+		}
+	}
+
 	// t.SubmissionClientAgent (string) (string)
 	if t.SubmissionClientAgent != nil {
 
@@ -2318,43 +2350,11 @@ func (t *AlphaFeedDefs_PlayView) MarshalCBOR(w io.Writer) error {
 			}
 		}
 	}
-
-	// t.MusicServiceBaseDomain (string) (string)
-	if t.MusicServiceBaseDomain != nil {
-
-		if len("musicServiceBaseDomain") > 1000000 {
-			return xerrors.Errorf("Value in field \"musicServiceBaseDomain\" was too long")
-		}
-
-		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("musicServiceBaseDomain"))); err != nil {
-			return err
-		}
-		if _, err := cw.WriteString(string("musicServiceBaseDomain")); err != nil {
-			return err
-		}
-
-		if t.MusicServiceBaseDomain == nil {
-			if _, err := cw.Write(cbg.CborNull); err != nil {
-				return err
-			}
-		} else {
-			if len(*t.MusicServiceBaseDomain) > 1000000 {
-				return xerrors.Errorf("Value in field t.MusicServiceBaseDomain was too long")
-			}
-
-			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(*t.MusicServiceBaseDomain))); err != nil {
-				return err
-			}
-			if _, err := cw.WriteString(string(*t.MusicServiceBaseDomain)); err != nil {
-				return err
-			}
-		}
-	}
 	return nil
 }
 
-func (t *AlphaFeedDefs_PlayView) UnmarshalCBOR(r io.Reader) (err error) {
-	*t = AlphaFeedDefs_PlayView{}
+func (t *FeedDefs_PlayView) UnmarshalCBOR(r io.Reader) (err error) {
+	*t = FeedDefs_PlayView{}
 
 	cr := cbg.NewCborReader(r)
 
@@ -2373,12 +2373,12 @@ func (t *AlphaFeedDefs_PlayView) UnmarshalCBOR(r io.Reader) (err error) {
 	}
 
 	if extra > cbg.MaxLength {
-		return fmt.Errorf("AlphaFeedDefs_PlayView: map struct too large (%d)", extra)
+		return fmt.Errorf("FeedDefs_PlayView: map struct too large (%d)", extra)
 	}
 
 	n := extra
 
-	nameBuf := make([]byte, 22)
+	nameBuf := make([]byte, 21)
 	for i := uint64(0); i < n; i++ {
 		nameLen, ok, err := cbg.ReadFullStringIntoBuf(cr, nameBuf, 1000000)
 		if err != nil {
@@ -2415,7 +2415,7 @@ func (t *AlphaFeedDefs_PlayView) UnmarshalCBOR(r io.Reader) (err error) {
 					t.Isrc = (*string)(&sval)
 				}
 			}
-			// t.Artists ([]*teal.AlphaFeedDefs_Artist) (slice)
+			// t.Artists ([]*teal.FeedDefs_Artist) (slice)
 		case "artists":
 
 			maj, extra, err = cr.ReadHeader()
@@ -2432,7 +2432,7 @@ func (t *AlphaFeedDefs_PlayView) UnmarshalCBOR(r io.Reader) (err error) {
 			}
 
 			if extra > 0 {
-				t.Artists = make([]*AlphaFeedDefs_Artist, extra)
+				t.Artists = make([]*FeedDefs_Artist, extra)
 			}
 
 			for i := 0; i < int(extra); i++ {
@@ -2454,7 +2454,7 @@ func (t *AlphaFeedDefs_PlayView) UnmarshalCBOR(r io.Reader) (err error) {
 							if err := cr.UnreadByte(); err != nil {
 								return err
 							}
-							t.Artists[i] = new(AlphaFeedDefs_Artist)
+							t.Artists[i] = new(FeedDefs_Artist)
 							if err := t.Artists[i].UnmarshalCBOR(cr); err != nil {
 								return xerrors.Errorf("unmarshaling t.Artists[i] pointer: %w", err)
 							}
@@ -2500,8 +2500,8 @@ func (t *AlphaFeedDefs_PlayView) UnmarshalCBOR(r io.Reader) (err error) {
 					t.Duration = (*int64)(&extraI)
 				}
 			}
-			// t.OriginUrl (string) (string)
-		case "originUrl":
+			// t.OriginUri (string) (string)
+		case "originUri":
 
 			{
 				b, err := cr.ReadByte()
@@ -2518,7 +2518,7 @@ func (t *AlphaFeedDefs_PlayView) UnmarshalCBOR(r io.Reader) (err error) {
 						return err
 					}
 
-					t.OriginUrl = (*string)(&sval)
+					t.OriginUri = (*string)(&sval)
 				}
 			}
 			// t.TrackMbId (string) (string)
@@ -2637,6 +2637,27 @@ func (t *AlphaFeedDefs_PlayView) UnmarshalCBOR(r io.Reader) (err error) {
 					t.RecordingMbId = (*string)(&sval)
 				}
 			}
+			// t.MusicServiceUri (string) (string)
+		case "musicServiceUri":
+
+			{
+				b, err := cr.ReadByte()
+				if err != nil {
+					return err
+				}
+				if b != cbg.CborNull[0] {
+					if err := cr.UnreadByte(); err != nil {
+						return err
+					}
+
+					sval, err := cbg.ReadStringWithMax(cr, 1000000)
+					if err != nil {
+						return err
+					}
+
+					t.MusicServiceUri = (*string)(&sval)
+				}
+			}
 			// t.SubmissionClientAgent (string) (string)
 		case "submissionClientAgent":
 
@@ -2658,27 +2679,6 @@ func (t *AlphaFeedDefs_PlayView) UnmarshalCBOR(r io.Reader) (err error) {
 					t.SubmissionClientAgent = (*string)(&sval)
 				}
 			}
-			// t.MusicServiceBaseDomain (string) (string)
-		case "musicServiceBaseDomain":
-
-			{
-				b, err := cr.ReadByte()
-				if err != nil {
-					return err
-				}
-				if b != cbg.CborNull[0] {
-					if err := cr.UnreadByte(); err != nil {
-						return err
-					}
-
-					sval, err := cbg.ReadStringWithMax(cr, 1000000)
-					if err != nil {
-						return err
-					}
-
-					t.MusicServiceBaseDomain = (*string)(&sval)
-				}
-			}
 
 		default:
 			// Field doesn't exist on this type, so ignore it
@@ -2690,7 +2690,7 @@ func (t *AlphaFeedDefs_PlayView) UnmarshalCBOR(r io.Reader) (err error) {
 
 	return nil
 }
-func (t *AlphaFeedDefs_Artist) MarshalCBOR(w io.Writer) error {
+func (t *FeedDefs_Artist) MarshalCBOR(w io.Writer) error {
 	if t == nil {
 		_, err := w.Write(cbg.CborNull)
 		return err
@@ -2764,8 +2764,8 @@ func (t *AlphaFeedDefs_Artist) MarshalCBOR(w io.Writer) error {
 	return nil
 }
 
-func (t *AlphaFeedDefs_Artist) UnmarshalCBOR(r io.Reader) (err error) {
-	*t = AlphaFeedDefs_Artist{}
+func (t *FeedDefs_Artist) UnmarshalCBOR(r io.Reader) (err error) {
+	*t = FeedDefs_Artist{}
 
 	cr := cbg.NewCborReader(r)
 
@@ -2784,7 +2784,7 @@ func (t *AlphaFeedDefs_Artist) UnmarshalCBOR(r io.Reader) (err error) {
 	}
 
 	if extra > cbg.MaxLength {
-		return fmt.Errorf("AlphaFeedDefs_Artist: map struct too large (%d)", extra)
+		return fmt.Errorf("FeedDefs_Artist: map struct too large (%d)", extra)
 	}
 
 	n := extra

@@ -2,16 +2,16 @@
 
 package teal
 
-// schema: fm.teal.alpha.actor.profile
+// schema: fm.teal.actor.profile
 
 import (
 	appbskytypes "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/lex/util"
 )
 
-// RECORDTYPE: AlphaActorProfile
-type AlphaActorProfile struct {
-	LexiconTypeID string `json:"$type,const=fm.teal.alpha.actor.profile" cborgen:"$type,const=fm.teal.alpha.actor.profile"`
+// RECORDTYPE: ActorProfile
+type ActorProfile struct {
+	LexiconTypeID string `json:"$type,const=fm.teal.actor.profile" cborgen:"$type,const=fm.teal.actor.profile"`
 	// avatar: Small image to be displayed next to posts from account. AKA, 'profile picture'
 	Avatar *util.LexBlob `json:"avatar,omitempty" cborgen:"avatar,omitempty"`
 	// banner: Larger horizontal image to display behind profile view.
@@ -23,11 +23,11 @@ type AlphaActorProfile struct {
 	DescriptionFacets []*appbskytypes.RichtextFacet `json:"descriptionFacets,omitempty" cborgen:"descriptionFacets,omitempty"`
 	DisplayName       *string                       `json:"displayName,omitempty" cborgen:"displayName,omitempty"`
 	// featuredItem: The user's most recent item featured on their profile.
-	FeaturedItem *AlphaActorProfile_FeaturedItem `json:"featuredItem,omitempty" cborgen:"featuredItem,omitempty"`
+	FeaturedItem *ActorProfile_FeaturedItem `json:"featuredItem,omitempty" cborgen:"featuredItem,omitempty"`
 }
 
-// AlphaActorProfile_FeaturedItem is a "featuredItem" in the fm.teal.alpha.actor.profile schema.
-type AlphaActorProfile_FeaturedItem struct {
+// ActorProfile_FeaturedItem is a "featuredItem" in the fm.teal.actor.profile schema.
+type ActorProfile_FeaturedItem struct {
 	// mbid: The MusicBrainz ID URI of the item, formatted as mbid:<uuid>
 	Mbid string `json:"mbid" cborgen:"mbid"`
 	// type: The type of the item. Must be a valid Musicbrainz type, e.g. album, track, recording, etc.
@@ -35,5 +35,5 @@ type AlphaActorProfile_FeaturedItem struct {
 }
 
 func init() {
-	util.RegisterType("fm.teal.alpha.actor.profile", &AlphaActorProfile{})
+	util.RegisterType("fm.teal.actor.profile", &ActorProfile{})
 }

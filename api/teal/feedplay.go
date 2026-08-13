@@ -4,26 +4,26 @@ package teal
 
 import "github.com/bluesky-social/indigo/lex/util"
 
-// schema: fm.teal.alpha.feed.play
+// schema: fm.teal.feed.play
 
-// RECORDTYPE: AlphaFeedPlay
-type AlphaFeedPlay struct {
-	LexiconTypeID string `json:"$type,const=fm.teal.alpha.feed.play" cborgen:"$type,const=fm.teal.alpha.feed.play"`
+// RECORDTYPE: FeedPlay
+type FeedPlay struct {
+	LexiconTypeID string `json:"$type,const=fm.teal.feed.play" cborgen:"$type,const=fm.teal.feed.play"`
 	// artistMbIds: DEPRECATED: USE 'artists' INSTEAD. Array of Musicbrainz artist IDs.
 	ArtistMbIds []string `json:"artistMbIds,omitempty" cborgen:"artistMbIds,omitempty"`
 	// artistNames: DEPRECATED: USE 'artists' INSTEAD. Array of artist names in order of original appearance.
 	ArtistNames []string `json:"artistNames,omitempty" cborgen:"artistNames,omitempty"`
 	// artists: Array of artists in order of original appearance.
-	Artists []*AlphaFeedDefs_Artist `json:"artists,omitempty" cborgen:"artists,omitempty"`
+	Artists []*FeedDefs_Artist `json:"artists,omitempty" cborgen:"artists,omitempty"`
 	// duration: The length of the track in seconds
 	Duration *int64 `json:"duration,omitempty" cborgen:"duration,omitempty"`
 	// isrc: The ISRC code associated with the recording
 	Isrc *string `json:"isrc,omitempty" cborgen:"isrc,omitempty"`
-	// musicServiceBaseDomain: The base domain of the music service. e.g. music.apple.com, tidal.com, spotify.com. Defaults to 'local' if unavailable or not provided.
-	MusicServiceBaseDomain *string `json:"musicServiceBaseDomain,omitempty" cborgen:"musicServiceBaseDomain,omitempty"`
-	// originUrl: The URL associated with this track
-	OriginUrl *string `json:"originUrl,omitempty" cborgen:"originUrl,omitempty"`
-	// playedTime: The unix timestamp of when the track was played
+	// musicServiceUri: The canonical URI identifying the listening surface or music service.
+	MusicServiceUri *string `json:"musicServiceUri,omitempty" cborgen:"musicServiceUri,omitempty"`
+	// originUri: The exact URI where the listening event originated.
+	OriginUri *string `json:"originUri,omitempty" cborgen:"originUri,omitempty"`
+	// playedTime: The datetime at which playback began.
 	PlayedTime *string `json:"playedTime,omitempty" cborgen:"playedTime,omitempty"`
 	// recordingMbId: The MusicBrainz recording ID URI of the track, formatted as mbid:<uuid>
 	RecordingMbId *string `json:"recordingMbId,omitempty" cborgen:"recordingMbId,omitempty"`
@@ -44,5 +44,5 @@ type AlphaFeedPlay struct {
 }
 
 func init() {
-	util.RegisterType("fm.teal.alpha.feed.play", &AlphaFeedPlay{})
+	util.RegisterType("fm.teal.feed.play", &FeedPlay{})
 }
