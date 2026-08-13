@@ -55,6 +55,12 @@ func (t *trackResponseTransport) RoundTrip(req *http.Request) (*http.Response, e
 	}, nil
 }
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
 // newTestDB creates an in-memory SQLite database for testing.
 func newTestDB(t *testing.T) *db.DB {
 	t.Helper()
@@ -179,6 +185,63 @@ func TestProcessUserSavesDifferentUploadedTrack(t *testing.T) {
 
 	if got := env.trackCount(t); got != 2 {
 		t.Errorf("expected 2 tracks (new upload saved), got %d", got)
+	}
+}
+
+func TestFetchRecentPlayedTracksRequestsLibrarySongs(t *testing.T) {
+	testDB := newTestDB(t)
+	var gotTypes, gotLimit string
+	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		gotTypes = req.URL.Query().Get("types")
+		gotLimit = req.URL.Query().Get("limit")
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body:       io.NopCloser(strings.NewReader(`{"data":[]}`)),
+			Header:     make(http.Header),
+		}, nil
+	})
+	svc := newTestService(t, testDB, transport)
+
+	if _, err := svc.FetchRecentPlayedTracks(context.Background(), "user-token", 1); err != nil {
+		t.Fatalf("FetchRecentPlayedTracks returned error: %v", err)
+	}
+
+	if gotTypes != "songs,library-songs" {
+		t.Errorf("types query = %q, want %q", gotTypes, "songs,library-songs")
+	}
+	if gotLimit != "1" {
+		t.Errorf("limit query = %q, want %q", gotLimit, "1")
+	}
+}
+
+func TestFetchRecentPlayedTracksIncludesAppleErrorDetails(t *testing.T) {
+	testDB := newTestDB(t)
+	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusForbidden,
+			Status:     "403 Forbidden",
+			Body: io.NopCloser(strings.NewReader(`{
+				"errors":[{
+					"status":"403",
+					"code":"AUTHORIZATION_ERROR",
+					"title":"Forbidden",
+					"detail":"The music user token is invalid or expired."
+				}]
+			}`)),
+			Header: make(http.Header),
+		}, nil
+	})
+	svc := newTestService(t, testDB, transport)
+
+	_, err := svc.FetchRecentPlayedTracks(context.Background(), "user-token", 1)
+	if err == nil {
+		t.Fatal("FetchRecentPlayedTracks returned nil error")
+	}
+	for _, want := range []string{"403 Forbidden", "Forbidden", "invalid or expired", "AUTHORIZATION_ERROR"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
+		}
 	}
 }
 
