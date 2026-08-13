@@ -251,12 +251,12 @@ func (p *Service) trackToPlayView(track *models.Track) (*teal.FeedDefs_PlayView,
 		isrcPtr = &track.ISRC
 	}
 
-	var originUrlPtr *string
+	var originURI *string
 	if track.URL != "" {
-		originUrlPtr = &track.URL
+		originURI = &track.URL
 	}
 
-	servicePtr := models.FormatMusicServiceBaseDomain(track.ServiceBaseUrl)
+	serviceURI := models.FormatMusicServiceURI(track.ServiceBaseUrl)
 
 	var releaseNamePtr *string
 	if track.Album != "" {
@@ -270,17 +270,17 @@ func (p *Service) trackToPlayView(track *models.Track) (*teal.FeedDefs_PlayView,
 	}
 
 	playView := &teal.FeedDefs_PlayView{
-		TrackName:              track.Name,
-		Artists:                artists,
-		Duration:               durationPtr,
-		PlayedTime:             playedTimeStr,
-		RecordingMbId:          models.FormatMBIDURI(track.RecordingMBID),
-		ReleaseMbId:            models.FormatMBIDURI(track.ReleaseMBID),
-		ReleaseName:            releaseNamePtr,
-		Isrc:                   isrcPtr,
-		OriginUrl:              originUrlPtr,
-		MusicServiceBaseDomain: servicePtr,
-		SubmissionClientAgent:  &submissionAgent,
+		TrackName:             track.Name,
+		Artists:               artists,
+		Duration:              durationPtr,
+		PlayedTime:            playedTimeStr,
+		RecordingMbId:         models.FormatMBIDURI(track.RecordingMBID),
+		ReleaseMbId:           models.FormatMBIDURI(track.ReleaseMBID),
+		ReleaseName:           releaseNamePtr,
+		Isrc:                  isrcPtr,
+		OriginUri:             originURI,
+		MusicServiceUri:       serviceURI,
+		SubmissionClientAgent: &submissionAgent,
 	}
 
 	return playView, nil

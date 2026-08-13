@@ -20,11 +20,11 @@ type FeedDefs_PlayView struct {
 	Duration *int64 `json:"duration,omitempty" cborgen:"duration,omitempty"`
 	// isrc: The ISRC code associated with the recording
 	Isrc *string `json:"isrc,omitempty" cborgen:"isrc,omitempty"`
-	// musicServiceBaseDomain: The base domain of the music service. e.g. music.apple.com, tidal.com, spotify.com. Defaults to 'local' if not provided.
-	MusicServiceBaseDomain *string `json:"musicServiceBaseDomain,omitempty" cborgen:"musicServiceBaseDomain,omitempty"`
-	// originUrl: The URL associated with this track
-	OriginUrl *string `json:"originUrl,omitempty" cborgen:"originUrl,omitempty"`
-	// playedTime: The unix timestamp of when the track was played
+	// musicServiceUri: The canonical URI identifying the listening surface or music service.
+	MusicServiceUri *string `json:"musicServiceUri,omitempty" cborgen:"musicServiceUri,omitempty"`
+	// originUri: The exact URI where the listening event originated.
+	OriginUri *string `json:"originUri,omitempty" cborgen:"originUri,omitempty"`
+	// playedTime: The datetime at which playback began.
 	PlayedTime *string `json:"playedTime,omitempty" cborgen:"playedTime,omitempty"`
 	// recordingMbId: The MusicBrainz recording ID URI of the track, formatted as mbid:<uuid>
 	RecordingMbId *string `json:"recordingMbId,omitempty" cborgen:"recordingMbId,omitempty"`

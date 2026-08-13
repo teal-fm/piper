@@ -81,12 +81,12 @@ func TrackToPlayRecord(track *models.Track) (*teal.FeedPlay, error) {
 		isrcPtr = &track.ISRC
 	}
 
-	var originUrlPtr *string
+	var originURI *string
 	if track.URL != "" {
-		originUrlPtr = &track.URL
+		originURI = &track.URL
 	}
 
-	servicePtr := models.FormatMusicServiceBaseDomain(track.ServiceBaseUrl)
+	serviceURI := models.FormatMusicServiceURI(track.ServiceBaseUrl)
 
 	var releaseNamePtr *string
 	if track.Album != "" {
@@ -100,18 +100,18 @@ func TrackToPlayRecord(track *models.Track) (*teal.FeedPlay, error) {
 	}
 
 	playRecord := &teal.FeedPlay{
-		LexiconTypeID:          "fm.teal.feed.play",
-		TrackName:              track.Name,
-		Artists:                artists,
-		Duration:               durationPtr,
-		PlayedTime:             playedTimeStr,
-		RecordingMbId:          models.FormatMBIDURI(track.RecordingMBID),
-		ReleaseMbId:            models.FormatMBIDURI(track.ReleaseMBID),
-		ReleaseName:            releaseNamePtr,
-		Isrc:                   isrcPtr,
-		OriginUrl:              originUrlPtr,
-		MusicServiceBaseDomain: servicePtr,
-		SubmissionClientAgent:  &submissionAgent,
+		LexiconTypeID:         "fm.teal.feed.play",
+		TrackName:             track.Name,
+		Artists:               artists,
+		Duration:              durationPtr,
+		PlayedTime:            playedTimeStr,
+		RecordingMbId:         models.FormatMBIDURI(track.RecordingMBID),
+		ReleaseMbId:           models.FormatMBIDURI(track.ReleaseMBID),
+		ReleaseName:           releaseNamePtr,
+		Isrc:                  isrcPtr,
+		OriginUri:             originURI,
+		MusicServiceUri:       serviceURI,
+		SubmissionClientAgent: &submissionAgent,
 	}
 
 	return playRecord, nil

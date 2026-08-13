@@ -33,7 +33,7 @@ func FormatMBIDURI(id *string) *string {
 	return &formatted
 }
 
-func FormatMusicServiceBaseDomain(service string) *string {
+func FormatMusicServiceURI(service string) *string {
 	trimmed := strings.TrimSpace(service)
 	if trimmed == "" {
 		return nil
@@ -41,14 +41,13 @@ func FormatMusicServiceBaseDomain(service string) *string {
 
 	normalized := strings.ToLower(trimmed)
 	if alias, ok := serviceDomainAliases[normalized]; ok {
-		return &alias
+		normalized = alias
 	}
 
 	if strings.Contains(normalized, "://") {
 		parsed, err := url.Parse(normalized)
 		if err == nil && parsed.Hostname() != "" {
-			host := parsed.Hostname()
-			return &host
+			normalized = parsed.Hostname()
 		}
 	}
 
@@ -56,5 +55,6 @@ func FormatMusicServiceBaseDomain(service string) *string {
 		normalized = strings.SplitN(normalized, "/", 2)[0]
 	}
 
-	return &normalized
+	uri := "https://" + normalized
+	return &uri
 }

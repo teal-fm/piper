@@ -49,11 +49,11 @@ func (t *FeedPlay) MarshalCBOR(w io.Writer) error {
 		fieldCount--
 	}
 
-	if t.MusicServiceBaseDomain == nil {
+	if t.MusicServiceUri == nil {
 		fieldCount--
 	}
 
-	if t.OriginUrl == nil {
+	if t.OriginUri == nil {
 		fieldCount--
 	}
 
@@ -205,33 +205,33 @@ func (t *FeedPlay) MarshalCBOR(w io.Writer) error {
 
 	}
 
-	// t.OriginUrl (string) (string)
-	if t.OriginUrl != nil {
+	// t.OriginUri (string) (string)
+	if t.OriginUri != nil {
 
-		if len("originUrl") > 1000000 {
-			return xerrors.Errorf("Value in field \"originUrl\" was too long")
+		if len("originUri") > 1000000 {
+			return xerrors.Errorf("Value in field \"originUri\" was too long")
 		}
 
-		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("originUrl"))); err != nil {
+		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("originUri"))); err != nil {
 			return err
 		}
-		if _, err := cw.WriteString(string("originUrl")); err != nil {
+		if _, err := cw.WriteString(string("originUri")); err != nil {
 			return err
 		}
 
-		if t.OriginUrl == nil {
+		if t.OriginUri == nil {
 			if _, err := cw.Write(cbg.CborNull); err != nil {
 				return err
 			}
 		} else {
-			if len(*t.OriginUrl) > 1000000 {
-				return xerrors.Errorf("Value in field t.OriginUrl was too long")
+			if len(*t.OriginUri) > 1000000 {
+				return xerrors.Errorf("Value in field t.OriginUri was too long")
 			}
 
-			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(*t.OriginUrl))); err != nil {
+			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(*t.OriginUri))); err != nil {
 				return err
 			}
-			if _, err := cw.WriteString(string(*t.OriginUrl)); err != nil {
+			if _, err := cw.WriteString(string(*t.OriginUri)); err != nil {
 				return err
 			}
 		}
@@ -492,6 +492,38 @@ func (t *FeedPlay) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
+	// t.MusicServiceUri (string) (string)
+	if t.MusicServiceUri != nil {
+
+		if len("musicServiceUri") > 1000000 {
+			return xerrors.Errorf("Value in field \"musicServiceUri\" was too long")
+		}
+
+		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("musicServiceUri"))); err != nil {
+			return err
+		}
+		if _, err := cw.WriteString(string("musicServiceUri")); err != nil {
+			return err
+		}
+
+		if t.MusicServiceUri == nil {
+			if _, err := cw.Write(cbg.CborNull); err != nil {
+				return err
+			}
+		} else {
+			if len(*t.MusicServiceUri) > 1000000 {
+				return xerrors.Errorf("Value in field t.MusicServiceUri was too long")
+			}
+
+			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(*t.MusicServiceUri))); err != nil {
+				return err
+			}
+			if _, err := cw.WriteString(string(*t.MusicServiceUri)); err != nil {
+				return err
+			}
+		}
+	}
+
 	// t.TrackDiscriminant (string) (string)
 	if t.TrackDiscriminant != nil {
 
@@ -587,38 +619,6 @@ func (t *FeedPlay) MarshalCBOR(w io.Writer) error {
 			}
 		}
 	}
-
-	// t.MusicServiceBaseDomain (string) (string)
-	if t.MusicServiceBaseDomain != nil {
-
-		if len("musicServiceBaseDomain") > 1000000 {
-			return xerrors.Errorf("Value in field \"musicServiceBaseDomain\" was too long")
-		}
-
-		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("musicServiceBaseDomain"))); err != nil {
-			return err
-		}
-		if _, err := cw.WriteString(string("musicServiceBaseDomain")); err != nil {
-			return err
-		}
-
-		if t.MusicServiceBaseDomain == nil {
-			if _, err := cw.Write(cbg.CborNull); err != nil {
-				return err
-			}
-		} else {
-			if len(*t.MusicServiceBaseDomain) > 1000000 {
-				return xerrors.Errorf("Value in field t.MusicServiceBaseDomain was too long")
-			}
-
-			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(*t.MusicServiceBaseDomain))); err != nil {
-				return err
-			}
-			if _, err := cw.WriteString(string(*t.MusicServiceBaseDomain)); err != nil {
-				return err
-			}
-		}
-	}
 	return nil
 }
 
@@ -647,7 +647,7 @@ func (t *FeedPlay) UnmarshalCBOR(r io.Reader) (err error) {
 
 	n := extra
 
-	nameBuf := make([]byte, 22)
+	nameBuf := make([]byte, 21)
 	for i := uint64(0); i < n; i++ {
 		nameLen, ok, err := cbg.ReadFullStringIntoBuf(cr, nameBuf, 1000000)
 		if err != nil {
@@ -780,8 +780,8 @@ func (t *FeedPlay) UnmarshalCBOR(r io.Reader) (err error) {
 					t.Duration = (*int64)(&extraI)
 				}
 			}
-			// t.OriginUrl (string) (string)
-		case "originUrl":
+			// t.OriginUri (string) (string)
+		case "originUri":
 
 			{
 				b, err := cr.ReadByte()
@@ -798,7 +798,7 @@ func (t *FeedPlay) UnmarshalCBOR(r io.Reader) (err error) {
 						return err
 					}
 
-					t.OriginUrl = (*string)(&sval)
+					t.OriginUri = (*string)(&sval)
 				}
 			}
 			// t.TrackMbId (string) (string)
@@ -997,6 +997,27 @@ func (t *FeedPlay) UnmarshalCBOR(r io.Reader) (err error) {
 					t.RecordingMbId = (*string)(&sval)
 				}
 			}
+			// t.MusicServiceUri (string) (string)
+		case "musicServiceUri":
+
+			{
+				b, err := cr.ReadByte()
+				if err != nil {
+					return err
+				}
+				if b != cbg.CborNull[0] {
+					if err := cr.UnreadByte(); err != nil {
+						return err
+					}
+
+					sval, err := cbg.ReadStringWithMax(cr, 1000000)
+					if err != nil {
+						return err
+					}
+
+					t.MusicServiceUri = (*string)(&sval)
+				}
+			}
 			// t.TrackDiscriminant (string) (string)
 		case "trackDiscriminant":
 
@@ -1058,27 +1079,6 @@ func (t *FeedPlay) UnmarshalCBOR(r io.Reader) (err error) {
 					}
 
 					t.SubmissionClientAgent = (*string)(&sval)
-				}
-			}
-			// t.MusicServiceBaseDomain (string) (string)
-		case "musicServiceBaseDomain":
-
-			{
-				b, err := cr.ReadByte()
-				if err != nil {
-					return err
-				}
-				if b != cbg.CborNull[0] {
-					if err := cr.UnreadByte(); err != nil {
-						return err
-					}
-
-					sval, err := cbg.ReadStringWithMax(cr, 1000000)
-					if err != nil {
-						return err
-					}
-
-					t.MusicServiceBaseDomain = (*string)(&sval)
 				}
 			}
 
@@ -1946,11 +1946,11 @@ func (t *FeedDefs_PlayView) MarshalCBOR(w io.Writer) error {
 		fieldCount--
 	}
 
-	if t.MusicServiceBaseDomain == nil {
+	if t.MusicServiceUri == nil {
 		fieldCount--
 	}
 
-	if t.OriginUrl == nil {
+	if t.OriginUri == nil {
 		fieldCount--
 	}
 
@@ -2072,33 +2072,33 @@ func (t *FeedDefs_PlayView) MarshalCBOR(w io.Writer) error {
 
 	}
 
-	// t.OriginUrl (string) (string)
-	if t.OriginUrl != nil {
+	// t.OriginUri (string) (string)
+	if t.OriginUri != nil {
 
-		if len("originUrl") > 1000000 {
-			return xerrors.Errorf("Value in field \"originUrl\" was too long")
+		if len("originUri") > 1000000 {
+			return xerrors.Errorf("Value in field \"originUri\" was too long")
 		}
 
-		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("originUrl"))); err != nil {
+		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("originUri"))); err != nil {
 			return err
 		}
-		if _, err := cw.WriteString(string("originUrl")); err != nil {
+		if _, err := cw.WriteString(string("originUri")); err != nil {
 			return err
 		}
 
-		if t.OriginUrl == nil {
+		if t.OriginUri == nil {
 			if _, err := cw.Write(cbg.CborNull); err != nil {
 				return err
 			}
 		} else {
-			if len(*t.OriginUrl) > 1000000 {
-				return xerrors.Errorf("Value in field t.OriginUrl was too long")
+			if len(*t.OriginUri) > 1000000 {
+				return xerrors.Errorf("Value in field t.OriginUri was too long")
 			}
 
-			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(*t.OriginUrl))); err != nil {
+			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(*t.OriginUri))); err != nil {
 				return err
 			}
-			if _, err := cw.WriteString(string(*t.OriginUrl)); err != nil {
+			if _, err := cw.WriteString(string(*t.OriginUri)); err != nil {
 				return err
 			}
 		}
@@ -2287,6 +2287,38 @@ func (t *FeedDefs_PlayView) MarshalCBOR(w io.Writer) error {
 		}
 	}
 
+	// t.MusicServiceUri (string) (string)
+	if t.MusicServiceUri != nil {
+
+		if len("musicServiceUri") > 1000000 {
+			return xerrors.Errorf("Value in field \"musicServiceUri\" was too long")
+		}
+
+		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("musicServiceUri"))); err != nil {
+			return err
+		}
+		if _, err := cw.WriteString(string("musicServiceUri")); err != nil {
+			return err
+		}
+
+		if t.MusicServiceUri == nil {
+			if _, err := cw.Write(cbg.CborNull); err != nil {
+				return err
+			}
+		} else {
+			if len(*t.MusicServiceUri) > 1000000 {
+				return xerrors.Errorf("Value in field t.MusicServiceUri was too long")
+			}
+
+			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(*t.MusicServiceUri))); err != nil {
+				return err
+			}
+			if _, err := cw.WriteString(string(*t.MusicServiceUri)); err != nil {
+				return err
+			}
+		}
+	}
+
 	// t.SubmissionClientAgent (string) (string)
 	if t.SubmissionClientAgent != nil {
 
@@ -2314,38 +2346,6 @@ func (t *FeedDefs_PlayView) MarshalCBOR(w io.Writer) error {
 				return err
 			}
 			if _, err := cw.WriteString(string(*t.SubmissionClientAgent)); err != nil {
-				return err
-			}
-		}
-	}
-
-	// t.MusicServiceBaseDomain (string) (string)
-	if t.MusicServiceBaseDomain != nil {
-
-		if len("musicServiceBaseDomain") > 1000000 {
-			return xerrors.Errorf("Value in field \"musicServiceBaseDomain\" was too long")
-		}
-
-		if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len("musicServiceBaseDomain"))); err != nil {
-			return err
-		}
-		if _, err := cw.WriteString(string("musicServiceBaseDomain")); err != nil {
-			return err
-		}
-
-		if t.MusicServiceBaseDomain == nil {
-			if _, err := cw.Write(cbg.CborNull); err != nil {
-				return err
-			}
-		} else {
-			if len(*t.MusicServiceBaseDomain) > 1000000 {
-				return xerrors.Errorf("Value in field t.MusicServiceBaseDomain was too long")
-			}
-
-			if err := cw.WriteMajorTypeHeader(cbg.MajTextString, uint64(len(*t.MusicServiceBaseDomain))); err != nil {
-				return err
-			}
-			if _, err := cw.WriteString(string(*t.MusicServiceBaseDomain)); err != nil {
 				return err
 			}
 		}
@@ -2378,7 +2378,7 @@ func (t *FeedDefs_PlayView) UnmarshalCBOR(r io.Reader) (err error) {
 
 	n := extra
 
-	nameBuf := make([]byte, 22)
+	nameBuf := make([]byte, 21)
 	for i := uint64(0); i < n; i++ {
 		nameLen, ok, err := cbg.ReadFullStringIntoBuf(cr, nameBuf, 1000000)
 		if err != nil {
@@ -2500,8 +2500,8 @@ func (t *FeedDefs_PlayView) UnmarshalCBOR(r io.Reader) (err error) {
 					t.Duration = (*int64)(&extraI)
 				}
 			}
-			// t.OriginUrl (string) (string)
-		case "originUrl":
+			// t.OriginUri (string) (string)
+		case "originUri":
 
 			{
 				b, err := cr.ReadByte()
@@ -2518,7 +2518,7 @@ func (t *FeedDefs_PlayView) UnmarshalCBOR(r io.Reader) (err error) {
 						return err
 					}
 
-					t.OriginUrl = (*string)(&sval)
+					t.OriginUri = (*string)(&sval)
 				}
 			}
 			// t.TrackMbId (string) (string)
@@ -2637,6 +2637,27 @@ func (t *FeedDefs_PlayView) UnmarshalCBOR(r io.Reader) (err error) {
 					t.RecordingMbId = (*string)(&sval)
 				}
 			}
+			// t.MusicServiceUri (string) (string)
+		case "musicServiceUri":
+
+			{
+				b, err := cr.ReadByte()
+				if err != nil {
+					return err
+				}
+				if b != cbg.CborNull[0] {
+					if err := cr.UnreadByte(); err != nil {
+						return err
+					}
+
+					sval, err := cbg.ReadStringWithMax(cr, 1000000)
+					if err != nil {
+						return err
+					}
+
+					t.MusicServiceUri = (*string)(&sval)
+				}
+			}
 			// t.SubmissionClientAgent (string) (string)
 		case "submissionClientAgent":
 
@@ -2656,27 +2677,6 @@ func (t *FeedDefs_PlayView) UnmarshalCBOR(r io.Reader) (err error) {
 					}
 
 					t.SubmissionClientAgent = (*string)(&sval)
-				}
-			}
-			// t.MusicServiceBaseDomain (string) (string)
-		case "musicServiceBaseDomain":
-
-			{
-				b, err := cr.ReadByte()
-				if err != nil {
-					return err
-				}
-				if b != cbg.CborNull[0] {
-					if err := cr.UnreadByte(); err != nil {
-						return err
-					}
-
-					sval, err := cbg.ReadStringWithMax(cr, 1000000)
-					if err != nil {
-						return err
-					}
-
-					t.MusicServiceBaseDomain = (*string)(&sval)
 				}
 			}
 

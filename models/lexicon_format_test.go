@@ -23,23 +23,23 @@ func TestFormatMBIDURI(t *testing.T) {
 	}
 }
 
-func TestFormatMusicServiceBaseDomain(t *testing.T) {
+func TestFormatMusicServiceURI(t *testing.T) {
 	tests := []struct {
 		name string
 		in   string
 		want *string
 	}{
 		{name: "empty"},
-		{name: "alias", in: "spotify", want: strPtr("spotify.com")},
-		{name: "lastfm alias", in: "lastfm", want: strPtr("last.fm")},
-		{name: "url", in: "https://open.spotify.com/track/test", want: strPtr("open.spotify.com")},
-		{name: "domain with path", in: "music.apple.com/us/album/test", want: strPtr("music.apple.com")},
-		{name: "domain", in: "ListenBrainz.org", want: strPtr("listenbrainz.org")},
+		{name: "alias", in: "spotify", want: strPtr("https://spotify.com")},
+		{name: "lastfm alias", in: "lastfm", want: strPtr("https://last.fm")},
+		{name: "url", in: "https://open.spotify.com/track/test", want: strPtr("https://open.spotify.com")},
+		{name: "domain with path", in: "music.apple.com/us/album/test", want: strPtr("https://music.apple.com")},
+		{name: "domain", in: "ListenBrainz.org", want: strPtr("https://listenbrainz.org")},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := FormatMusicServiceBaseDomain(tt.in)
+			got := FormatMusicServiceURI(tt.in)
 			assertStringPtr(t, got, tt.want)
 		})
 	}
