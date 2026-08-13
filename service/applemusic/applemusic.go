@@ -298,9 +298,43 @@ type recentPlayedResponse struct {
 	Data []AppleRecentTrack `json:"data"`
 }
 
+type appleMusicErrorResponse struct {
+	Errors []struct {
+		Status string `json:"status"`
+		Code   string `json:"code"`
+		Title  string `json:"title"`
+		Detail string `json:"detail"`
+	} `json:"errors"`
+}
+
+func newAppleMusicAPIError(status string, body []byte) error {
+	var parsed appleMusicErrorResponse
+	if err := json.Unmarshal(body, &parsed); err == nil && len(parsed.Errors) > 0 {
+		apiErr := parsed.Errors[0]
+		message := strings.TrimSpace(apiErr.Title)
+		if detail := strings.TrimSpace(apiErr.Detail); detail != "" {
+			if message != "" {
+				message += ": "
+			}
+			message += detail
+		}
+		if code := strings.TrimSpace(apiErr.Code); code != "" {
+			if message != "" {
+				message += " "
+			}
+			message += "[" + code + "]"
+		}
+		if message != "" {
+			return fmt.Errorf("apple music api error: %s: %s", status, message)
+		}
+	}
+
+	return fmt.Errorf("apple music api error: %s", status)
+}
+
 // FetchRecentPlayedTracks calls Apple Music API for a user token
 func (s *Service) FetchRecentPlayedTracks(ctx context.Context, userToken string, limit int) ([]AppleRecentTrack, error) {
-	if limit <= 0 || limit > 50 {
+	if limit <= 0 || limit > 30 {
 		limit = 25
 	}
 	devToken, _, err := s.GenerateDeveloperToken()
@@ -310,6 +344,7 @@ func (s *Service) FetchRecentPlayedTracks(ctx context.Context, userToken string,
 	endpoint := &url.URL{Scheme: "https", Host: "api.music.apple.com", Path: "/v1/me/recent/played/tracks"}
 	q := endpoint.Query()
 	q.Set("limit", fmt.Sprintf("%d", limit))
+	q.Set("types", "songs,library-songs")
 	endpoint.RawQuery = q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
@@ -330,14 +365,13 @@ func (s *Service) FetchRecentPlayedTracks(ctx context.Context, userToken string,
 		}
 	}(resp.Body)
 
-	// Read the full response body to log it
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("apple music api error: %s", resp.Status)
+		return nil, newAppleMusicAPIError(resp.Status, bodyBytes)
 	}
 
 	var parsed recentPlayedResponse
