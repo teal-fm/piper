@@ -52,11 +52,12 @@ func TestBackfill(t *testing.T) {
 		wantSource string
 	}{
 		{"apple", "music.apple.com", string(SourceAppleMusic)},
-		{"lastfm", "last.fm", string(SourceLastfm)},
+		{"lastfm dot", "last.fm", string(SourceLastfm)},
+		{"lastfm bare", "lastfm", string(SourceLastfm)},
 		{"spotify", "open.spotify.com", string(SourceSpotify)},
 		{"listenbrainz default", "listenbrainz", string(SourceListenBrainz)},
 		{"listenbrainz spotify id", "spotify", string(SourceListenBrainz)},
-		{"arbitrary", "Tidal Music App", string(SourceListenBrainz)},
+		{"arbitrary", "Tidal Music App", string(externalSource)},
 		{"empty", "", string(externalSource)},
 	}
 	for _, tc := range cases {

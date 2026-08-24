@@ -209,6 +209,7 @@ var legacyIdentityByPresentation = []struct {
 }{
 	{"music.apple.com", SourceAppleMusic},
 	{"last.fm", SourceLastfm},
+	{"lastfm", SourceLastfm},
 	{"open.spotify.com", SourceSpotify},
 	{"listenbrainz", SourceListenBrainz},
 	{"spotify", SourceListenBrainz},
@@ -231,11 +232,7 @@ func (db *DB) backfillTrackSources() error {
 			return fmt.Errorf("backfilling track sources for %s: %w", mapping.source, err)
 		}
 	}
-	if _, err := tx.Exec(
-		`UPDATE tracks SET source = ? WHERE source = ? AND service_base_url IS NOT NULL AND service_base_url != ''`,
-		SourceListenBrainz, externalSource); err != nil {
-		return fmt.Errorf("backfilling remaining listenbrainz sources: %w", err)
-	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("backfilling track sources: %w", err)
 	}
@@ -457,12 +454,15 @@ func (db *DB) SaveTrack(userID int64, source TrackSource, track *models.Track) (
 
 // HasTrackListen reports whether a listen with the same name and timestamp
 // is already stored for the user, so resubmitted payloads stay idempotent.
-func (db *DB) HasTrackListen(userID int64, name string, timestamp time.Time) (bool, error) {
+func (db *DB) HasTrackListen(userID int64, source TrackSource, name string, timestamp time.Time) (bool, error) {
+	if !source.IsValid() {
+		return false, fmt.Errorf("invalid source %q", source)
+	}
 	var exists bool
 	err := db.QueryRow(`
 	SELECT EXISTS(
-		SELECT 1 FROM tracks WHERE user_id = ? AND name = ? AND timestamp = ?
-	)`, userID, name, timestamp).Scan(&exists)
+		SELECT 1 FROM tracks WHERE user_id = ? AND source = ? AND name = ? AND timestamp = ?
+	)`, userID, source, name, timestamp).Scan(&exists)
 	return exists, err
 }
 
