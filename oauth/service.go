@@ -18,5 +18,5 @@ type AuthService interface {
 type TokenReceiver interface {
 	// SetAccessToken stores the access token in the db
 	// if there is a session, will associate the token with the session
-	SetAccessToken(token string, refreshToken string, currentId int64, hasSession bool) (int64, error)
+	SetAccessToken(token string, refreshToken string, userID int64) (int64, error)
 }

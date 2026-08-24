@@ -9,156 +9,222 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"strings"
+	"sync"
+	"time"
 
-	"github.com/teal-fm/piper/session"
 	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/spotify"
 )
 
+type userIDGetter func(context.Context) int64
+
+// Service implements the PKCE authorization-code flow with single-use CSRF
+// states. It is safe for concurrent use.
 type Service struct {
 	config        oauth2.Config
-	state         string
-	codeVerifier  string
-	codeChallenge string
 	tokenReceiver TokenReceiver
+	store         *memoryStateStore
+	logger        *log.Logger
+	getUserID     userIDGetter
 }
 
-func GenerateRandomState() string {
-	b := make([]byte, 16)
-	//This probably should panic
-	rand.Read(b)
-	return base64.URLEncoding.EncodeToString(b)
+type stateEntry struct {
+	verifier  string
+	expiresAt time.Time
 }
 
-func NewOAuth2Service(clientID, clientSecret, redirectURI string, scopes []string, provider string, tokenReceiver TokenReceiver) *Service {
-	var endpoint oauth2.Endpoint
+type memoryStateStore struct {
+	mu      sync.Mutex
+	entries map[string]stateEntry
+}
 
-	switch strings.ToLower(provider) {
-	case "spotify":
-		endpoint = spotify.Endpoint
-	default:
-		// placeholder
-		log.Printf("Warning: OAuth2 provider '%s' not explicitly configured. Using placeholder endpoints.", provider)
-		endpoint = oauth2.Endpoint{
-			AuthURL:  "https://example.com/auth",
-			TokenURL: "https://example.com/token",
+func newMemoryStateStore() *memoryStateStore {
+	return &memoryStateStore{
+		entries: make(map[string]stateEntry),
+	}
+}
+
+func (s *memoryStateStore) Set(state, verifier string, ttl time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+	for k, v := range s.entries {
+		if now.After(v.expiresAt) {
+			delete(s.entries, k)
 		}
 	}
 
-	codeVerifier := GenerateCodeVerifier()
-	codeChallenge := GenerateCodeChallenge(codeVerifier)
+	s.entries[state] = stateEntry{verifier: verifier, expiresAt: now.Add(ttl)}
+}
 
+func (s *memoryStateStore) GetAndDelete(state string) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	e, ok := s.entries[state]
+	if !ok {
+		return "", false
+	}
+
+	delete(s.entries, state)
+	if time.Now().After(e.expiresAt) {
+		return "", false
+	}
+
+	return e.verifier, true
+}
+
+const randAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+
+func randText(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		panic(fmt.Sprintf("rand.Read: %v", err))
+	}
+
+	for i := range b {
+		b[i] = randAlphabet[int(b[i])%len(randAlphabet)]
+	}
+
+	return string(b)
+}
+
+func NewOAuth2Service(cfg oauth2.Config, tokenReceiver TokenReceiver, logger *log.Logger, getUserID userIDGetter) *Service {
 	return &Service{
-		config: oauth2.Config{
-			ClientID:     clientID,
-			ClientSecret: clientSecret,
-			RedirectURL:  redirectURI,
-			Scopes:       scopes,
-			Endpoint:     endpoint,
-		},
-		state:         GenerateRandomState(),
-		codeVerifier:  codeVerifier,
-		codeChallenge: codeChallenge,
+		config:        cfg,
 		tokenReceiver: tokenReceiver,
+		store:         newMemoryStateStore(),
+		logger:        logger,
+		getUserID:     getUserID,
 	}
 }
 
-// GenerateCodeVerifier generate a random code verifier, for PKCE
-func GenerateCodeVerifier() string {
-	b := make([]byte, 64)
-	//This probably should panic
-	rand.Read(b)
-	return base64.RawURLEncoding.EncodeToString(b)
-}
-
-// GenerateCodeChallenge generate a code challenge for verification later
-func GenerateCodeChallenge(verifier string) string {
+func generateCodeChallenge(verifier string) string {
 	h := sha256.New()
 	h.Write([]byte(verifier))
+
 	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 }
 
+// HandleLogin redirects to the provider's authorization endpoint with a
+// single-use state and S256 PKCE challenge.
 func (o *Service) HandleLogin(w http.ResponseWriter, r *http.Request) {
+	state := randText(26)
+	verifier := randText(64)
+	challenge := generateCodeChallenge(verifier)
+
+	o.store.Set(state, verifier, 10*time.Minute)
+
 	opts := []oauth2.AuthCodeOption{
-		oauth2.SetAuthURLParam("code_challenge", o.codeChallenge),
+		oauth2.SetAuthURLParam("code_challenge", challenge),
 		oauth2.SetAuthURLParam("code_challenge_method", "S256"),
 	}
-	authURL := o.config.AuthCodeURL(o.state, opts...)
+
+	authURL := o.config.AuthCodeURL(state, opts...)
 	http.Redirect(w, r, authURL, http.StatusSeeOther)
 }
 
 func (o *Service) HandleLogout(w http.ResponseWriter, r *http.Request) {
-	//TODO not implemented yet. not sure what the api call is for this package
+	// TODO not implemented yet. not sure what the api call is for this package
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+type completeLoginParams struct {
+	State         string
+	Code          string
+	ProviderError string
+	ProviderDesc  string
+	UserID        int64
+}
+
+// HandleCallback handles the provider redirect. It requires query parameters
+// state and code (or error/error_description on provider denial).
+//
+// On success it returns the authenticated user ID. On failure it writes a
+// generic error (never reflecting provider strings) with 400 for client
+// errors and 500 for server errors and returns a sentinel for errors.Is.
 func (o *Service) HandleCallback(w http.ResponseWriter, r *http.Request) (int64, error) {
-	state := r.URL.Query().Get("state")
-	if state != o.state {
-		log.Printf("OAuth2 Callback Error: State mismatch. Expected '%s', got '%s'", o.state, state)
-		http.Error(w, "State mismatch", http.StatusBadRequest)
-		return 0, errors.New("state mismatch")
+	params := completeLoginParams{
+		State:         r.URL.Query().Get("state"),
+		Code:          r.URL.Query().Get("code"),
+		ProviderError: r.URL.Query().Get("error"),
+		ProviderDesc:  r.URL.Query().Get("error_description"),
+		UserID:        o.getUserID(r.Context()),
 	}
 
-	code := r.URL.Query().Get("code")
-	if code == "" {
-		errMsg := r.URL.Query().Get("error")
-		errDesc := r.URL.Query().Get("error_description")
-		log.Printf("OAuth2 Callback Error: No code provided. Error: '%s', Description: '%s'", errMsg, errDesc)
-		http.Error(w, fmt.Sprintf("Authorization failed: %s (%s)", errMsg, errDesc), http.StatusBadRequest)
-		return 0, errors.New("no code provided")
-	}
-
-	if o.tokenReceiver == nil {
-		log.Printf("OAuth2 Callback Error: TokenReceiver is not configured for this service.")
-		http.Error(w, "Internal server configuration error", http.StatusInternalServerError)
-		return 0, errors.New("token receiver not configured")
-	}
-
-	opts := []oauth2.AuthCodeOption{
-		oauth2.SetAuthURLParam("code_verifier", o.codeVerifier),
-	}
-
-	log.Println(code)
-
-	token, err := o.config.Exchange(context.Background(), code, opts...)
+	userID, err := o.completeLogin(r.Context(), params)
 	if err != nil {
-		log.Printf("OAuth2 Callback Error: Failed to exchange code for token: %v", err)
-		http.Error(w, fmt.Sprintf("Error exchanging code for token: %v", err), http.StatusInternalServerError)
-		return 0, errors.New("failed to exchange code for token")
+		status := httpStatusForOAuthError(err)
+		http.Error(w, err.Error(), status)
+		return 0, err
 	}
 
-	userId, hasSession := session.GetUserID(r.Context())
-	// store token and get uid
-	userID, err := o.tokenReceiver.SetAccessToken(token.AccessToken, token.RefreshToken, userId, hasSession)
-	if err != nil {
-		log.Printf("OAuth2 Callback Info: TokenReceiver did not return a valid user ID for token: %s...", token.AccessToken[:customMin(10, len(token.AccessToken))])
-	}
-
-	log.Printf("OAuth2 Callback Success: Exchanged code for token, UserID: %d", userID)
 	return userID, nil
 }
 
-func (o *Service) GetToken(code string) (*oauth2.Token, error) {
+var (
+	errStateMismatch  = errors.New("state mismatch")
+	errNoCode         = errors.New("no code provided")
+	errNoReceiver     = errors.New("token receiver not configured")
+	errExchangeFailed = errors.New("failed to exchange code for token")
+)
+
+func httpStatusForOAuthError(err error) int {
+	if errors.Is(err, errNoReceiver) || errors.Is(err, errExchangeFailed) {
+		return http.StatusInternalServerError
+	}
+
+	return http.StatusBadRequest
+}
+
+// State is consumed before any other check so a missing code still
+// invalidates the entry and provider errors are only logged for a valid
+// state, preventing CSRF bypass via forged error.
+func (o *Service) completeLogin(ctx context.Context, p completeLoginParams) (int64, error) {
+	verifier, ok := o.store.GetAndDelete(p.State)
+	if !ok {
+		o.logger.Printf("OAuth2 Callback Error: State mismatch or expired. Got '%s'", p.State)
+		return 0, errStateMismatch
+	}
+
+	if p.Code == "" {
+		if p.ProviderError != "" || p.ProviderDesc != "" {
+			o.logger.Printf("OAuth2 Callback Error: provider returned error for state '%s': error=%q desc=%q", p.State, p.ProviderError, p.ProviderDesc)
+		} else {
+			o.logger.Printf("OAuth2 Callback Error: No code provided for state '%s'", p.State)
+		}
+		return 0, errNoCode
+	}
+
+	if o.tokenReceiver == nil {
+		o.logger.Printf("OAuth2 Callback Error: TokenReceiver is not configured")
+		return 0, errNoReceiver
+	}
+
+	return o.exchangeAndStore(ctx, p.Code, verifier, p.UserID)
+}
+
+func (o *Service) exchangeAndStore(ctx context.Context, code, verifier string, uid int64) (int64, error) {
 	opts := []oauth2.AuthCodeOption{
-		oauth2.SetAuthURLParam("code_verifier", o.codeVerifier),
+		oauth2.SetAuthURLParam("code_verifier", verifier),
 	}
-	return o.config.Exchange(context.Background(), code, opts...)
-}
 
-func (o *Service) GetClient(token *oauth2.Token) *http.Client {
-	return o.config.Client(context.Background(), token)
-}
-
-func (o *Service) RefreshToken(token *oauth2.Token) (*oauth2.Token, error) {
-	source := o.config.TokenSource(context.Background(), token)
-	return oauth2.ReuseTokenSource(token, source).Token()
-}
-
-func customMin(a, b int) int {
-	if a < b {
-		return a
+	token, err := o.config.Exchange(ctx, code, opts...)
+	if err != nil {
+		o.logger.Printf("OAuth2 Callback Error: Failed to exchange code for token: %v", err)
+		return 0, errExchangeFailed
 	}
-	return b
+
+	userID, err := o.tokenReceiver.SetAccessToken(token.AccessToken, token.RefreshToken, uid)
+	if err != nil {
+		o.logger.Printf(
+			"OAuth2 Callback Info: TokenReceiver failed for token %q...: %v",
+			token.AccessToken[:min(len(token.AccessToken), 10)],
+			err,
+		)
+	}
+
+	o.logger.Printf("OAuth2 Callback Success: Exchanged code for token, UserID: %d", userID)
+
+	return userID, nil
 }

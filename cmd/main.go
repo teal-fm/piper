@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -8,18 +9,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/teal-fm/piper/service/applemusic"
-	"github.com/teal-fm/piper/service/lastfm"
-	"github.com/teal-fm/piper/service/playingnow"
-
 	"github.com/spf13/viper"
+	"golang.org/x/oauth2"
+	spotifyOauth "golang.org/x/oauth2/spotify"
+
 	"github.com/teal-fm/piper/config"
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/oauth"
 	"github.com/teal-fm/piper/oauth/atproto"
 	"github.com/teal-fm/piper/pages"
 	apikeyService "github.com/teal-fm/piper/service/apikey"
+	"github.com/teal-fm/piper/service/applemusic"
+	"github.com/teal-fm/piper/service/lastfm"
 	"github.com/teal-fm/piper/service/musicbrainz"
+	"github.com/teal-fm/piper/service/playingnow"
 	"github.com/teal-fm/piper/service/spotify"
 	"github.com/teal-fm/piper/session"
 )
@@ -180,12 +183,19 @@ func main() {
 	// Register Spotify OAuth service only if Spotify is enabled and configured
 	if spotifyService != nil {
 		spotifyOAuth := oauth.NewOAuth2Service(
-			viper.GetString("spotify.client_id"),
-			viper.GetString("spotify.client_secret"),
-			viper.GetString("callback.spotify"),
-			viper.GetStringSlice("spotify.scopes"),
-			"spotify",
+			oauth2.Config{
+				ClientID:     viper.GetString("spotify.client_id"),
+				ClientSecret: viper.GetString("spotify.client_secret"),
+				RedirectURL:  viper.GetString("callback.spotify"),
+				Scopes:       viper.GetStringSlice("spotify.scopes"),
+				Endpoint:     spotifyOauth.Endpoint,
+			},
 			spotifyService,
+			log.Default(),
+			func(ctx context.Context) int64 {
+				id, _ := session.GetUserID(ctx)
+				return id
+			},
 		)
 		oauthManager.RegisterService("spotify", spotifyOAuth)
 		log.Println("Spotify OAuth service registered")
