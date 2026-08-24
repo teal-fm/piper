@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 	"testing"
 
 	"golang.org/x/oauth2"
+
+	"github.com/teal-fm/piper/session"
 )
 
 type mockReceiver struct {
@@ -35,10 +38,22 @@ func (m *mockReceiver) SetAccessToken(token, refresh string, uid int64) (int64, 
 	return 42, nil
 }
 
-func noUser(context.Context) int64 { return 0 }
+func sessionUser(ctx context.Context) int64 {
+	id, _ := session.GetUserID(ctx)
+	return id
+}
+
+func withUserCtx(uid int64) context.Context {
+	return session.WithUserID(context.Background(), uid)
+}
 
 func stateFromLogin(svc *Service) string {
-	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	return stateFromLoginAs(svc, 1)
+}
+
+func stateFromLoginAs(svc *Service, uid int64) string {
+	ctx := withUserCtx(uid)
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/login", nil)
 	rr := httptest.NewRecorder()
 	svc.HandleLogin(rr, req)
 	loc := rr.Result().Header.Get("Location")
@@ -53,7 +68,7 @@ func forgedState(svc *Service) string {
 
 func consumedState(svc *Service) string {
 	s := stateFromLogin(svc)
-	_, _ = svc.completeLogin(context.Background(), completeLoginParams{State: s, Code: "c"})
+	_, _ = svc.completeLogin(withUserCtx(1), completeLoginParams{State: s, Code: "c", UserID: 1})
 	return s
 }
 
@@ -117,6 +132,19 @@ func wantIDWithSession(wantID, wantUID int64) func(t *testing.T, gotID int64, er
 	}
 }
 
+func wantStoreFailed(t *testing.T, gotID int64, err error, _ *mockReceiver) {
+	t.Helper()
+	if err == nil || !strings.Contains(err.Error(), "failed to store") {
+		t.Fatalf("err = %v, want containing %q", err, "failed to store")
+	}
+	if !errors.Is(err, errStoreFailed) {
+		t.Fatalf("err = %v, want errStoreFailed", err)
+	}
+	if got := httpStatusForOAuthError(err); got != http.StatusInternalServerError {
+		t.Fatalf("http status = %d, want %d", got, http.StatusInternalServerError)
+	}
+}
+
 func TestGenerateCodeChallenge(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -159,10 +187,10 @@ func TestHandleLogin_Redirect(t *testing.T) {
 		},
 		nil,
 		log.New(io.Discard, "", 0),
-		noUser,
+		sessionUser,
 	)
 
-	req := httptest.NewRequest(http.MethodGet, "http://example.com/login", nil)
+	req := httptest.NewRequestWithContext(withUserCtx(1), http.MethodGet, "http://example.com/login", nil)
 	rr := httptest.NewRecorder()
 	svc.HandleLogin(rr, req)
 
@@ -208,9 +236,9 @@ func TestHandleLogin_ChallengeBindsToStoredVerifier(t *testing.T) {
 			TokenURL: ts.URL,
 		},
 	}
-	svc := NewOAuth2Service(cfg, &mockReceiver{returnID: 1}, log.New(io.Discard, "", 0), noUser)
+	svc := NewOAuth2Service(cfg, &mockReceiver{returnID: 1}, log.New(io.Discard, "", 0), sessionUser)
 
-	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	req := httptest.NewRequestWithContext(withUserCtx(1), http.MethodGet, "/login", nil)
 	rr := httptest.NewRecorder()
 	svc.HandleLogin(rr, req)
 	loc := rr.Result().Header.Get("Location")
@@ -218,7 +246,7 @@ func TestHandleLogin_ChallengeBindsToStoredVerifier(t *testing.T) {
 	state := u.Query().Get("state")
 	challenge := u.Query().Get("code_challenge")
 
-	reqCB := httptest.NewRequest(http.MethodGet, "/callback?state="+url.QueryEscape(state)+"&code=c", nil)
+	reqCB := httptest.NewRequestWithContext(withUserCtx(1), http.MethodGet, "/callback?state="+url.QueryEscape(state)+"&code=c", nil)
 	rrCB := httptest.NewRecorder()
 	if _, err := svc.HandleCallback(rrCB, reqCB); err != nil {
 		t.Fatalf("HandleCallback: %v", err)
@@ -240,6 +268,7 @@ func TestCompleteLogin(t *testing.T) {
 		setup     func(svc *Service) string
 		code      string
 		uid       int64
+		initUID   int64
 		check     func(t *testing.T, gotID int64, err error, receiver *mockReceiver)
 	}{
 		{
@@ -248,6 +277,8 @@ func TestCompleteLogin(t *testing.T) {
 			tokenFunc: okTokenHandler,
 			setup:     forgedState,
 			code:      "c",
+			uid:       0,
+			initUID:   0,
 			check:     wantErr("state mismatch"),
 		},
 		{
@@ -256,6 +287,8 @@ func TestCompleteLogin(t *testing.T) {
 			tokenFunc: okTokenHandler,
 			setup:     stateFromLogin,
 			code:      "",
+			uid:       1,
+			initUID:   1,
 			check:     wantErr("no code provided"),
 		},
 		{
@@ -264,6 +297,8 @@ func TestCompleteLogin(t *testing.T) {
 			tokenFunc: okTokenHandler,
 			setup:     stateFromLogin,
 			code:      "c",
+			uid:       1,
+			initUID:   1,
 			check:     wantErr("token receiver not configured"),
 		},
 		{
@@ -272,6 +307,8 @@ func TestCompleteLogin(t *testing.T) {
 			tokenFunc: errorTokenHandler,
 			setup:     stateFromLogin,
 			code:      "c",
+			uid:       1,
+			initUID:   1,
 			check:     wantErr("failed to exchange"),
 		},
 		{
@@ -280,15 +317,18 @@ func TestCompleteLogin(t *testing.T) {
 			tokenFunc: okTokenHandler,
 			setup:     stateFromLogin,
 			code:      "c",
+			uid:       1,
+			initUID:   1,
 			check:     wantID(777),
 		},
 		{
 			name:      "success with session",
 			receiver:  &mockReceiver{returnID: 99},
 			tokenFunc: okTokenHandler,
-			setup:     stateFromLogin,
+			setup:     func(svc *Service) string { return stateFromLoginAs(svc, 555) },
 			code:      "c",
 			uid:       555,
+			initUID:   555,
 			check:     wantIDWithSession(99, 555),
 		},
 		{
@@ -297,7 +337,29 @@ func TestCompleteLogin(t *testing.T) {
 			tokenFunc: okTokenHandler,
 			setup:     consumedState,
 			code:      "c",
+			uid:       0,
+			initUID:   0,
 			check:     wantErr("state mismatch"),
+		},
+		{
+			name:      "cross-user state transfer blocked",
+			receiver:  &mockReceiver{returnID: 99},
+			tokenFunc: okTokenHandler,
+			setup:     func(svc *Service) string { return stateFromLoginAs(svc, 111) },
+			code:      "c",
+			uid:       222,
+			initUID:   111,
+			check:     wantErr("state mismatch"),
+		},
+		{
+			name:      "store failure maps to 500",
+			receiver:  &mockReceiver{returnErr: errors.New("db down")},
+			tokenFunc: okTokenHandler,
+			setup:     stateFromLogin,
+			code:      "c",
+			uid:       1,
+			initUID:   1,
+			check:     wantStoreFailed,
 		},
 	}
 
@@ -322,11 +384,11 @@ func TestCompleteLogin(t *testing.T) {
 				},
 				recv,
 				log.New(io.Discard, "", 0),
-				noUser,
+				sessionUser,
 			)
 			state := tt.setup(svc)
 
-			gotID, err := svc.completeLogin(t.Context(), completeLoginParams{State: state, Code: tt.code, UserID: tt.uid})
+			gotID, err := svc.completeLogin(withUserCtx(tt.uid), completeLoginParams{State: state, Code: tt.code, UserID: tt.uid})
 			tt.check(t, gotID, err, tt.receiver)
 		})
 	}
@@ -338,24 +400,42 @@ func TestHandleCallback_HTTPMapping(t *testing.T) {
 		setup      func(svc *Service) string
 		receiver   TokenReceiver
 		wantStatus int
+		uid        int64
 	}{
 		{
 			name:       "missing code maps to 400",
 			setup:      queryMissingCode,
 			receiver:   &mockReceiver{},
 			wantStatus: http.StatusBadRequest,
+			uid:        1,
 		},
 		{
 			name:       "nil receiver maps to 500",
 			setup:      queryValidCode,
 			receiver:   nil,
 			wantStatus: http.StatusInternalServerError,
+			uid:        1,
 		},
 		{
 			name:       "state mismatch maps to 400",
 			setup:      queryMismatch,
 			receiver:   &mockReceiver{},
 			wantStatus: http.StatusBadRequest,
+			uid:        1,
+		},
+		{
+			name:       "store failure maps to 500",
+			setup:      queryValidCode,
+			receiver:   &mockReceiver{returnErr: errors.New("db down")},
+			wantStatus: http.StatusInternalServerError,
+			uid:        1,
+		},
+		{
+			name:       "user mismatch maps to 400",
+			setup:      func(svc *Service) string { return stateFromLoginAs(svc, 111) },
+			receiver:   &mockReceiver{},
+			wantStatus: http.StatusBadRequest,
+			uid:        222,
 		},
 	}
 
@@ -377,11 +457,11 @@ func TestHandleCallback_HTTPMapping(t *testing.T) {
 				},
 				tt.receiver,
 				log.New(io.Discard, "", 0),
-				noUser,
+				sessionUser,
 			)
 
 			query := tt.setup(svc)
-			req := httptest.NewRequest(http.MethodGet, "/callback?"+query, nil)
+			req := httptest.NewRequestWithContext(withUserCtx(tt.uid), http.MethodGet, "/callback?"+query, nil)
 			rr := httptest.NewRecorder()
 			_, _ = svc.HandleCallback(rr, req)
 
@@ -390,5 +470,36 @@ func TestHandleCallback_HTTPMapping(t *testing.T) {
 				t.Fatalf("status = %d, want %d", resp.StatusCode, tt.wantStatus)
 			}
 		})
+	}
+}
+
+func TestHandleLogin_RequiresAuth(t *testing.T) {
+	svc := NewOAuth2Service(
+		oauth2.Config{
+			ClientID: "id",
+			Endpoint: oauth2.Endpoint{
+				AuthURL:  "http://example.com/auth",
+				TokenURL: "http://example.com/token",
+			},
+		},
+		nil,
+		log.New(io.Discard, "", 0),
+		sessionUser,
+	)
+
+	// Unauthenticated should be 401
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	rr := httptest.NewRecorder()
+	svc.HandleLogin(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("unauth status = %d, want %d", rr.Code, http.StatusUnauthorized)
+	}
+
+	// Authenticated should redirect
+	req2 := httptest.NewRequestWithContext(withUserCtx(123), http.MethodGet, "/login", nil)
+	rr2 := httptest.NewRecorder()
+	svc.HandleLogin(rr2, req2)
+	if rr2.Code != http.StatusSeeOther {
+		t.Fatalf("auth status = %d, want %d", rr2.Code, http.StatusSeeOther)
 	}
 }

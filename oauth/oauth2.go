@@ -30,6 +30,7 @@ type Service struct {
 type stateEntry struct {
 	verifier  string
 	expiresAt time.Time
+	userID    int64
 }
 
 type memoryStateStore struct {
@@ -43,7 +44,7 @@ func newMemoryStateStore() *memoryStateStore {
 	}
 }
 
-func (s *memoryStateStore) Set(state, verifier string, ttl time.Duration) {
+func (s *memoryStateStore) Set(state, verifier string, userID int64, ttl time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -54,24 +55,24 @@ func (s *memoryStateStore) Set(state, verifier string, ttl time.Duration) {
 		}
 	}
 
-	s.entries[state] = stateEntry{verifier: verifier, expiresAt: now.Add(ttl)}
+	s.entries[state] = stateEntry{verifier: verifier, expiresAt: now.Add(ttl), userID: userID}
 }
 
-func (s *memoryStateStore) GetAndDelete(state string) (string, bool) {
+func (s *memoryStateStore) GetAndDelete(state string) (string, int64, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	e, ok := s.entries[state]
 	if !ok {
-		return "", false
+		return "", 0, false
 	}
 
 	delete(s.entries, state)
 	if time.Now().After(e.expiresAt) {
-		return "", false
+		return "", 0, false
 	}
 
-	return e.verifier, true
+	return e.verifier, e.userID, true
 }
 
 const randAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
@@ -106,14 +107,23 @@ func generateCodeChallenge(verifier string) string {
 	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 }
 
-// HandleLogin redirects to the provider's authorization endpoint with a
-// single-use state and S256 PKCE challenge.
+// HandleLogin starts the authorization code flow with PKCE.
+// It generates a single-use state and a S256 code challenge, stores the
+// verifier with the initiating user ID and a 10-minute expiry, and redirects
+// to the provider authorization URL. The request must carry an authenticated
+// Piper session; otherwise HandleLogin responds with 401.
 func (o *Service) HandleLogin(w http.ResponseWriter, r *http.Request) {
+	initiatorID := o.getUserID(r.Context())
+	if initiatorID == 0 {
+		http.Error(w, "authentication required", http.StatusUnauthorized)
+		return
+	}
+
 	state := randText(26)
 	verifier := randText(64)
 	challenge := generateCodeChallenge(verifier)
 
-	o.store.Set(state, verifier, 10*time.Minute)
+	o.store.Set(state, verifier, initiatorID, 10*time.Minute)
 
 	opts := []oauth2.AuthCodeOption{
 		oauth2.SetAuthURLParam("code_challenge", challenge),
@@ -167,10 +177,11 @@ var (
 	errNoCode         = errors.New("no code provided")
 	errNoReceiver     = errors.New("token receiver not configured")
 	errExchangeFailed = errors.New("failed to exchange code for token")
+	errStoreFailed    = errors.New("failed to store access token")
 )
 
 func httpStatusForOAuthError(err error) int {
-	if errors.Is(err, errNoReceiver) || errors.Is(err, errExchangeFailed) {
+	if errors.Is(err, errNoReceiver) || errors.Is(err, errExchangeFailed) || errors.Is(err, errStoreFailed) {
 		return http.StatusInternalServerError
 	}
 
@@ -181,9 +192,14 @@ func httpStatusForOAuthError(err error) int {
 // invalidates the entry and provider errors are only logged for a valid
 // state, preventing CSRF bypass via forged error.
 func (o *Service) completeLogin(ctx context.Context, p completeLoginParams) (int64, error) {
-	verifier, ok := o.store.GetAndDelete(p.State)
+	verifier, storedUserID, ok := o.store.GetAndDelete(p.State)
 	if !ok {
 		o.logger.Printf("OAuth2 Callback Error: State mismatch or expired. Got '%s'", p.State)
+		return 0, errStateMismatch
+	}
+
+	if storedUserID != p.UserID {
+		o.logger.Printf("OAuth2 Callback Error: State user mismatch: expected %d, got %d", storedUserID, p.UserID)
 		return 0, errStateMismatch
 	}
 
@@ -222,6 +238,7 @@ func (o *Service) exchangeAndStore(ctx context.Context, code, verifier string, u
 			token.AccessToken[:min(len(token.AccessToken), 10)],
 			err,
 		)
+		return 0, errStoreFailed
 	}
 
 	o.logger.Printf("OAuth2 Callback Success: Exchanged code for token, UserID: %d", userID)
