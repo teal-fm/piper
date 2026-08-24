@@ -799,7 +799,7 @@ func (s *Service) stampTrack(ctx context.Context, userID int64, track *models.Tr
 	}
 
 	// Save the track now that it is stamped and hydrated
-	if _, err := s.DB.SaveTrack(userID, trackToSubmit); err != nil {
+	if _, err := s.DB.SaveTrack(userID, db.SourceSpotify, trackToSubmit); err != nil {
 		s.logger.Printf("Error saving track for user %d: %v", userID, err)
 		return
 	}

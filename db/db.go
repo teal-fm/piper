@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -166,6 +167,75 @@ func (db *DB) Initialize() error {
 		return err
 	}
 
+	// source marks the scrobble source.
+	// Allows using the tracks table for watermarking plays without racing between sources
+	_, err = db.Exec(`ALTER TABLE tracks ADD COLUMN source TEXT`)
+	if err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		return err
+	}
+	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_tracks_user_source_timestamp ON tracks(user_id, source, timestamp DESC)`); err != nil {
+		return err
+	}
+
+	return db.backfillTrackSources()
+}
+
+// TrackSource identifies the integration that wrote a track row.
+type TrackSource string
+
+const (
+	SourceAppleMusic   TrackSource = "applemusic"
+	SourceLastfm       TrackSource = "lastfm"
+	SourceSpotify      TrackSource = "spotify"
+	SourceListenBrainz TrackSource = "listenbrainz"
+
+	externalSource TrackSource = "external"
+)
+
+func (s TrackSource) IsValid() bool {
+	switch s {
+	case SourceAppleMusic, SourceLastfm, SourceSpotify, SourceListenBrainz:
+		return true
+	default:
+		return false
+	}
+}
+
+// Maps historical service_base_url values to their source. Remaining
+// non-empty presentations are ListenBrainz by elimination.
+var legacyIdentityByPresentation = []struct {
+	presentation string
+	source       TrackSource
+}{
+	{"music.apple.com", SourceAppleMusic},
+	{"last.fm", SourceLastfm},
+	{"lastfm", SourceLastfm},
+	{"open.spotify.com", SourceSpotify},
+	{"listenbrainz", SourceListenBrainz},
+	{"spotify", SourceListenBrainz},
+}
+
+func (db *DB) backfillTrackSources() error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("backfilling track sources: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.Exec(`UPDATE tracks SET source = ? WHERE source IS NULL`, externalSource); err != nil {
+		return fmt.Errorf("backfilling track sources: %w", err)
+	}
+	for _, mapping := range legacyIdentityByPresentation {
+		if _, err := tx.Exec(
+			`UPDATE tracks SET source = ? WHERE source = ? AND service_base_url = ?`,
+			mapping.source, externalSource, mapping.presentation); err != nil {
+			return fmt.Errorf("backfilling track sources for %s: %w", mapping.source, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("backfilling track sources: %w", err)
+	}
 	return nil
 }
 
@@ -355,8 +425,11 @@ func (db *DB) GetAllAppleMusicLinkedUsers() ([]*models.User, error) {
 	return users, nil
 }
 
-func (db *DB) SaveTrack(userID int64, track *models.Track) (int64, error) {
-	// marshal artist json
+func (db *DB) SaveTrack(userID int64, source TrackSource, track *models.Track) (int64, error) {
+	if !source.IsValid() {
+		return 0, fmt.Errorf("invalid source %q", source)
+	}
+
 	artistString := ""
 	if len(track.Artist) > 0 {
 		bytes, err := json.Marshal(track.Artist)
@@ -370,28 +443,34 @@ func (db *DB) SaveTrack(userID int64, track *models.Track) (int64, error) {
 	var trackID int64
 
 	err := db.QueryRow(`
-	INSERT INTO tracks (user_id, name, recording_mbid, artist, album, release_mbid, url, timestamp, duration_ms, progress_ms, service_base_url, isrc, has_stamped)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO tracks (user_id, name, recording_mbid, artist, album, release_mbid, url, timestamp, duration_ms, progress_ms, service_base_url, isrc, has_stamped, source)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	RETURNING id`,
 		userID, track.Name, track.RecordingMBID, artistString, track.Album, track.ReleaseMBID, track.URL, track.Timestamp,
-		track.DurationMs, track.ProgressMs, track.ServiceBaseUrl, track.ISRC, track.HasStamped).Scan(&trackID)
+		track.DurationMs, track.ProgressMs, track.ServiceBaseUrl, track.ISRC, track.HasStamped, source).Scan(&trackID)
 
 	return trackID, err
 }
 
 // HasTrackListen reports whether a listen with the same name and timestamp
 // is already stored for the user, so resubmitted payloads stay idempotent.
-func (db *DB) HasTrackListen(userID int64, name string, timestamp time.Time) (bool, error) {
+func (db *DB) HasTrackListen(userID int64, source TrackSource, name string, timestamp time.Time) (bool, error) {
+	if !source.IsValid() {
+		return false, fmt.Errorf("invalid source %q", source)
+	}
 	var exists bool
 	err := db.QueryRow(`
 	SELECT EXISTS(
-		SELECT 1 FROM tracks WHERE user_id = ? AND name = ? AND timestamp = ?
-	)`, userID, name, timestamp).Scan(&exists)
+		SELECT 1 FROM tracks WHERE user_id = ? AND source = ? AND name = ? AND timestamp = ?
+	)`, userID, source, name, timestamp).Scan(&exists)
 	return exists, err
 }
 
-func (db *DB) UpdateTrack(trackID int64, track *models.Track) error {
-	// marshal artist json
+func (db *DB) UpdateTrack(trackID int64, source TrackSource, track *models.Track) error {
+	if !source.IsValid() {
+		return fmt.Errorf("invalid source %q", source)
+	}
+
 	artistString := ""
 	if len(track.Artist) > 0 {
 		bytes, err := json.Marshal(track.Artist)
@@ -402,7 +481,7 @@ func (db *DB) UpdateTrack(trackID int64, track *models.Track) error {
 		artistString = string(bytes)
 	}
 
-	_, err := db.Exec(`
+	res, err := db.Exec(`
 	UPDATE tracks
 	SET name = ?,
 	    recording_mbid = ?,
@@ -416,12 +495,24 @@ func (db *DB) UpdateTrack(trackID int64, track *models.Track) error {
 		service_base_url = ?,
 		isrc = ?,
 		has_stamped = ?
-	WHERE id = ?`,
+	WHERE id = ? AND source = ?`,
 		track.Name, track.RecordingMBID, artistString, track.Album, track.ReleaseMBID, track.URL, track.Timestamp,
 		track.DurationMs, track.ProgressMs, track.ServiceBaseUrl, track.ISRC, track.HasStamped,
-		trackID)
+		trackID, source)
+	if err != nil {
+		return fmt.Errorf("updating track %d: %w", trackID, err)
+	}
 
-	return err
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("updating track %d: %w", trackID, err)
+	}
+
+	if n == 0 {
+		return fmt.Errorf("track %d not found for source %s", trackID, source)
+	}
+
+	return nil
 }
 
 func (db *DB) GetRecentTracks(userID int64, limit int) ([]*models.Track, error) {
@@ -445,40 +536,77 @@ func (db *DB) GetRecentTracks(userID int64, limit int) ([]*models.Track, error) 
 	var tracks []*models.Track
 
 	for rows.Next() {
-		var artistString string
-		track := &models.Track{}
-		err := rows.Scan(
-			&track.PlayID,
-			&track.Name,
-			&track.RecordingMBID, // Scan new field
-			&artistString,        // scan to be unmarshaled later
-			&track.Album,
-			&track.ReleaseMBID, // Scan new field
-			&track.URL,
-			&track.Timestamp,
-			&track.DurationMs,
-			&track.ProgressMs,
-			&track.ServiceBaseUrl,
-			&track.ISRC,
-			&track.HasStamped,
-		)
-
+		track, err := scanTrack(rows)
 		if err != nil {
 			return nil, err
 		}
 
-		// unmarshal artist json
-		var artists []models.Artist
-		err = json.Unmarshal([]byte(artistString), &artists)
-		if err != nil {
-			// fallback to previous format
-			artists = []models.Artist{{Name: artistString}}
-		}
-		track.Artist = artists
 		tracks = append(tracks, track)
 	}
 
-	return tracks, nil
+	return tracks, rows.Err()
+}
+
+// rowScanner matches *sql.Row and *sql.Rows.
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+// scanTrack scans one tracks-table row into a models.Track.
+func scanTrack(row rowScanner) (*models.Track, error) {
+	var (
+		artistString string
+		track        models.Track
+	)
+	if err := row.Scan(
+		&track.PlayID,
+		&track.Name,
+		&track.RecordingMBID,
+		&artistString,
+		&track.Album,
+		&track.ReleaseMBID,
+		&track.URL,
+		&track.Timestamp,
+		&track.DurationMs,
+		&track.ProgressMs,
+		&track.ServiceBaseUrl,
+		&track.ISRC,
+		&track.HasStamped,
+	); err != nil {
+		return nil, err
+	}
+
+	var artists []models.Artist
+	if err := json.Unmarshal([]byte(artistString), &artists); err != nil {
+		// fallback to previous format
+		artists = []models.Artist{{Name: artistString}}
+	}
+
+	track.Artist = artists
+
+	return &track, nil
+}
+
+func (db *DB) GetLatestTrackForService(userID int64, source TrackSource) (*models.Track, error) {
+	if !source.IsValid() {
+		return nil, fmt.Errorf("invalid source %q", source)
+	}
+
+	track, err := scanTrack(db.QueryRow(`
+    SELECT id, name, recording_mbid, artist, album, release_mbid, url, timestamp, duration_ms, progress_ms, service_base_url, isrc, has_stamped
+    FROM tracks
+    WHERE user_id = ? AND source = ?
+    ORDER BY timestamp DESC
+    LIMIT 1`, userID, source))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to query latest %s track for user %d: %w", source, userID, err)
+	}
+
+	return track, nil
 }
 
 // SpotifyQueryMapping maps Spotify sql query results to user structs
@@ -631,20 +759,24 @@ func (db *DB) DebugViewUserInformation(userID int64) (map[string]any, error) {
 	return resultMap, nil
 }
 
-func (db *DB) GetLastKnownTimestamp(userID int64) (*time.Time, error) {
+func (db *DB) GetLastKnownTimestamp(userID int64, source TrackSource) (*time.Time, error) {
+	if !source.IsValid() {
+		return nil, fmt.Errorf("invalid source %q", source)
+	}
+
 	var lastTimestamp time.Time
 	err := db.QueryRow(`
 		SELECT timestamp
 		FROM tracks
-		WHERE user_id = ?
+		WHERE user_id = ? AND source = ?
 		ORDER BY timestamp DESC
-		LIMIT 1`, userID).Scan(&lastTimestamp)
+		LIMIT 1`, userID, source).Scan(&lastTimestamp)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("failed to query last scrobble timestamp for user %d: %w", userID, err)
+		return nil, fmt.Errorf("failed to query last track timestamp for user %d: %w", userID, err)
 	}
 
 	return &lastTimestamp, nil

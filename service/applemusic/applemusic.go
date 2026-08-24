@@ -567,10 +567,9 @@ func (s *Service) ProcessUser(ctx context.Context, user *models.User) error {
 		return nil
 	}
 
-	// Get the last saved track to compare PlayParams.id
-	lastTracks, err := s.DB.GetRecentTracks(user.ID, 1)
+	lastTrack, err := s.DB.GetLatestTrackForService(user.ID, db.SourceAppleMusic)
 	if err != nil {
-		s.logger.Printf("failed to get last tracks for user %d: %v", user.ID, err)
+		s.logger.Printf("failed to get last apple music track for user %d: %v", user.ID, err)
 	}
 
 	// Pre-compute the hash for uploaded tracks so comparisons against stored
@@ -581,12 +580,9 @@ func (s *Service) ProcessUser(ctx context.Context, user *models.User) error {
 	}
 
 	// Check if this is a new track (by URL / upload hash)
-	if len(lastTracks) > 0 {
-		lastTrack := lastTracks[0]
-		if lastTrack.URL == currentURL {
-			s.logger.Printf("track unchanged for user %d: %s by %s", user.ID, currentAppleTrack.Attributes.Name, currentAppleTrack.Attributes.ArtistName)
-			return nil
-		}
+	if lastTrack != nil && lastTrack.URL == currentURL {
+		s.logger.Printf("track unchanged for user %d: %s by %s", user.ID, currentAppleTrack.Attributes.Name, currentAppleTrack.Attributes.ArtistName)
+		return nil
 	}
 
 	// Convert to internal track format
@@ -599,7 +595,7 @@ func (s *Service) ProcessUser(ctx context.Context, user *models.User) error {
 	// Hydration is handled in toTrack() using MusicBrainz search; no ISRC-only hydration here
 
 	// Save the new track
-	if _, err := s.DB.SaveTrack(user.ID, track); err != nil {
+	if _, err := s.DB.SaveTrack(user.ID, db.SourceAppleMusic, track); err != nil {
 		s.logger.Printf("failed saving apple track for user %d: %v", user.ID, err)
 		return err
 	}

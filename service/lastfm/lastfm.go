@@ -126,7 +126,7 @@ func (l *Service) getRecentTracks(ctx context.Context, username string) (*Recent
 		return nil, fmt.Errorf("failed to get user ID for %s: %w", username, err)
 	}
 
-	lastKnownTimestamp, err := l.db.GetLastKnownTimestamp(user.ID)
+	lastKnownTimestamp, err := l.db.GetLastKnownTimestamp(user.ID, db.SourceLastfm)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get last scrobble timestamp for %s: %w", username, err)
 	}
@@ -319,7 +319,7 @@ func (l *Service) processTracks(ctx context.Context, username string, tracks []T
 		return fmt.Errorf("failed to get user ID for %s: %w", username, err)
 	}
 
-	lastKnownTimestamp, err := l.db.GetLastKnownTimestamp(user.ID)
+	lastKnownTimestamp, err := l.db.GetLastKnownTimestamp(user.ID, db.SourceLastfm)
 	if err != nil {
 		return fmt.Errorf("failed to get last scrobble timestamp for %s: %w", username, err)
 	}
@@ -431,7 +431,7 @@ func (l *Service) processTracks(ctx context.Context, username string, tracks []T
 			// we can use the track without MBIDs, it's still valid
 			hydratedTrack = &baseTrack
 		}
-		_, err = l.db.SaveTrack(user.ID, hydratedTrack)
+		_, err = l.db.SaveTrack(user.ID, db.SourceLastfm, hydratedTrack)
 		if err != nil {
 			return err
 		}

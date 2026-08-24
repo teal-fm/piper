@@ -422,7 +422,7 @@ func apiAppleMusicUnlink(database *db.DB) http.HandlerFunc {
 	}
 }
 
-// apiSubmitListensHandler handles ListenBrainz-compatible submissions
+// apiSubmitListensHandler handles ListenBrainz-compatible submissions.
 func apiSubmitListensHandler(database *db.DB, atprotoService *atprotoauth.AuthService, playingNowService *playingnow.Service, mbService *musicbrainz.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID, authenticated := session.GetUserID(r.Context())
@@ -512,7 +512,7 @@ func apiSubmitListensHandler(database *db.DB, atprotoService *atprotoauth.AuthSe
 			}
 
 			// Skip listens we already stored so client retries stay idempotent
-			exists, err := database.HasTrackListen(userID, track.Name, track.Timestamp)
+			exists, err := database.HasTrackListen(userID, db.SourceListenBrainz, track.Name, track.Timestamp)
 			if err != nil {
 				log.Printf("apiSubmitListensHandler: Error checking for existing listen for user %d: %v", userID, err)
 			} else if exists {
@@ -521,7 +521,7 @@ func apiSubmitListensHandler(database *db.DB, atprotoService *atprotoauth.AuthSe
 			}
 
 			// Store the track
-			trackID, err := database.SaveTrack(userID, &track)
+			trackID, err := database.SaveTrack(userID, db.SourceListenBrainz, &track)
 			if err != nil {
 				log.Printf("apiSubmitListensHandler: Error saving track for user %d: %v", userID, err)
 				errors = append(errors, fmt.Sprintf("payload[%d]: failed to save track", i))
@@ -582,7 +582,7 @@ func hydrateAndSubmitListens(database *db.DB, atprotoService *atprotoauth.AuthSe
 				log.Printf("apiSubmitListensHandler: Could not hydrate track with MusicBrainz for user %d: %v (continuing with original data)", userID, err)
 			} else if hydratedTrack != nil {
 				track = *hydratedTrack
-				if err := database.UpdateTrack(saved.trackID, &track); err != nil {
+				if err := database.UpdateTrack(saved.trackID, db.SourceListenBrainz, &track); err != nil {
 					log.Printf("apiSubmitListensHandler: Error updating hydrated track for user %d: %v", userID, err)
 				}
 			}

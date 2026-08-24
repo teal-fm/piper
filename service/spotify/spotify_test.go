@@ -795,10 +795,10 @@ func TestHandleTrackHistory(t *testing.T) {
 		track1 := createTestTrack("Track 1", "Artist 1", "http://spotify/track1", 180000, 0)
 		track2 := createTestTrack("Track 2", "Artist 2", "http://spotify/track2", 200000, 0)
 
-		if _, err := database.SaveTrack(userID, track1); err != nil {
+		if _, err := database.SaveTrack(userID, db.SourceSpotify, track1); err != nil {
 			t.Fatalf("Failed to save track1: %v", err)
 		}
-		if _, err := database.SaveTrack(userID, track2); err != nil {
+		if _, err := database.SaveTrack(userID, db.SourceSpotify, track2); err != nil {
 			t.Fatalf("Failed to save track2: %v", err)
 		}
 
