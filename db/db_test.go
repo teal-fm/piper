@@ -306,7 +306,8 @@ func TestCursorsTimestampScopesToSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("timestamp: %v", err)
 	}
-	if got == nil || got.Before(at) {
-		t.Fatalf("got %v want >= %v", got, at)
+	want := base.Add(-5 * time.Minute)
+	if got == nil || !got.Equal(want) {
+		t.Fatalf("got %v want %v", got, want)
 	}
 }
