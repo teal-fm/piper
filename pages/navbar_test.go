@@ -15,6 +15,7 @@ func ptr(s string) *string { return &s }
 type homeParams struct {
 	NavBar    NavBar
 	BuildTime time.Time
+	Agent     string
 }
 
 func TestNewNavBar(t *testing.T) {
@@ -74,6 +75,19 @@ func TestNewNavBar(t *testing.T) {
 		}
 	})
 
+	// apiUnlinkLastfmHandler unlinks by writing an empty username rather than
+	// NULL, so a non-nil pointer isn't enough to say the account is still linked.
+	t.Run("an empty Last.fm username is not linked", func(t *testing.T) {
+		nav := NewNavBar(&models.User{LastFMUsername: ptr("")}, true)
+
+		if nav.LastFMUsername != "" {
+			t.Errorf("LastFMUsername = %q, want empty", nav.LastFMUsername)
+		}
+		if nav.LastFMConnected {
+			t.Error("LastFMConnected = true, want false")
+		}
+	})
+
 	t.Run("user without a profile", func(t *testing.T) {
 		nav := NewNavBar(&models.User{ATProtoDID: ptr("did:plc:x")}, true)
 		if nav.Handle != "" || nav.DisplayName != "" || nav.AvatarURL != "" {
@@ -82,13 +96,57 @@ func TestNewNavBar(t *testing.T) {
 	})
 }
 
-// The connect-your-accounts list marks linked services with a green bullet and
-// unlinked ones with grey. The bullet itself has to survive: styling the list
-// item as a flex container silently drops the marker.
-func TestHomeServiceBullets(t *testing.T) {
+func TestServices(t *testing.T) {
+	nav := NavBar{
+		IsLoggedIn:        true,
+		SpotifyEnabled:    true,
+		SpotifyConnected:  true,
+		SpotifyUsername:   "charles",
+		LastFMEnabled:     true,
+		LastFMUsername:    "charles-lfm",
+		LastFMConnected:   true,
+		LastFMAvatarURL:   "https://lastfm-img.freetls.fastly.net/i/u/174s/x.png",
+		AppleMusicEnabled: false,
+	}
+
+	services := nav.Services()
+	if len(services) != 3 {
+		t.Fatalf("Services() returned %d cards, want 3", len(services))
+	}
+
+	spotify, lastfm, applemusic := services[0], services[1], services[2]
+
+	if spotify.Name != "Spotify" || spotify.Account != "charles" || spotify.UnlinkURL != "/unlink-spotify" {
+		t.Errorf("Spotify card = %+v", spotify)
+	}
+	if lastfm.Name != "Last.fm" || lastfm.Account != "charles-lfm" || lastfm.AvatarURL == "" {
+		t.Errorf("Last.fm card = %+v", lastfm)
+	}
+	// Every service unlinks from its own card, so each needs a POST target.
+	for _, svc := range services {
+		if svc.UnlinkURL == "" {
+			t.Errorf("%s card has no unlink URL", svc.Name)
+		}
+		if svc.Icon == "" {
+			t.Errorf("%s card has no icon slug", svc.Name)
+		}
+	}
+	// MusicKit hands us a user token and nothing to call the account by.
+	if applemusic.Name != "Apple Music" || applemusic.Account != "" {
+		t.Errorf("Apple Music card = %+v", applemusic)
+	}
+	if applemusic.Enabled {
+		t.Error("Apple Music Enabled = true, want false")
+	}
+}
+
+// Each service tile has three looks: greyed out when the server doesn't offer
+// the service, plain grey when it does but the account isn't linked, and accent
+// teal once it is.
+func TestHomeServiceCards(t *testing.T) {
 	const (
-		green = `marker:text-[#1DB954]`
-		grey  = `marker:text-gray-400`
+		connected = `border-accent bg-accent/10`
+		disabled  = `opacity-50`
 	)
 
 	pages := NewPages()
@@ -103,93 +161,140 @@ func TestHomeServiceBullets(t *testing.T) {
 		return buf.String()
 	}
 
-	t.Run("linked service is green", func(t *testing.T) {
+	// Each card carries its service's brand mark; an unknown slug silently
+	// renders nothing, so check the paths actually land.
+	t.Run("every card renders its brand icon", func(t *testing.T) {
+		out := render(t, NavBar{
+			IsLoggedIn: true, SpotifyEnabled: true, LastFMEnabled: true, AppleMusicEnabled: true,
+		})
+		if got := strings.Count(out, "<svg"); got != 3 {
+			t.Errorf("rendered %d icons, want 3", got)
+		}
+		if strings.Count(out, `viewBox="0 0 24 24"`) != 3 {
+			t.Error("expected every icon to keep its viewBox")
+		}
+		// Decorative: the service name sits right beside the mark.
+		if strings.Count(out, `aria-hidden="true"`) < 3 {
+			t.Error("expected the brand marks to be hidden from assistive tech")
+		}
+	})
+
+	t.Run("linked service is accent teal", func(t *testing.T) {
 		out := render(t, NavBar{
 			IsLoggedIn:      true,
 			LastFMEnabled:   true,
 			LastFMConnected: true,
 			LastFMUsername:  "charles",
 		})
-		if !strings.Contains(out, `<li class="`+green+`">`) {
-			t.Error("expected a green bullet for the linked Last.fm account")
+		if !strings.Contains(out, connected) {
+			t.Error("expected an accent card for the linked Last.fm account")
+		}
+		if !strings.Contains(out, "charles") {
+			t.Error("expected the Last.fm username on the card")
 		}
 	})
 
-	t.Run("linked Spotify account shows its username", func(t *testing.T) {
+	t.Run("linked Spotify account shows its username and an unlink form", func(t *testing.T) {
 		out := render(t, NavBar{
 			IsLoggedIn:       true,
 			SpotifyEnabled:   true,
 			SpotifyConnected: true,
 			SpotifyUsername:  "charles",
 		})
-		if !strings.Contains(out, `<li class="`+green+`">`) {
-			t.Error("expected a green bullet for the linked Spotify account")
+		if !strings.Contains(out, connected) {
+			t.Error("expected an accent card for the linked Spotify account")
 		}
-		if !strings.Contains(out, "Spotify connected as") {
-			t.Error("expected the connected Spotify row")
-		}
-		if !strings.Contains(out, `<span class="font-bold">charles</span>`) {
+		if !strings.Contains(out, "charles") {
 			t.Error("expected the Spotify username")
 		}
-		if strings.Contains(out, "Connect your Spotify account") {
-			t.Error("did not expect the connect CTA for a linked account")
+		if strings.Contains(out, "Not connected") {
+			t.Error("did not expect the unlinked state for a linked account")
 		}
 		// Unlinking is destructive, so it has to be a POST form rather than a
 		// link the browser might prefetch.
-		if !strings.Contains(out, `<form class="inline" method="post" action="/unlink-spotify">`) {
+		if !strings.Contains(out, `method="post" action="/unlink-spotify"`) {
 			t.Error("expected the unlink form to POST to /unlink-spotify")
 		}
 	})
 
-	t.Run("unlinked Spotify account offers no unlink", func(t *testing.T) {
+	// Re-running a completed OAuth flow by misclicking the card is the thing to
+	// avoid: once linked, the only control is Unlink.
+	t.Run("linked card is inert apart from unlinking", func(t *testing.T) {
+		out := render(t, NavBar{
+			IsLoggedIn:       true,
+			SpotifyEnabled:   true,
+			SpotifyConnected: true,
+			SpotifyUsername:  "charles",
+		})
+		if strings.Contains(out, `href="/login/spotify"`) {
+			t.Error("a linked card must not link back into the connect flow")
+		}
+		if strings.Contains(out, "absolute inset-0") {
+			t.Error("a linked card must not carry a stretched link")
+		}
+		if !strings.Contains(out, `method="post" action="/unlink-spotify"`) {
+			t.Error("expected the unlink form")
+		}
+	})
+
+	t.Run("every linked service offers an unlink", func(t *testing.T) {
+		out := render(t, NavBar{
+			IsLoggedIn:          true,
+			SpotifyEnabled:      true,
+			SpotifyConnected:    true,
+			LastFMEnabled:       true,
+			LastFMConnected:     true,
+			LastFMUsername:      "charles",
+			AppleMusicEnabled:   true,
+			AppleMusicConnected: true,
+		})
+		for _, route := range []string{"/unlink-spotify", "/unlink-lastfm", "/unlink-applemusic"} {
+			if !strings.Contains(out, `method="post" action="`+route+`"`) {
+				t.Errorf("missing unlink form for %s", route)
+			}
+		}
+		if strings.Contains(out, "absolute inset-0") {
+			t.Error("no linked card should be clickable")
+		}
+	})
+
+	t.Run("unlinked service links to its connect flow", func(t *testing.T) {
 		out := render(t, NavBar{IsLoggedIn: true, SpotifyEnabled: true})
-		if !strings.Contains(out, "Connect your Spotify account") {
-			t.Error("expected the connect CTA for an unlinked account")
+		if !strings.Contains(out, `href="/login/spotify"`) {
+			t.Error("expected the card to link to the Spotify connect flow")
+		}
+		if !strings.Contains(out, "Not connected") {
+			t.Error("expected the unlinked state")
 		}
 		if strings.Contains(out, "/unlink-spotify") {
 			t.Error("did not expect an unlink form with nothing connected")
 		}
-	})
-
-	t.Run("unlinked service is grey", func(t *testing.T) {
-		out := render(t, NavBar{IsLoggedIn: true, LastFMEnabled: true})
-		if !strings.Contains(out, `<li class="`+grey+`">`) {
-			t.Error("expected a grey bullet for the unlinked Last.fm account")
-		}
-		if strings.Contains(out, green) {
-			t.Error("did not expect a green bullet with nothing connected")
+		if strings.Contains(out, connected) {
+			t.Error("did not expect an accent card with nothing connected")
 		}
 	})
 
-	t.Run("service disabled on the server is grey", func(t *testing.T) {
+	// A service the server can't offer must not hand out a link that 404s or 503s.
+	t.Run("service disabled on the server is greyed out and inert", func(t *testing.T) {
 		out := render(t, NavBar{IsLoggedIn: true})
-		if strings.Contains(out, green) {
-			t.Error("did not expect a green bullet when every service is disabled")
+		if strings.Count(out, disabled) != 3 {
+			t.Errorf("expected 3 greyed-out cards, got %d", strings.Count(out, disabled))
 		}
-		if strings.Count(out, grey) != 3 {
-			t.Errorf("expected 3 grey bullets, got %d", strings.Count(out, grey))
+		if strings.Contains(out, connected) {
+			t.Error("did not expect an accent card when every service is disabled")
 		}
-	})
-
-	// display:flex on the list item removes the disc marker entirely.
-	t.Run("list items keep their marker", func(t *testing.T) {
-		out := render(t, NavBar{
-			IsLoggedIn:      true,
-			LastFMEnabled:   true,
-			LastFMConnected: true,
-			LastFMUsername:  "charles",
-			LastFMAvatarURL: "https://lastfm-img.freetls.fastly.net/i/u/174s/x.png",
-		})
-		if strings.Contains(out, `<li class="flex`) {
-			t.Error("a flex list item has no bullet marker")
+		for _, route := range []string{"/login/spotify", "/link-lastfm", "/link-applemusic"} {
+			if strings.Contains(out, route) {
+				t.Errorf("did not expect a link to %s for a disabled service", route)
+			}
 		}
-		if !strings.Contains(out, "inline-flex items-center") {
-			t.Error("expected the avatar row to be laid out inside the list item")
+		if strings.Count(out, "Unavailable on this server") != 3 {
+			t.Error("expected every disabled card to say so")
 		}
 	})
 }
 
-// The nav bar has to stay readable whether or not the AppView answered, so the
+// The header has to stay readable whether or not the AppView answered, so the
 // chip degrades from avatar, to an initial, to nothing at all.
 func TestNavBarChipRendering(t *testing.T) {
 	tests := []struct {
@@ -217,13 +322,15 @@ func TestNavBarChipRendering(t *testing.T) {
 		{
 			name:   "no profile means no chip",
 			nav:    NavBar{IsLoggedIn: true},
-			absent: []string{"@", "<img"},
+			absent: []string{`title="@`, "<img"},
 		},
 		{
+			// Logged out, the login form is the only call to action — the header
+			// carries nothing on the right at all.
 			name:   "logged out",
 			nav:    NavBar{},
-			want:   []string{"Login with ATProto"},
-			absent: []string{"@", "<img"},
+			want:   []string{"Log in", `name="handle"`},
+			absent: []string{`title="@`, "<img", "/logout", "/api-keys"},
 		},
 	}
 
@@ -268,6 +375,24 @@ func TestHomeBuildTime(t *testing.T) {
 		out := render(t, homeParams{BuildTime: built})
 		if !strings.Contains(out, "Built Aug 10, 2026 21:25 UTC") {
 			t.Error("expected the formatted build time in the footer")
+		}
+	})
+
+	// The agent is piper's own identity string, not the visitor's browser.
+	t.Run("shows the agent beside the build time", func(t *testing.T) {
+		built := time.Date(2026, time.August, 10, 21, 25, 0, 0, time.UTC)
+		out := render(t, homeParams{BuildTime: built, Agent: "piper/v0.0.8"})
+		if !strings.Contains(out, "Built Aug 10, 2026 21:25 UTC &middot; piper/v0.0.8") {
+			t.Error("expected the agent next to the build time")
+		}
+	})
+
+	// Nothing sets an empty agent in practice, but a bare separator would look
+	// like a rendering bug if anything ever did.
+	t.Run("no dangling separator without an agent", func(t *testing.T) {
+		out := render(t, homeParams{Agent: ""})
+		if strings.Contains(out, "&middot;") {
+			t.Error("did not expect a separator with no agent")
 		}
 	})
 

@@ -1,143 +1,61 @@
+{{ define "title" }}piper{{ end }}
+
 {{ define "content" }}
 
-<h1 class="text-[#1DB954]">
-  Piper - Multi-User Spotify & Last.fm Tracker via ATProto
-</h1>
 {{ template "components/navBar" .NavBar }}
 
-<div class="border border-gray-300 rounded-lg p-5 mb-5">
-  <h2 class="text-xl font-semibold mb-2">Welcome to Piper</h2>
-  <p class="mb-3">
-    Piper is a multi-user application that records what you're listening to on
-    Spotify and Last.fm, saving your listening history.
+{{ if .NavBar.IsLoggedIn }}
+
+<h1 class="text-2xl font-medium tracking-tight mb-1">Your services</h1>
+<p class="text-neutral-500 dark:text-neutral-400 mb-6">
+  Connect a service and piper records what you listen to.
+</p>
+
+<div class="grid gap-4 sm:grid-cols-3">
+  {{ range .NavBar.Services }}
+  {{ template "components/serviceCard" . }}
+  {{ end }}
+</div>
+
+{{ else }}
+
+<div class="max-w-sm">
+  <h1 class="text-3xl font-medium tracking-tight mb-2">piper</h1>
+  <p class="text-neutral-500 dark:text-neutral-400 mb-8">
+    <strong>Piper</strong> is a multi-user application that records what you're listening to on Spotify,
+      Apple Music, and Last.fm, saving your listening history.
   </p>
 
-  {{if .NavBar.IsLoggedIn}}
-  <p class="mb-2">You're logged in!</p>
-  <ul class="list-disc pl-5 mb-3">
-    {{ if .NavBar.SpotifyEnabled }}
-    {{ if .NavBar.SpotifyUsername }}
-    <li class="{{ template "components/bullet" .NavBar.SpotifyConnected }}">
-      Spotify connected as
-      <span class="font-bold">{{ .NavBar.SpotifyUsername }}</span>.
-      <form class="inline" method="post" action="/unlink-spotify">
-        <button
-          class="text-[#1DB954] font-bold underline p-0 cursor-pointer"
-          type="submit"
-        >
-          Unlink</button
-        >.
-      </form>
-    </li>
-    {{ else }}
-    <li class="{{ template "components/bullet" .NavBar.SpotifyConnected }}">
-      <a class="text-[#1DB954] font-bold" href="/login/spotify"
-        >Connect your Spotify account</a
-      >
-      to start tracking.
-    </li>
-    {{ end }}
-    {{ else }}
-    <li class="text-gray-400 {{ template "components/bullet" false }}">
-      <span title="Spotify is disabled on this server">Spotify tracking (disabled on this server)</span>
-    </li>
-    {{ end }}
-
-    {{ if .NavBar.LastFMEnabled }}
-    {{ if .NavBar.LastFMUsername }}
-    <li class="{{ template "components/bullet" .NavBar.LastFMConnected }}">
-      <span class="inline-flex items-center gap-2 align-middle">
-        {{ if .NavBar.LastFMAvatarURL }}
-        <img
-          class="w-5 h-5 rounded-full object-cover shrink-0"
-          src="{{ .NavBar.LastFMAvatarURL }}"
-          alt=""
-          loading="lazy"
-        />
-        {{ end }}
-        <span>
-          Last.fm connected as
-          <span class="font-bold">{{ .NavBar.LastFMUsername }}</span>.
-          <a class="text-[#1DB954] font-bold" href="/link-lastfm">Change account</a>.
-        </span>
-      </span>
-    </li>
-    {{ else }}
-    <li class="{{ template "components/bullet" .NavBar.LastFMConnected }}">
-      <a class="text-[#1DB954] font-bold" href="/link-lastfm"
-        >Link your Last.fm account</a
-      >
-      to track scrobbles.
-    </li>
-    {{ end }}
-    {{ else }}
-    <li class="text-gray-400 {{ template "components/bullet" false }}">
-      <span title="Last.fm is disabled on this server">Last.fm tracking (disabled on this server)</span>
-    </li>
-    {{ end }}
-
-    {{ if .NavBar.AppleMusicEnabled }}
-    <li class="{{ template "components/bullet" .NavBar.AppleMusicConnected }}">
-      <a class="text-[#1DB954] font-bold" href="/link-applemusic"
-        >Link your Apple Music account</a
-      >
-      to fetch recently played.
-    </li>
-    {{ else }}
-    <li class="text-gray-400 {{ template "components/bullet" false }}">
-      <span title="Apple Music is disabled on this server">Apple Music tracking (disabled on this server)</span>
-    </li>
-    {{ end }}
-  </ul>
-  <p class="mb-2">Once connected, you can check out your:</p>
-  <ul class="list-disc pl-5 mb-3">
-    {{ if .NavBar.SpotifyEnabled }}
-    <li>
-      <a class="text-[#1DB954] font-bold" href="/current-track"
-        >Spotify current track</a
-      >
-      or
-      <a class="text-[#1DB954] font-bold" href="/history">listening history</a>.
-    </li>
-    {{ end }}
-    {{ if and .NavBar.LastFMEnabled .NavBar.LastFMUsername }}
-    <li>
-      <a class="text-[#1DB954] font-bold" href="/lastfm/recent"
-        >Last.fm recent tracks</a
-      >.
-    </li>
-    {{ end }}
-  </ul>
-  <p class="mb-3">
-    You can also manage your
-    <a class="text-[#1DB954] font-bold" href="/api-keys">API keys</a> for
-    programmatic access.
-  </p>
-
-  {{ else }}
-
-  <p class="mb-3">Login with ATProto to get started!</p>
-  <form class="space-y-2" action="/login/atproto">
-    <label class="block" for="handle">handle:</label>
+  <form class="space-y-3" action="/login/atproto">
+    <label
+      class="block text-sm font-medium text-neutral-600 dark:text-neutral-300"
+      for="handle"
+      >ATProto handle</label
+    >
     <input
-      class="block w-[95%] p-2 border border-gray-300 rounded"
+      class="block w-full px-3 py-2 rounded-lg border border-neutral-400/30 bg-white/60 dark:bg-neutral-900/60 backdrop-blur-sm placeholder:text-neutral-400 dark:placeholder:text-neutral-600 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
       type="text"
       id="handle"
       name="handle"
+      placeholder="alice.bsky.social"
+      autocapitalize="none"
+      autocorrect="off"
+      spellcheck="false"
+      required
     />
-    <input
-      class="bg-[#1DB954] text-white px-4 py-2.5 rounded cursor-pointer hover:opacity-90"
+    <button
+      class="px-4 py-2 rounded-lg bg-accent text-neutral-950 font-medium cursor-pointer hover:opacity-90"
       type="submit"
-      value="submit"
-    />
+    >
+      Log in
+    </button>
   </form>
-
-  {{ end }}
 </div>
-<!-- Close card div -->
 
-<footer class="text-sm text-gray-400">
-  Built {{ if .BuildTime.IsZero }}unknown{{ else }}{{ formatTime .BuildTime }} UTC{{ end }}
+{{ end }}
+
+<footer class="mt-12 text-sm text-neutral-400 dark:text-neutral-600">
+  Built {{ if .BuildTime.IsZero }}unknown{{ else }}{{ formatTime .BuildTime }} UTC{{ end }}{{ if .Agent }} &middot; {{ .Agent }}{{ end }}
 </footer>
 
 {{ end }}

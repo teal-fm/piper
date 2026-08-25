@@ -27,6 +27,7 @@ import (
 type HomeParams struct {
 	NavBar    pages.NavBar
 	BuildTime time.Time
+	Agent     string
 }
 
 func home(database *db.DB, pg *pages.Pages, lastfmService *lastfm.Service, buildTime time.Time) http.HandlerFunc {
@@ -50,6 +51,7 @@ func home(database *db.DB, pg *pages.Pages, lastfmService *lastfm.Service, build
 		params := HomeParams{
 			NavBar:    pages.NewNavBar(user, isLoggedIn),
 			BuildTime: buildTime,
+			Agent:     models.SubmissionAgent,
 		}
 		err := pg.Execute("home", w, params)
 		if err != nil {
@@ -150,7 +152,7 @@ func handleLinkLastfmForm(database *db.DB, pg *pages.Pages) http.HandlerFunc {
 			NavBar          pages.NavBar
 			CurrentUsername string
 		}{
-			NavBar:          pages.NewNavBar(currentUser, authenticated),
+			NavBar:          pages.NewNavBar(currentUser, authenticated).WithBreadcrumb("Last.fm"),
 			CurrentUsername: currentUsername,
 		}
 		err = pg.Execute("lastFMForm", w, pageParams)
@@ -244,12 +246,60 @@ func handleAppleMusicLink(database *db.DB, pg *pages.Pages, am *applemusic.Servi
 			DevToken string
 		}{
 			DevToken: devToken,
-			NavBar:   pages.NewNavBar(user, authenticated),
+			NavBar:   pages.NewNavBar(user, authenticated).WithBreadcrumb("Apple Music"),
 		}
 		err = pg.Execute("applemusic_link", w, data)
 		if err != nil {
 			log.Printf("Error executing template: %v", err)
 		}
+	}
+}
+
+// handleUnlinkLastfm unlinks the Last.fm account from the home page. Mirrors
+// handleUnlinkSpotify: POST only, then back to the home page.
+func handleUnlinkLastfm(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		userID, _ := session.GetUserID(r.Context()) // Auth middleware ensures this exists
+
+		if err := database.ClearLastFMUsername(userID); err != nil {
+			log.Printf("Error unlinking Last.fm for user %d: %v", userID, err)
+			http.Error(w, "Failed to unlink Last.fm", http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("Successfully unlinked Last.fm for user ID %d", userID)
+
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	}
+}
+
+// handleUnlinkAppleMusic drops piper's copy of the MusicKit user token. Note
+// that the browser stays authorised with Apple: music.unauthorize() only exists
+// on the link page, so this stops piper reading the account but doesn't revoke
+// the grant on Apple's end.
+func handleUnlinkAppleMusic(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		userID, _ := session.GetUserID(r.Context()) // Auth middleware ensures this exists
+
+		if err := database.ClearAppleMusicUserToken(userID); err != nil {
+			log.Printf("Error unlinking Apple Music for user %d: %v", userID, err)
+			http.Error(w, "Failed to unlink Apple Music", http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("Successfully unlinked Apple Music for user ID %d", userID)
+
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 	}
 }
 
@@ -431,8 +481,7 @@ func apiUnlinkLastfmHandler(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID, _ := session.GetUserID(r.Context())
 
-		// TODO: add a clear username for user id fn
-		err := database.AddLastFMUsername(userID, "")
+		err := database.ClearLastFMUsername(userID)
 		if err != nil {
 			log.Printf("apiUnlinkLastfmHandler: Error unlinking Last.fm username for user %d: %v", userID, err)
 			jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": "Failed to unlink Last.fm username"})

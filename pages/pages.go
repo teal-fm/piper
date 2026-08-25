@@ -159,6 +159,7 @@ func (p *Pages) Execute(name string, w io.Writer, params any) error {
 
 type NavBar struct {
 	IsLoggedIn        bool
+	Breadcrumb        string
 	Handle            string
 	DisplayName       string
 	AvatarURL         string
@@ -202,7 +203,7 @@ func NewNavBar(user *models.User, isLoggedIn bool) NavBar {
 	if user.SpotifyID != nil && user.Username != nil {
 		nav.SpotifyUsername = *user.Username
 	}
-	if user.LastFMUsername != nil {
+	if user.LastFMUsername != nil && *user.LastFMUsername != "" {
 		nav.LastFMUsername = *user.LastFMUsername
 	}
 	if user.LastFMAvatarURL != nil {
@@ -210,8 +211,60 @@ func NewNavBar(user *models.User, isLoggedIn bool) NavBar {
 	}
 
 	nav.SpotifyConnected = user.SpotifyID != nil
-	nav.LastFMConnected = user.LastFMUsername != nil
+	nav.LastFMConnected = nav.LastFMUsername != ""
 	nav.AppleMusicConnected = user.AppleMusicUserToken != nil
 
 	return nav
+}
+
+// WithBreadcrumb adds a breadcrumb if we're on a subpage
+func (n NavBar) WithBreadcrumb(name string) NavBar {
+	n.Breadcrumb = name
+	return n
+}
+
+// ServiceCard describes one music service tile on the home page.
+type ServiceCard struct {
+	Name      string
+	Icon      string
+	Enabled   bool
+	Connected bool
+	Account   string
+	AvatarURL string
+	LinkURL   string
+	UnlinkURL string
+}
+
+// Services are the available music services that we can scrobble
+// from; Apple Music doesn't actually give us a username.
+func (n NavBar) Services() []ServiceCard {
+	return []ServiceCard{
+		{
+			Name:      "Spotify",
+			Icon:      "spotify",
+			Enabled:   n.SpotifyEnabled,
+			Connected: n.SpotifyConnected,
+			Account:   n.SpotifyUsername,
+			LinkURL:   "/login/spotify",
+			UnlinkURL: "/unlink-spotify",
+		},
+		{
+			Name:      "Last.fm",
+			Icon:      "lastfm",
+			Enabled:   n.LastFMEnabled,
+			Connected: n.LastFMConnected,
+			Account:   n.LastFMUsername,
+			AvatarURL: n.LastFMAvatarURL,
+			LinkURL:   "/link-lastfm",
+			UnlinkURL: "/unlink-lastfm",
+		},
+		{
+			Name:      "Apple Music",
+			Icon:      "applemusic",
+			Enabled:   n.AppleMusicEnabled,
+			Connected: n.AppleMusicConnected,
+			LinkURL:   "/link-applemusic",
+			UnlinkURL: "/unlink-applemusic",
+		},
+	}
 }

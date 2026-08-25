@@ -207,7 +207,7 @@ func (s *Service) HandleAPIKeyManagement(database *db.DB, pg *pages.Pages) http.
 		}{
 			Keys:     keys,
 			NewKeyID: newKeyValueToShow,
-			NavBar:   pages.NewNavBar(user, ok),
+			NavBar:   pages.NewNavBar(user, ok).WithBreadcrumb("API keys"),
 		}
 
 		w.Header().Set("Content-Type", "text/html")

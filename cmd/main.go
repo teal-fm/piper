@@ -123,6 +123,7 @@ func main() {
 			log.Println("Spotify service enabled and configured")
 		} else {
 			log.Println("Spotify enabled but credentials missing (client_id or client_secret). Spotify features will be disabled.")
+			viper.Set("enable_spotify", false)
 		}
 	} else {
 		log.Println("Spotify service disabled via ENABLE_SPOTIFY=false")
@@ -137,6 +138,7 @@ func main() {
 			log.Println("Last.fm service enabled and configured")
 		} else {
 			log.Println("Last.fm enabled but API key missing. Last.fm features will be disabled.")
+			viper.Set("enable_lastfm", false)
 		}
 	} else {
 		log.Println("Last.fm service disabled via ENABLE_LASTFM=false")
@@ -175,6 +177,7 @@ func main() {
 			log.Println("Apple Music service enabled and configured")
 		} else {
 			log.Println("Apple Music enabled but credentials missing (team_id, key_id, or private_key_path). Apple Music features will be disabled.")
+			viper.Set("enable_applemusic", false)
 		}
 	} else {
 		log.Println("Apple Music service disabled via ENABLE_APPLEMUSIC=false")

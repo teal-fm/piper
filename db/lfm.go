@@ -18,6 +18,18 @@ func (db *DB) AddLastFMUsername(userID int64, lastfmUsername string) error {
 	return err
 }
 
+// ClearLastFMUsername unlinks the Last.fm account. It writes NULL rather than
+// an empty string so "linked" stays a simple nullness check everywhere.
+func (db *DB) ClearLastFMUsername(userID int64) error {
+	_, err := db.Exec(`
+    UPDATE users
+    SET lastfm_username = NULL,
+        lastfm_avatar_url = NULL
+    WHERE id = ?`, userID)
+
+	return err
+}
+
 // SaveLastFMAvatarURL caches the avatar from user.getinfo. An empty url is
 // stored deliberately: it records that the account simply has no avatar, so we
 // stop asking on every page load.

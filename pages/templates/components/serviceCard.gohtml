@@ -1,0 +1,48 @@
+{{ define "components/serviceCard" }}
+<div
+  class="relative flex flex-col gap-1 rounded-xl border p-4 backdrop-blur-sm transition-colors {{ if not .Enabled }}border-neutral-400/20 bg-white/40 dark:bg-neutral-900/40 opacity-50 cursor-default{{ else if .Connected }}border-accent bg-accent/10{{ else }}border-neutral-400/20 bg-white/50 dark:bg-neutral-900/50 hover:border-neutral-400/40{{ end }}"
+>
+  {{ if and .Enabled (not .Connected) }}
+  <a class="absolute inset-0 rounded-xl" href="{{ .LinkURL }}">
+    <span class="sr-only">Connect {{ .Name }}</span>
+  </a>
+  {{ end }}
+
+  <span
+    class="flex items-center gap-2 font-medium {{ if .Connected }}text-accent{{ end }}"
+  >
+    {{ template "components/serviceIcon" .Icon }}
+    {{ .Name }}
+  </span>
+
+  {{ if not .Enabled }}
+  <span class="text-sm text-neutral-500 dark:text-neutral-400"
+    >Unavailable on this server</span
+  >
+  {{ else if .Connected }}
+  <span class="inline-flex items-center gap-2 min-w-0 text-sm">
+    {{ if .AvatarURL }}
+    <img
+      class="w-5 h-5 rounded-full object-cover shrink-0"
+      src="{{ .AvatarURL }}"
+      alt=""
+      loading="lazy"
+    />
+    {{ end }}
+    <span class="truncate text-neutral-600 dark:text-neutral-300">
+      {{ if .Account }}{{ .Account }}{{ else }}Connected{{ end }}
+    </span>
+  </span>
+  <form class="mt-1" method="post" action="{{ .UnlinkURL }}">
+    <button
+      class="text-sm text-neutral-500 dark:text-neutral-400 underline cursor-pointer p-0 bg-transparent hover:text-neutral-900 dark:hover:text-neutral-100"
+      type="submit"
+    >
+      Unlink<span class="sr-only"> {{ .Name }}</span>
+    </button>
+  </form>
+  {{ else }}
+  <span class="text-sm text-neutral-500 dark:text-neutral-400">Not connected</span>
+  {{ end }}
+</div>
+{{ end }}
