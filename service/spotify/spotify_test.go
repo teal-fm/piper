@@ -1545,6 +1545,14 @@ func TestIsRefreshTokenRejected(t *testing.T) {
 			expected:   false,
 		},
 		{
+			// Spotify only documents the 400 for a dead token, so an
+			// invalid_grant under any other status stays retryable.
+			name:       "invalid_grant under an undocumented status",
+			statusCode: http.StatusUnauthorized,
+			body:       `{"error":"invalid_grant"}`,
+			expected:   false,
+		},
+		{
 			name:       "bad request with unparseable body",
 			statusCode: http.StatusBadRequest,
 			body:       "not json",

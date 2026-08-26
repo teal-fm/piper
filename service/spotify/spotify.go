@@ -333,7 +333,7 @@ func (s *Service) refreshTokenForUser(user *models.User) (string, error) {
 // isRefreshTokenRejected reports whether Spotify permanently rejected the
 // refresh token, as opposed to failing for a transient reason.
 func isRefreshTokenRejected(statusCode int, body []byte) bool {
-	if statusCode != http.StatusBadRequest && statusCode != http.StatusUnauthorized {
+	if statusCode != http.StatusBadRequest {
 		return false
 	}
 
