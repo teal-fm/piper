@@ -1436,12 +1436,15 @@ func (s stubRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 func newRefreshTestService(t *testing.T, database *db.DB, statusCode int, body string) *Service {
 	t.Helper()
 
+	previousID := viper.Get("spotify.client_id")
+	previousSecret := viper.Get("spotify.client_secret")
+	t.Cleanup(func() {
+		viper.Set("spotify.client_id", previousID)
+		viper.Set("spotify.client_secret", previousSecret)
+	})
+
 	viper.Set("spotify.client_id", "id")
 	viper.Set("spotify.client_secret", "secret")
-	t.Cleanup(func() {
-		viper.Set("spotify.client_id", "")
-		viper.Set("spotify.client_secret", "")
-	})
 
 	service := newTestService(database, &mockPlayingNowService{})
 	service.httpClient = &http.Client{
