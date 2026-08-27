@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -35,7 +36,7 @@ type HomeParams struct {
 	AppleMusicDevToken string
 }
 
-func home(database *db.DB, pg *pages.Pages, profileResolver *profileservice.Resolver, appleMusicService *applemusic.Service) http.HandlerFunc {
+func home(database *db.DB, pg *pages.Pages, profileResolver *profileservice.Resolver, spotifyService *spotify.Service, appleMusicService *applemusic.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "text/html")
@@ -59,12 +60,7 @@ func home(database *db.DB, pg *pages.Pages, profileResolver *profileservice.Reso
 				log.Printf("Error fetching user %d details for home page: %v", userID, err)
 			}
 			if user != nil && user.ATProtoDID != nil {
-				profileContext, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-				atmosphere, err = profileResolver.Resolve(profileContext, *user.ATProtoDID)
-				cancel()
-				if err != nil {
-					log.Printf("Error resolving Atmosphere profile for user %d: %v", userID, err)
-				}
+				atmosphere, _ = profileResolver.Cached(*user.ATProtoDID)
 			}
 			if appleMusicEnabled {
 				appleMusicDevToken, _, err = appleMusicService.GenerateDeveloperToken()
@@ -98,7 +94,7 @@ func home(database *db.DB, pg *pages.Pages, profileResolver *profileservice.Reso
 				IsLoggedIn:        isLoggedIn,
 				CurrentPage:       pages.NavConnections,
 				LastFMUsername:    lastfmUsername,
-				SpotifyEnabled:    viper.GetBool("enable_spotify"),
+				SpotifyEnabled:    spotifyService != nil,
 				LastFMEnabled:     viper.GetBool("enable_lastfm"),
 				AppleMusicEnabled: appleMusicEnabled,
 			},
@@ -197,10 +193,14 @@ func handleLinkLastfmSubmit(database *db.DB) http.HandlerFunc {
 	}
 }
 
-func handleUnlinkLastfm(database *db.DB) http.HandlerFunc {
+func handleUnlinkLastfm(database *db.DB, allowedOrigin string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !requestHasAllowedOrigin(r, allowedOrigin) {
+			http.Error(w, "Invalid request origin", http.StatusForbidden)
 			return
 		}
 		userID, _ := session.GetUserID(r.Context())
@@ -211,6 +211,32 @@ func handleUnlinkLastfm(database *db.DB) http.HandlerFunc {
 		}
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	}
+}
+
+func requestHasAllowedOrigin(r *http.Request, allowedOrigin string) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" || origin == "null" {
+		return false
+	}
+	actual, err := url.Parse(origin)
+	if err != nil || actual.Scheme == "" || actual.Host == "" || actual.User != nil {
+		return false
+	}
+
+	expected := &url.URL{}
+	if allowedOrigin != "" {
+		expected, err = url.Parse(allowedOrigin)
+		if err != nil || expected.Scheme == "" || expected.Host == "" {
+			return false
+		}
+	} else {
+		expected.Scheme = "http"
+		if r.TLS != nil {
+			expected.Scheme = "https"
+		}
+		expected.Host = r.Host
+	}
+	return strings.EqualFold(actual.Scheme, expected.Scheme) && strings.EqualFold(actual.Host, expected.Host)
 }
 
 func apiCurrentTrack(spotifyService *spotify.Service) http.HandlerFunc {
@@ -400,6 +426,31 @@ func apiUnlinkLastfmHandler(database *db.DB) http.HandlerFunc {
 		}
 		log.Printf("API: Successfully unlinked Last.fm username for user ID %d", userID)
 		jsonResponse(w, http.StatusOK, map[string]string{"message": "Last.fm username unlinked successfully"})
+	}
+}
+
+func apiAtmosphereProfile(database *db.DB, resolver *profileservice.Resolver) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			jsonResponse(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
+			return
+		}
+		userID, authenticated := session.GetUserID(r.Context())
+		if !authenticated {
+			jsonResponse(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+			return
+		}
+		user, err := database.GetUserByID(userID)
+		if err != nil || user == nil || user.ATProtoDID == nil {
+			jsonResponse(w, http.StatusNotFound, map[string]string{"error": "Atmosphere account not found"})
+			return
+		}
+		account, ready := resolver.Cached(*user.ATProtoDID)
+		if !ready {
+			jsonResponse(w, http.StatusAccepted, map[string]string{"status": "pending"})
+			return
+		}
+		jsonResponse(w, http.StatusOK, account)
 	}
 }
 

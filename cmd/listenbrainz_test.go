@@ -43,12 +43,12 @@ func createTestUser(t *testing.T, database *db.DB) (int64, string) {
 
 	// Create API key for the user
 	sessionManager := session.NewSessionManager(database)
-	apiKeyObj, err := sessionManager.CreateAPIKey(userID, "test-key", 30) // 30 days validity
+	_, rawKey, err := sessionManager.CreateAPIKey(userID, "test-key", 30) // 30 days validity
 	if err != nil {
 		t.Fatalf("Failed to create API key: %v", err)
 	}
 
-	return userID, apiKeyObj.ID
+	return userID, rawKey
 }
 
 // Helper to create context with user ID (simulating auth middleware)

@@ -25,10 +25,15 @@ type Session struct {
 }
 
 type Manager struct {
-	db        *db.DB
-	sessions  map[string]*Session // use in memory cache if necessary
-	ApiKeyMgr *apikey.Manager
-	mu        sync.RWMutex
+	db            *db.DB
+	sessions      map[string]*Session // use in memory cache if necessary
+	ApiKeyMgr     *apikey.Manager
+	mu            sync.RWMutex
+	secureCookies bool
+}
+
+func (sm *Manager) SetSecureCookies(secure bool) {
+	sm.secureCookies = secure
 }
 
 func NewSessionManager(database *db.DB) *Manager {
@@ -192,7 +197,8 @@ func (sm *Manager) SetSessionCookie(w http.ResponseWriter, session *Session) {
 		Value:    session.ID,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   false,
+		Secure:   sm.secureCookies,
+		SameSite: http.SameSiteLaxMode,
 		Expires:  session.ExpiresAt,
 	}
 	http.SetCookie(w, cookie)
@@ -205,7 +211,8 @@ func (sm *Manager) ClearSessionCookie(w http.ResponseWriter) {
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   false,
+		Secure:   sm.secureCookies,
+		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	}
 	http.SetCookie(w, cookie)
@@ -215,7 +222,7 @@ func (sm *Manager) GetAPIKeyManager() *apikey.Manager {
 	return sm.ApiKeyMgr
 }
 
-func (sm *Manager) CreateAPIKey(userID int64, name string, validityDays int) (*apikey.ApiKey, error) {
+func (sm *Manager) CreateAPIKey(userID int64, name string, validityDays int) (*apikey.ApiKey, string, error) {
 	return sm.ApiKeyMgr.CreateApiKey(userID, name, validityDays)
 }
 

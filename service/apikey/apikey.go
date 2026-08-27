@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/teal-fm/piper/db"
@@ -16,13 +17,39 @@ import (
 type Service struct {
 	db       *db.DB
 	sessions *session.Manager
+	flashMu  sync.Mutex
+	newKeys  map[string]string
 }
 
 func NewAPIKeyService(database *db.DB, sessionManager *session.Manager) *Service {
 	return &Service{
 		db:       database,
 		sessions: sessionManager,
+		newKeys:  make(map[string]string),
 	}
+}
+
+func (s *Service) storeNewKey(r *http.Request, key string) bool {
+	cookie, err := r.Cookie("session")
+	if err != nil || cookie.Value == "" {
+		return false
+	}
+	s.flashMu.Lock()
+	s.newKeys[cookie.Value] = key
+	s.flashMu.Unlock()
+	return true
+}
+
+func (s *Service) takeNewKey(r *http.Request) string {
+	cookie, err := r.Cookie("session")
+	if err != nil || cookie.Value == "" {
+		return ""
+	}
+	s.flashMu.Lock()
+	defer s.flashMu.Unlock()
+	key := s.newKeys[cookie.Value]
+	delete(s.newKeys, cookie.Value)
+	return key
 }
 
 // jsonResponse is a helper to send JSON responses
@@ -95,7 +122,7 @@ func (s *Service) HandleAPIKeyManagement(database *db.DB, pg *pages.Pages) http.
 				// IMPORTANT: Assumes CreateAPIKeyAndReturnRawKey method exists on SessionManager
 				// and returns the database object and the raw key string.
 				// Signature: (apiKey *db_apikey.ApiKey, rawKeyString string, err error)
-				apiKeyObj, err := s.sessions.CreateAPIKey(userID, keyName, validityDays)
+				apiKeyObj, rawKey, err := s.sessions.CreateAPIKey(userID, keyName, validityDays)
 				if err != nil {
 					jsonError(w, fmt.Sprintf("Error creating API key: %v", err), http.StatusInternalServerError)
 					return
@@ -103,6 +130,7 @@ func (s *Service) HandleAPIKeyManagement(database *db.DB, pg *pages.Pages) http.
 
 				jsonResponse(w, http.StatusCreated, map[string]any{
 					"id":         apiKeyObj.ID,
+					"key":        rawKey,
 					"name":       apiKeyObj.Name,
 					"created_at": apiKeyObj.CreatedAt,
 					"expires_at": apiKeyObj.ExpiresAt,
@@ -146,18 +174,16 @@ func (s *Service) HandleAPIKeyManagement(database *db.DB, pg *pages.Pages) http.
 			}
 			validityDays := 1024
 
-			// Uses the existing CreateAPIKey, which likely doesn't return the raw key.
-			// The HTML flow currently redirects and shows the key ID.
-			// The template message about "only time you'll see this key" is misleading if it shows ID.
-			// This might require a separate enhancement if the HTML view should show the raw key.
-			apiKey, err := s.sessions.CreateAPIKey(userID, keyName, validityDays)
+			_, rawKey, err := s.sessions.CreateAPIKey(userID, keyName, validityDays)
 			if err != nil {
 				http.Error(w, fmt.Sprintf("Error creating API key: %v", err), http.StatusInternalServerError)
 				return
 			}
-			// Redirects, passing the ID of the created key.
-			// The template shows this ID in the ".NewKey" section.
-			http.Redirect(w, r, "/api-keys?created="+apiKey.ID, http.StatusSeeOther)
+			if !s.storeNewKey(r, rawKey) {
+				http.Error(w, "Failed to prepare the new API key for display", http.StatusInternalServerError)
+				return
+			}
+			http.Redirect(w, r, "/api-keys", http.StatusSeeOther)
 			return
 		}
 
@@ -191,25 +217,13 @@ func (s *Service) HandleAPIKeyManagement(database *db.DB, pg *pages.Pages) http.
 			return
 		}
 
-		// newlyCreatedKey will be the ID from the redirect after form POST
-		newlyCreatedKeyID := r.URL.Query().Get("created")
-		var newKeyValueToShow string
-
-		if newlyCreatedKeyID != "" {
-			// For HTML, we only have the ID. The template message should be adjusted
-			// if it implies the raw key is shown.
-			// If you enhance CreateAPIKey for HTML to also pass the raw key (e.g. via flash message),
-			// this logic would change. For now, it's the ID.
-			newKeyValueToShow = newlyCreatedKeyID
-		}
-
 		data := struct {
-			Keys     []*dbapikey.ApiKey // Assuming GetUserApiKeys returns this type
-			NewKeyID string             // Changed from NewKey for clarity as it's an ID
-			NavBar   pages.NavBar
+			Keys   []*dbapikey.ApiKey
+			NewKey string
+			NavBar pages.NavBar
 		}{
-			Keys:     keys,
-			NewKeyID: newKeyValueToShow,
+			Keys:   keys,
+			NewKey: s.takeNewKey(r),
 			NavBar: pages.NavBar{
 				IsLoggedIn:  ok,
 				CurrentPage: pages.NavAPIAccess,

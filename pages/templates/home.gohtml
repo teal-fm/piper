@@ -4,7 +4,6 @@
 {{ if .NavBar.IsLoggedIn }}
 <section class="page-intro" aria-labelledby="page-title">
   <div>
-    <p class="eyebrow">Listening connections</p>
     <h1 id="page-title">your music, piped into one place.</h1>
   </div>
   <p class="intro-copy">See which sources you use and the latest listen Piper received from each one.</p>
@@ -137,38 +136,125 @@
 
   <div class="connection-lines" aria-hidden="true"><span></span><span></span><span></span></div>
 
-  <section class="atmosphere-account" aria-labelledby="atmosphere-title">
+  <section class="atmosphere-account" aria-labelledby="atmosphere-title" data-atmosphere-account data-profile-ready="{{ if .Atmosphere.PDS }}true{{ else }}false{{ end }}">
     {{ if .Atmosphere.AvatarURL }}
-    <img class="atmosphere-avatar" src="{{ .Atmosphere.AvatarURL }}" alt="" />
+    <img class="atmosphere-avatar" src="{{ .Atmosphere.AvatarURL }}" alt="" data-atmosphere-visual />
     {{ else }}
-    <div class="atmosphere-symbol" aria-hidden="true"><span></span><span></span><span></span></div>
+    <div class="atmosphere-symbol" aria-hidden="true" data-atmosphere-visual><span></span><span></span><span></span></div>
     {{ end }}
     <div>
       <p class="detail-label">Atmosphere account</p>
-      <h2 id="atmosphere-title">{{ if .Atmosphere.Handle }}@{{ .Atmosphere.Handle }}{{ else }}Handle unavailable{{ end }}</h2>
-      <p>PDS: {{ if .Atmosphere.PDS }}{{ .Atmosphere.PDS }}{{ else }}Unavailable{{ end }}</p>
+      <h2 id="atmosphere-title" data-atmosphere-handle>{{ if .Atmosphere.Handle }}@{{ .Atmosphere.Handle }}{{ else }}Loading account…{{ end }}</h2>
+      <p data-atmosphere-pds>PDS: {{ if .Atmosphere.PDS }}{{ .Atmosphere.PDS }}{{ else }}Loading…{{ end }}</p>
       <a class="atmosphere-logout" href="/logout">Logout</a>
     </div>
   </section>
 </main>
 
+<script>
+  (() => {
+    const account = document.querySelector("[data-atmosphere-account]");
+    if (!account || account.dataset.profileReady === "true") return;
+
+    const wait = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+    async function loadProfile() {
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        try {
+          const response = await fetch("/api/v1/atmosphere-profile", { credentials: "same-origin" });
+          if (response.ok) {
+            const profile = await response.json();
+            account.querySelector("[data-atmosphere-handle]").textContent = profile.handle ? `@${profile.handle}` : "Handle unavailable";
+            account.querySelector("[data-atmosphere-pds]").textContent = profile.pds ? `PDS: ${profile.pds}` : "PDS: Unavailable";
+            if (profile.avatar_url) {
+              const image = document.createElement("img");
+              image.className = "atmosphere-avatar";
+              image.src = profile.avatar_url;
+              image.alt = "";
+              image.dataset.atmosphereVisual = "";
+              account.querySelector("[data-atmosphere-visual]").replaceWith(image);
+            }
+            account.dataset.profileReady = "true";
+            return;
+          }
+          if (response.status !== 202) return;
+        } catch (error) {
+          console.warn("Atmosphere profile is not available yet", error);
+        }
+        await wait(500);
+      }
+      account.querySelector("[data-atmosphere-handle]").textContent = "Handle unavailable";
+      account.querySelector("[data-atmosphere-pds]").textContent = "PDS: Unavailable";
+    }
+    loadProfile();
+  })();
+</script>
+
 {{ if .NavBar.AppleMusicEnabled }}
-<script src="https://js-cdn.music.apple.com/musickit/v3/musickit.js" data-web-components async></script>
 <script>
   (() => {
     const authorizeButton = document.querySelector("[data-apple-authorize]");
     const unlinkButton = document.querySelector("[data-apple-unlink]");
     const status = document.querySelector("[data-apple-status]");
     const developerToken = "{{ .AppleMusicDevToken }}";
+    const musicKitSource = "https://js-cdn.music.apple.com/musickit/v3/musickit.js";
+    let musicKitLoadPromise;
 
     function setStatus(message) {
       status.textContent = message;
     }
 
+    function loadMusicKit() {
+      if (window.MusicKit) return Promise.resolve();
+      if (musicKitLoadPromise) return musicKitLoadPromise;
+
+      musicKitLoadPromise = new Promise((resolve, reject) => {
+        const script = document.createElement("script");
+        let settled = false;
+        const timeout = window.setTimeout(() => {
+          finish(new Error("Apple Music did not load. Check your connection and try again."));
+        }, 10000);
+
+        function finish(error) {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timeout);
+          document.removeEventListener("musickitloaded", onLoaded);
+          script.removeEventListener("error", onError);
+          if (error) {
+            script.remove();
+            reject(error);
+            return;
+          }
+          resolve();
+        }
+
+        function onLoaded() {
+          if (!window.MusicKit) {
+            finish(new Error("Apple Music loaded without MusicKit. Try again."));
+            return;
+          }
+          finish();
+        }
+
+        function onError() {
+          finish(new Error("Apple Music could not load. Check your connection and try again."));
+        }
+
+        document.addEventListener("musickitloaded", onLoaded, { once: true });
+        script.addEventListener("error", onError, { once: true });
+        script.src = musicKitSource;
+        script.async = true;
+        script.dataset.webComponents = "";
+        document.head.appendChild(script);
+      }).finally(() => {
+        musicKitLoadPromise = undefined;
+      });
+
+      return musicKitLoadPromise;
+    }
+
     async function getMusicKit() {
-      if (!window.MusicKit) {
-        await new Promise((resolve) => document.addEventListener("musickitloaded", resolve, { once: true }));
-      }
+      await loadMusicKit();
       try {
         window.MusicKit.configure({ developerToken, app: { name: "Piper", build: "1.0.0" } });
       } catch (error) {
@@ -225,14 +311,13 @@
 {{ else }}
 <main class="login-shell">
   <section class="login-copy" aria-labelledby="login-title">
-    <p class="eyebrow">Music, under your name</p>
     <h1 id="login-title">your music, in your atmosphere.</h1>
     <p>Connect the services you listen with. Piper sends each play to the Atmosphere account you own.</p>
   </section>
   <section class="login-panel" aria-label="Sign in to Piper">
     <div class="login-panel-heading">
       <span class="atmosphere-symbol" aria-hidden="true"><span></span><span></span><span></span></span>
-      <div><p class="detail-label">Get started</p><h2>Sign in with ATProto</h2></div>
+      <h2>Sign in with ATProto</h2>
     </div>
     <form class="stacked-form" action="/login/atproto" data-handle-form>
       <label for="handle">Your handle</label>

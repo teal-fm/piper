@@ -69,6 +69,7 @@ func main() {
 	}
 
 	sessionManager := session.NewSessionManager(database)
+	sessionManager.SetSecureCookies(strings.HasPrefix(viper.GetString("server.root_url"), "https://"))
 
 	// --- Service Initializations ---
 

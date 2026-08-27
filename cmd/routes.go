@@ -14,7 +14,7 @@ func (app *application) routes() http.Handler {
 	//Handles static file routes
 	mux.Handle("/static/{file_name}", app.pages.Static())
 
-	mux.HandleFunc("/", session.WithPossibleAuth(home(app.database, app.pages, app.profileResolver, app.appleMusicService), app.sessionManager))
+	mux.HandleFunc("/", session.WithPossibleAuth(home(app.database, app.pages, app.profileResolver, app.spotifyService, app.appleMusicService), app.sessionManager))
 
 	// OAuth Routes
 	mux.HandleFunc("/login/atproto", app.oauthManager.HandleLogin("atproto"))
@@ -30,7 +30,7 @@ func (app *application) routes() http.Handler {
 
 	mux.HandleFunc("/link-lastfm", session.WithAuth(handleLinkLastfmForm(app.database, app.pages), app.sessionManager)) // GET form
 	mux.HandleFunc("/link-lastfm/submit", session.WithAuth(handleLinkLastfmSubmit(app.database), app.sessionManager))   // POST submit - Changed route slightly
-	mux.HandleFunc("/unlink-lastfm", session.WithAuth(handleUnlinkLastfm(app.database), app.sessionManager))
+	mux.HandleFunc("/unlink-lastfm", session.WithAuth(handleUnlinkLastfm(app.database, viper.GetString("server.root_url")), app.sessionManager))
 	mux.HandleFunc("/link-applemusic", session.WithAuth(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 	}, app.sessionManager))
@@ -48,6 +48,7 @@ func (app *application) routes() http.Handler {
 	// Apple Music user authorization (protected with session auth)
 	mux.HandleFunc("/api/v1/applemusic/authorize", session.WithAuth(apiAppleMusicAuthorize(app.database), app.sessionManager))
 	mux.HandleFunc("/api/v1/applemusic/unlink", session.WithAuth(apiAppleMusicUnlink(app.database), app.sessionManager))
+	mux.HandleFunc("/api/v1/atmosphere-profile", session.WithAuth(apiAtmosphereProfile(app.database, app.profileResolver), app.sessionManager))
 
 	// ListenBrainz-compatible endpoint
 	mux.HandleFunc("/1/submit-listens", session.WithAPIAuth(apiSubmitListensHandler(app.database, app.atprotoService, app.playingNowService, app.mbService), app.sessionManager))

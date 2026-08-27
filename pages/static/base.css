@@ -117,7 +117,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
   padding-block: clamp(3rem, 7vw, 5.5rem) var(--space-3xl);
 }
 
-.eyebrow, .detail-label {
+.detail-label {
   margin: 0 0 var(--space-sm);
   color: var(--teal-dark);
   font-size: 0.68rem;

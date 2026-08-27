@@ -2,8 +2,10 @@ package apikey
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -18,6 +20,7 @@ import (
 // ApiKey represents an API key for authenticating requests
 type ApiKey struct {
 	ID        string
+	KeyPrefix string
 	UserID    int64
 	Name      string
 	CreatedAt time.Time
@@ -37,6 +40,8 @@ func NewApiKeyManager(database *db.DB) *Manager {
 	_, err := database.Exec(`
 	CREATE TABLE IF NOT EXISTS api_keys (
 		id TEXT PRIMARY KEY,
+		key_hash TEXT UNIQUE,
+		key_prefix TEXT,
 		user_id INTEGER NOT NULL,
 		name TEXT NOT NULL,
 		created_at TIMESTAMP,
@@ -46,6 +51,20 @@ func NewApiKeyManager(database *db.DB) *Manager {
 
 	if err != nil {
 		log.Printf("Error creating api_keys table: %v", err)
+	}
+	for _, statement := range []string{
+		`ALTER TABLE api_keys ADD COLUMN key_hash TEXT`,
+		`ALTER TABLE api_keys ADD COLUMN key_prefix TEXT`,
+	} {
+		if _, alterErr := database.Exec(statement); alterErr != nil && !strings.Contains(alterErr.Error(), "duplicate column name") {
+			log.Printf("Error updating api_keys table: %v", alterErr)
+		}
+	}
+	if err := migrateLegacyAPIKeys(database); err != nil {
+		log.Printf("Error migrating legacy API keys: %v", err)
+	}
+	if _, err := database.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash)`); err != nil {
+		log.Printf("Error indexing API key hashes: %v", err)
 	}
 
 	am := &Manager{
@@ -83,22 +102,30 @@ func (am *Manager) cleanupExpiredApiKeys() {
 }
 
 // CreateApiKey creates a new API key for a user
-func (am *Manager) CreateApiKey(userID int64, name string, validityDays int) (*ApiKey, error) {
+func (am *Manager) CreateApiKey(userID int64, name string, validityDays int) (*ApiKey, string, error) {
 	am.mu.Lock()
 	defer am.mu.Unlock()
 
-	// Generate random API key
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return nil, err
+	rawKey, err := randomToken(32)
+	if err != nil {
+		return nil, "", err
 	}
-	apiKeyID := base64.URLEncoding.EncodeToString(b)
+	apiKeyID, err := randomToken(16)
+	if err != nil {
+		return nil, "", err
+	}
+	keyHash := hashAPIKey(rawKey)
+	keyPrefix := rawKey
+	if len(keyPrefix) > 8 {
+		keyPrefix = keyPrefix[:8]
+	}
 
 	now := time.Now().UTC()
 	expiresAt := now.AddDate(0, 0, validityDays) // Default to validityDays days validity
 
 	apiKey := &ApiKey{
 		ID:        apiKeyID,
+		KeyPrefix: keyPrefix,
 		UserID:    userID,
 		Name:      name,
 		CreatedAt: now,
@@ -106,26 +133,28 @@ func (am *Manager) CreateApiKey(userID int64, name string, validityDays int) (*A
 	}
 
 	// Store API key in memory
-	am.apiKeys[apiKeyID] = apiKey
+	am.apiKeys[keyHash] = apiKey
 
 	// Store API key in database
-	_, err := am.db.Exec(`
-	INSERT INTO api_keys (id, user_id, name, created_at, expires_at)
-	VALUES (?, ?, ?, ?, ?)`,
-		apiKeyID, userID, name, now, expiresAt)
+	_, err = am.db.Exec(`
+	INSERT INTO api_keys (id, key_hash, key_prefix, user_id, name, created_at, expires_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		apiKeyID, keyHash, keyPrefix, userID, name, now, expiresAt)
 
 	if err != nil {
-		return nil, err
+		delete(am.apiKeys, keyHash)
+		return nil, "", err
 	}
 
-	return apiKey, nil
+	return apiKey, rawKey, nil
 }
 
 // GetApiKey retrieves an API key by ID
 func (am *Manager) GetApiKey(apiKeyID string) (*ApiKey, bool) {
+	keyHash := hashAPIKey(apiKeyID)
 	// First check in-memory cache
 	am.mu.RLock()
-	apiKey, exists := am.apiKeys[apiKeyID]
+	apiKey, exists := am.apiKeys[keyHash]
 	am.mu.RUnlock()
 
 	if exists {
@@ -140,11 +169,11 @@ func (am *Manager) GetApiKey(apiKeyID string) (*ApiKey, bool) {
 	}
 
 	// If not in memory, check database
-	apiKey = &ApiKey{ID: apiKeyID}
+	apiKey = &ApiKey{}
 	err := am.db.QueryRow(`
-	SELECT user_id, name, created_at, expires_at
-	FROM api_keys WHERE id = ?`, apiKeyID).Scan(
-		&apiKey.UserID, &apiKey.Name, &apiKey.CreatedAt, &apiKey.ExpiresAt)
+	SELECT id, COALESCE(key_prefix, ''), user_id, name, created_at, expires_at
+	FROM api_keys WHERE key_hash = ?`, keyHash).Scan(
+		&apiKey.ID, &apiKey.KeyPrefix, &apiKey.UserID, &apiKey.Name, &apiKey.CreatedAt, &apiKey.ExpiresAt)
 
 	if err != nil {
 		return nil, false
@@ -159,7 +188,7 @@ func (am *Manager) GetApiKey(apiKeyID string) (*ApiKey, bool) {
 
 	// Add to in-memory cache
 	am.mu.Lock()
-	am.apiKeys[apiKeyID] = apiKey
+	am.apiKeys[keyHash] = apiKey
 	am.mu.Unlock()
 
 	return apiKey, true
@@ -168,7 +197,11 @@ func (am *Manager) GetApiKey(apiKeyID string) (*ApiKey, bool) {
 // DeleteApiKey removes an API key
 func (am *Manager) DeleteApiKey(apiKeyID string) error {
 	am.mu.Lock()
-	delete(am.apiKeys, apiKeyID)
+	for keyHash, apiKey := range am.apiKeys {
+		if apiKey.ID == apiKeyID {
+			delete(am.apiKeys, keyHash)
+		}
+	}
 	am.mu.Unlock()
 
 	_, err := am.db.Exec("DELETE FROM api_keys WHERE id = ?", apiKeyID)
@@ -178,7 +211,7 @@ func (am *Manager) DeleteApiKey(apiKeyID string) error {
 // GetUserApiKeys retrieves all API keys for a user
 func (am *Manager) GetUserApiKeys(userID int64) ([]*ApiKey, error) {
 	rows, err := am.db.Query(`
-	SELECT id, user_id, name, created_at, expires_at
+	SELECT id, COALESCE(key_prefix, ''), user_id, name, created_at, expires_at
 	FROM api_keys 
 	WHERE user_id = ? 
 	ORDER BY created_at DESC`, userID)
@@ -198,6 +231,7 @@ func (am *Manager) GetUserApiKeys(userID int64) ([]*ApiKey, error) {
 		apiKey := &ApiKey{}
 		err := rows.Scan(
 			&apiKey.ID,
+			&apiKey.KeyPrefix,
 			&apiKey.UserID,
 			&apiKey.Name,
 			&apiKey.CreatedAt,
@@ -210,6 +244,56 @@ func (am *Manager) GetUserApiKeys(userID int64) ([]*ApiKey, error) {
 	}
 
 	return apiKeys, nil
+}
+
+func randomToken(byteLength int) (string, error) {
+	bytes := make([]byte, byteLength)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(bytes), nil
+}
+
+func hashAPIKey(rawKey string) string {
+	hash := sha256.Sum256([]byte(rawKey))
+	return hex.EncodeToString(hash[:])
+}
+
+func migrateLegacyAPIKeys(database *db.DB) error {
+	rows, err := database.Query(`SELECT id FROM api_keys WHERE key_hash IS NULL OR key_hash = ''`)
+	if err != nil {
+		return err
+	}
+	var legacyKeys []string
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		legacyKeys = append(legacyKeys, key)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, rawKey := range legacyKeys {
+		newID, err := randomToken(16)
+		if err != nil {
+			return err
+		}
+		prefix := rawKey
+		if len(prefix) > 8 {
+			prefix = prefix[:8]
+		}
+		if _, err := database.Exec(`UPDATE api_keys SET id = ?, key_hash = ?, key_prefix = ? WHERE id = ?`, newID, hashAPIKey(rawKey), prefix, rawKey); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ExtractApiKey extracts the API key from the request

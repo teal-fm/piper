@@ -33,7 +33,7 @@ func (db *DB) GetAllUsersWithLastFM() ([]*models.User, error) {
 	rows, err := db.Query(`
     SELECT id, username, email, lastfm_username
     FROM users
-    WHERE lastfm_username IS NOT NULL AND TRIM(lastfm_username) != ''
+    WHERE lastfm_username IS NOT NULL
     ORDER BY id`)
 
 	if err != nil {
@@ -55,10 +55,73 @@ func (db *DB) GetAllUsersWithLastFM() ([]*models.User, error) {
 		if err != nil {
 			return nil, err
 		}
+		lastfmUsername := strings.TrimSpace(*user.LastFMUsername)
+		if lastfmUsername == "" {
+			continue
+		}
+		user.LastFMUsername = &lastfmUsername
 		users = append(users, user)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return users, nil
+}
+
+func (db *DB) normalizeLastFMUsernames() error {
+	rows, err := db.Query(`
+    SELECT id, lastfm_username
+    FROM users
+    WHERE lastfm_username IS NOT NULL`)
+	if err != nil {
+		return err
+	}
+
+	type usernameUpdate struct {
+		userID   int64
+		username string
+	}
+	var updates []usernameUpdate
+	for rows.Next() {
+		var update usernameUpdate
+		if err := rows.Scan(&update.userID, &update.username); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		trimmed := strings.TrimSpace(update.username)
+		if trimmed != update.username {
+			update.username = trimmed
+			updates = append(updates, update)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+
+	transaction, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = transaction.Rollback() }()
+
+	for _, update := range updates {
+		if update.username == "" {
+			if _, err := transaction.Exec(`UPDATE users SET lastfm_username = NULL WHERE id = ?`, update.userID); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, err := transaction.Exec(`UPDATE users SET lastfm_username = ? WHERE id = ?`, update.username, update.userID); err != nil {
+			return err
+		}
+	}
+
+	return transaction.Commit()
 }
 
 func (db *DB) GetUserByLastFM(lastfmUsername string) (*models.User, error) {

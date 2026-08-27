@@ -71,9 +71,10 @@ func (db *DB) Initialize() error {
 		return err
 	}
 
-	// Older versions could store whitespace as a linked Last.fm account.
-	// Keep the persisted state aligned with what the UI considers connected.
-	if _, err = db.Exec(`UPDATE users SET lastfm_username = NULL WHERE TRIM(COALESCE(lastfm_username, '')) = ''`); err != nil {
+	// Older versions could store surrounding or whitespace-only values as a
+	// linked Last.fm account. Normalize them with the same Unicode-aware rule
+	// used when accepting new usernames.
+	if err = db.normalizeLastFMUsernames(); err != nil {
 		return err
 	}
 
