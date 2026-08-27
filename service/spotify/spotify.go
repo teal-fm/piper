@@ -145,11 +145,10 @@ func (s *Service) identifyAndStoreUser(token string, refreshToken string, userId
 	} else {
 		err = s.DB.UpdateUserToken(user.ID, token, refreshToken, tokenExpiryTime)
 		if err != nil {
-			// for now log and continue
 			s.logger.Printf("Error updating user token for user ID %d: %v", user.ID, err)
-		} else {
-			s.logger.Printf("Updated token for existing user: %s (ID: %d)", *user.Username, user.ID)
+			return 0, err
 		}
+		s.logger.Printf("Updated token for existing user: %s (ID: %d)", *user.Username, user.ID)
 	}
 	if user == nil {
 		return 0, fmt.Errorf("user does not seem to exist")
