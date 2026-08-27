@@ -1,50 +1,16 @@
 {{ define "components/navBar" }}
-
-<nav class="flex flex-wrap mb-5 gap-x-4 gap-y-1">
-  <a class="text-[#1DB954] font-bold no-underline" href="/">Home</a>
-
-  {{if .IsLoggedIn}}
-  {{ if .SpotifyEnabled }}
-  <a class="text-[#1DB954] font-bold no-underline" href="/current-track"
-    >Spotify Current</a
-  >
-  <a class="text-[#1DB954] font-bold no-underline" href="/history"
-    >Spotify History</a
-  >
-  <a class="text-[#1DB954] font-bold no-underline" href="/login/spotify"
-    >Connect Spotify Account</a
-  >
-  {{ else }}
-  <span class="text-gray-400 font-bold cursor-not-allowed" title="Spotify is disabled on this server">Spotify (disabled)</span>
-  {{ end }}
-
-  {{ if .LastFMEnabled }}
-  <a class="text-[#1DB954] font-bold no-underline" href="/link-lastfm"
-    >Link Last.fm</a
-  >
-  {{ if .LastFMUsername }}
-  <a class="text-[#1DB954] font-bold no-underline" href="/lastfm/recent"
-    >Last.fm Recent</a
-  >
-  {{ end }}
-  {{ else }}
-  <span class="text-gray-400 font-bold cursor-not-allowed" title="Last.fm is disabled on this server">Last.fm (disabled)</span>
-  {{ end }}
-
-  {{ if .AppleMusicEnabled }}
-  <a class="text-[#1DB954] font-bold no-underline" href="/link-applemusic"
-    >Link Apple Music</a
-  >
-  {{ else }}
-  <span class="text-gray-400 font-bold cursor-not-allowed" title="Apple Music is disabled on this server">Apple Music (disabled)</span>
-  {{ end }}
-
-  <a class="text-[#1DB954] font-bold no-underline" href="/api-keys">API Keys</a>
-  <a class="text-[#1DB954] font-bold no-underline" href="/logout">Logout</a>
-  {{ else }}
-  <a class="text-[#1DB954] font-bold no-underline" href="/login/atproto"
-    >Login with ATProto</a
-  >
-  {{ end }}
-</nav>
+<header class="site-header">
+  <a class="wordmark" href="/" aria-label="Piper home">
+    <span class="wordmark-symbol" aria-hidden="true"><i></i><i></i><i></i></span>
+    <span>piper</span>
+  </a>
+  <nav aria-label="Main navigation">
+    {{ if .IsLoggedIn }}
+    <a href="/"{{ if eq .CurrentPage "connections" }} aria-current="page"{{ end }}>Connections</a>
+    <a href="/api-keys"{{ if eq .CurrentPage "api-access" }} aria-current="page"{{ end }}>API access</a>
+    {{ else }}
+    <a href="https://teal.fm">About teal.fm</a>
+    {{ end }}
+  </nav>
+</header>
 {{ end }}

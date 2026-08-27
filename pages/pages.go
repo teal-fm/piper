@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/teal-fm/piper/models"
 )
 
 //go:embed templates/* static/*
@@ -107,6 +109,31 @@ func (p *Pages) funcMap() template.FuncMap {
 			}
 			return t.Format("Jan 02, 2006 15:04")
 		},
+		"artistNames": func(artists []models.Artist) string {
+			if len(artists) == 0 {
+				return "Unknown artist"
+			}
+			names := make([]string, 0, len(artists))
+			for _, artist := range artists {
+				if artist.Name != "" {
+					names = append(names, artist.Name)
+				}
+			}
+			if len(names) == 0 {
+				return "Unknown artist"
+			}
+			return strings.Join(names, ", ")
+		},
+		"shortDID": func(did *string) string {
+			if did == nil || *did == "" {
+				return "Not available"
+			}
+			const prefix = "did:plc:"
+			if strings.HasPrefix(*did, prefix) && len(*did) > len(prefix)+10 {
+				return prefix + (*did)[len(prefix):len(prefix)+6] + "…" + (*did)[len(*did)-4:]
+			}
+			return *did
+		},
 	}
 }
 
@@ -156,8 +183,14 @@ func (p *Pages) Execute(name string, w io.Writer, params any) error {
 
 type NavBar struct {
 	IsLoggedIn        bool
+	CurrentPage       string
 	LastFMUsername    string
 	SpotifyEnabled    bool
 	LastFMEnabled     bool
 	AppleMusicEnabled bool
 }
+
+const (
+	NavConnections = "connections"
+	NavAPIAccess   = "api-access"
+)

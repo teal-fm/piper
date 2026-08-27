@@ -23,6 +23,7 @@ import (
 	"github.com/teal-fm/piper/service/lastfm"
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"github.com/teal-fm/piper/service/playingnow"
+	profileservice "github.com/teal-fm/piper/service/profile"
 	"github.com/teal-fm/piper/service/spotify"
 	"github.com/teal-fm/piper/session"
 )
@@ -38,6 +39,7 @@ type application struct {
 	playingNowService *playingnow.Service
 	appleMusicService *applemusic.Service
 	pages             *pages.Pages
+	profileResolver   *profileservice.Resolver
 }
 
 // JSON API handlers
@@ -216,6 +218,7 @@ func main() {
 		playingNowService: playingNowService,
 		appleMusicService: appleMusicService,
 		pages:             pages.NewPages(),
+		profileResolver:   profileservice.NewResolver(),
 	}
 
 	trackerInterval := time.Duration(viper.GetInt("tracker.interval")) * time.Second

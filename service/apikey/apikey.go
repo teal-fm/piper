@@ -211,7 +211,8 @@ func (s *Service) HandleAPIKeyManagement(database *db.DB, pg *pages.Pages) http.
 			Keys:     keys,
 			NewKeyID: newKeyValueToShow,
 			NavBar: pages.NavBar{
-				IsLoggedIn: ok,
+				IsLoggedIn:  ok,
+				CurrentPage: pages.NavAPIAccess,
 				//Just leaving empty so we don't have to pull in the db here, may change
 				LastFMUsername: lastfmUsername,
 			},

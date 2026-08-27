@@ -1,13 +1,20 @@
 {{ define "layouts/base" }}
-
+<!doctype html>
 <html lang="en">
 <head>
-    <title>Piper - Spotify & Last.fm Tracker</title>
-    <link rel="stylesheet" href="/static/main.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#f5f7f2" />
+  <title>Piper · Listening connections</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Gabarito:wght@500;600;700&family=Geologica:opsz,wght@12..100,300;12..100,400;12..100,500;12..100,600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/main.css?v=20260827-5" />
 </head>
-<body class="font-sans max-w-[800px] mx-auto p-5 leading-relaxed">
-{{ block "content" . }}{{ end }}
-
+<body>
+  <div class="site-shell">
+    {{ block "content" . }}{{ end }}
+  </div>
 </body>
 </html>
 {{ end }}

@@ -2,11 +2,16 @@ package db
 
 import (
 	"database/sql"
+	"strings"
 
 	"github.com/teal-fm/piper/models"
 )
 
 func (db *DB) AddLastFMUsername(userID int64, lastfmUsername string) error {
+	lastfmUsername = strings.TrimSpace(lastfmUsername)
+	if lastfmUsername == "" {
+		return db.ClearLastFMUsername(userID)
+	}
 	_, err := db.Exec(`
     UPDATE users
     SET lastfm_username = ?
@@ -15,11 +20,20 @@ func (db *DB) AddLastFMUsername(userID int64, lastfmUsername string) error {
 	return err
 }
 
+func (db *DB) ClearLastFMUsername(userID int64) error {
+	_, err := db.Exec(`
+    UPDATE users
+    SET lastfm_username = NULL
+    WHERE id = ?`, userID)
+
+	return err
+}
+
 func (db *DB) GetAllUsersWithLastFM() ([]*models.User, error) {
 	rows, err := db.Query(`
     SELECT id, username, email, lastfm_username
     FROM users
-    WHERE lastfm_username IS NOT NULL
+    WHERE lastfm_username IS NOT NULL AND TRIM(lastfm_username) != ''
     ORDER BY id`)
 
 	if err != nil {

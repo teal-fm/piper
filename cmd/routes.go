@@ -14,7 +14,7 @@ func (app *application) routes() http.Handler {
 	//Handles static file routes
 	mux.Handle("/static/{file_name}", app.pages.Static())
 
-	mux.HandleFunc("/", session.WithPossibleAuth(home(app.database, app.pages), app.sessionManager))
+	mux.HandleFunc("/", session.WithPossibleAuth(home(app.database, app.pages, app.profileResolver, app.appleMusicService), app.sessionManager))
 
 	// OAuth Routes
 	mux.HandleFunc("/login/atproto", app.oauthManager.HandleLogin("atproto"))
@@ -30,7 +30,10 @@ func (app *application) routes() http.Handler {
 
 	mux.HandleFunc("/link-lastfm", session.WithAuth(handleLinkLastfmForm(app.database, app.pages), app.sessionManager)) // GET form
 	mux.HandleFunc("/link-lastfm/submit", session.WithAuth(handleLinkLastfmSubmit(app.database), app.sessionManager))   // POST submit - Changed route slightly
-	mux.HandleFunc("/link-applemusic", session.WithAuth(handleAppleMusicLink(app.pages, app.appleMusicService), app.sessionManager))
+	mux.HandleFunc("/unlink-lastfm", session.WithAuth(handleUnlinkLastfm(app.database), app.sessionManager))
+	mux.HandleFunc("/link-applemusic", session.WithAuth(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	}, app.sessionManager))
 	mux.HandleFunc("/logout", app.oauthManager.HandleLogout("atproto"))
 	mux.HandleFunc("/debug/", session.WithAuth(app.sessionManager.HandleDebug, app.sessionManager))
 

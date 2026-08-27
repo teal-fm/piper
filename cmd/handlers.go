@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -19,15 +20,22 @@ import (
 	atprotoservice "github.com/teal-fm/piper/service/atproto"
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"github.com/teal-fm/piper/service/playingnow"
+	profileservice "github.com/teal-fm/piper/service/profile"
 	"github.com/teal-fm/piper/service/spotify"
 	"github.com/teal-fm/piper/session"
 )
 
 type HomeParams struct {
-	NavBar pages.NavBar
+	NavBar             pages.NavBar
+	User               *models.User
+	SpotifyTrack       *models.Track
+	AppleMusicTrack    *models.Track
+	LastFMTrack        *models.Track
+	Atmosphere         profileservice.Account
+	AppleMusicDevToken string
 }
 
-func home(database *db.DB, pg *pages.Pages) http.HandlerFunc {
+func home(database *db.DB, pg *pages.Pages, profileResolver *profileservice.Resolver, appleMusicService *applemusic.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "text/html")
@@ -36,22 +44,63 @@ func home(database *db.DB, pg *pages.Pages) http.HandlerFunc {
 		isLoggedIn := authenticated
 		lastfmUsername := ""
 
+		var user *models.User
+		var spotifyTrack, appleMusicTrack, lastFMTrack *models.Track
+		var atmosphere profileservice.Account
+		appleMusicDevToken := ""
+		appleMusicEnabled := viper.GetBool("enable_applemusic") && appleMusicService != nil
+
 		if isLoggedIn {
-			user, err := database.GetUserByID(userID)
-			fmt.Printf("User: %+v\n", user)
+			var err error
+			user, err = database.GetUserByID(userID)
 			if err == nil && user != nil && user.LastFMUsername != nil {
-				lastfmUsername = *user.LastFMUsername
+				lastfmUsername = strings.TrimSpace(*user.LastFMUsername)
 			} else if err != nil {
 				log.Printf("Error fetching user %d details for home page: %v", userID, err)
 			}
+			if user != nil && user.ATProtoDID != nil {
+				profileContext, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+				atmosphere, err = profileResolver.Resolve(profileContext, *user.ATProtoDID)
+				cancel()
+				if err != nil {
+					log.Printf("Error resolving Atmosphere profile for user %d: %v", userID, err)
+				}
+			}
+			if appleMusicEnabled {
+				appleMusicDevToken, _, err = appleMusicService.GenerateDeveloperToken()
+				if err != nil {
+					log.Printf("Error preparing Apple Music on home page: %v", err)
+					appleMusicEnabled = false
+				}
+			}
+
+			spotifyTrack, err = database.GetLatestTrackForService(userID, db.SourceSpotify)
+			if err != nil {
+				log.Printf("Error fetching latest Spotify track for user %d: %v", userID, err)
+			}
+			appleMusicTrack, err = database.GetLatestTrackForService(userID, db.SourceAppleMusic)
+			if err != nil {
+				log.Printf("Error fetching latest Apple Music track for user %d: %v", userID, err)
+			}
+			lastFMTrack, err = database.GetLatestTrackForService(userID, db.SourceLastfm)
+			if err != nil {
+				log.Printf("Error fetching latest Last.fm track for user %d: %v", userID, err)
+			}
 		}
 		params := HomeParams{
+			User:               user,
+			SpotifyTrack:       spotifyTrack,
+			AppleMusicTrack:    appleMusicTrack,
+			LastFMTrack:        lastFMTrack,
+			Atmosphere:         atmosphere,
+			AppleMusicDevToken: appleMusicDevToken,
 			NavBar: pages.NavBar{
 				IsLoggedIn:        isLoggedIn,
+				CurrentPage:       pages.NavConnections,
 				LastFMUsername:    lastfmUsername,
 				SpotifyEnabled:    viper.GetBool("enable_spotify"),
 				LastFMEnabled:     viper.GetBool("enable_lastfm"),
-				AppleMusicEnabled: viper.GetBool("enable_applemusic"),
+				AppleMusicEnabled: appleMusicEnabled,
 			},
 		}
 		err := pg.Execute("home", w, params)
@@ -70,7 +119,7 @@ func handleLinkLastfmForm(database *db.DB, pg *pages.Pages) http.HandlerFunc {
 				return
 			}
 
-			lastfmUsername := r.FormValue("lastfm_username")
+			lastfmUsername := strings.TrimSpace(r.FormValue("lastfm_username"))
 			if lastfmUsername == "" {
 				http.Error(w, "Last.fm username cannot be empty", http.StatusBadRequest)
 				return
@@ -91,7 +140,7 @@ func handleLinkLastfmForm(database *db.DB, pg *pages.Pages) http.HandlerFunc {
 		currentUser, err := database.GetUserByID(userID)
 		currentUsername := ""
 		if err == nil && currentUser != nil && currentUser.LastFMUsername != nil {
-			currentUsername = *currentUser.LastFMUsername
+			currentUsername = strings.TrimSpace(*currentUser.LastFMUsername)
 		} else if err != nil {
 			log.Printf("Error fetching user %d for Last.fm form: %v", userID, err)
 			// Don't fail, just show an empty form
@@ -105,6 +154,7 @@ func handleLinkLastfmForm(database *db.DB, pg *pages.Pages) http.HandlerFunc {
 		}{
 			NavBar: pages.NavBar{
 				IsLoggedIn:        authenticated,
+				CurrentPage:       pages.NavConnections,
 				LastFMUsername:    currentUsername,
 				SpotifyEnabled:    viper.GetBool("enable_spotify"),
 				LastFMEnabled:     viper.GetBool("enable_lastfm"),
@@ -128,7 +178,7 @@ func handleLinkLastfmSubmit(database *db.DB) http.HandlerFunc {
 			return
 		}
 
-		lastfmUsername := r.FormValue("lastfm_username")
+		lastfmUsername := strings.TrimSpace(r.FormValue("lastfm_username"))
 		if lastfmUsername == "" {
 			http.Error(w, "Last.fm username cannot be empty", http.StatusBadRequest)
 			return
@@ -147,30 +197,19 @@ func handleLinkLastfmSubmit(database *db.DB) http.HandlerFunc {
 	}
 }
 
-func handleAppleMusicLink(pg *pages.Pages, am *applemusic.Service) http.HandlerFunc {
+func handleUnlinkLastfm(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		devToken, _, errTok := am.GenerateDeveloperToken()
-		if errTok != nil {
-			log.Printf("Error generating Apple Music developer token: %v", errTok)
-			http.Error(w, "Failed to prepare Apple Music", http.StatusInternalServerError)
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		data := struct {
-			NavBar   pages.NavBar
-			DevToken string
-		}{
-			DevToken: devToken,
-			NavBar: pages.NavBar{
-				SpotifyEnabled:    viper.GetBool("enable_spotify"),
-				LastFMEnabled:     viper.GetBool("enable_lastfm"),
-				AppleMusicEnabled: viper.GetBool("enable_applemusic"),
-			},
+		userID, _ := session.GetUserID(r.Context())
+		if err := database.ClearLastFMUsername(userID); err != nil {
+			log.Printf("Error removing Last.fm account for user %d: %v", userID, err)
+			http.Error(w, "Failed to remove Last.fm account", http.StatusInternalServerError)
+			return
 		}
-		err := pg.Execute("applemusic_link", w, data)
-		if err != nil {
-			log.Printf("Error executing template: %v", err)
-		}
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 	}
 }
 
@@ -332,6 +371,7 @@ func apiLinkLastfmHandler(database *db.DB) http.HandlerFunc {
 			return
 		}
 
+		reqBody.LastFMUsername = strings.TrimSpace(reqBody.LastFMUsername)
 		if reqBody.LastFMUsername == "" {
 			jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "Last.fm username cannot be empty"})
 			return
@@ -352,8 +392,7 @@ func apiUnlinkLastfmHandler(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID, _ := session.GetUserID(r.Context())
 
-		// TODO: add a clear username for user id fn
-		err := database.AddLastFMUsername(userID, "")
+		err := database.ClearLastFMUsername(userID)
 		if err != nil {
 			log.Printf("apiUnlinkLastfmHandler: Error unlinking Last.fm username for user %d: %v", userID, err)
 			jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": "Failed to unlink Last.fm username"})

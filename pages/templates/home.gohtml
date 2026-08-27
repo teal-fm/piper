@@ -1,112 +1,444 @@
 {{ define "content" }}
-
-<h1 class="text-[#1DB954]">
-  Piper - Multi-User Spotify & Last.fm Tracker via ATProto
-</h1>
 {{ template "components/navBar" .NavBar }}
 
-<div class="border border-gray-300 rounded-lg p-5 mb-5">
-  <h2 class="text-xl font-semibold mb-2">Welcome to Piper</h2>
-  <p class="mb-3">
-    Piper is a multi-user application that records what you're listening to on
-    Spotify and Last.fm, saving your listening history.
-  </p>
+{{ if .NavBar.IsLoggedIn }}
+<section class="page-intro" aria-labelledby="page-title">
+  <div>
+    <p class="eyebrow">Listening connections</p>
+    <h1 id="page-title">your music, piped into one place.</h1>
+  </div>
+  <p class="intro-copy">See which sources you use and the latest listen Piper received from each one.</p>
+</section>
 
-  {{if .NavBar.IsLoggedIn}}
-  <p class="mb-2">You're logged in!</p>
-  <ul class="list-disc pl-5 mb-3">
-    {{ if .NavBar.SpotifyEnabled }}
-    <li>
-      <a class="text-[#1DB954] font-bold" href="/login/spotify"
-        >Connect your Spotify account</a
-      >
-      to start tracking.
-    </li>
+<main class="connection-map">
+  <div class="service-grid" aria-label="Music service connections">
+    <article class="service-panel {{ if not .NavBar.SpotifyEnabled }}is-unavailable{{ else if and .User .User.SpotifyID }}is-connected{{ else }}is-not-connected{{ end }}">
+      <header class="service-header">
+        <div class="service-identity">
+          <span class="service-mark spotify-mark" aria-hidden="true">S</span>
+          <div>
+            <h2>Spotify</h2>
+            {{ if not .NavBar.SpotifyEnabled }}<p class="status-label"><span class="status-dot"></span>Unavailable on this Piper</p>
+            {{ else if and .User .User.SpotifyID }}<p class="status-label"><span class="status-dot"></span>Connected</p>
+            {{ else }}<p class="status-label"><span class="status-dot"></span>Not connected</p>{{ end }}
+          </div>
+        </div>
+      </header>
+      <div class="service-body">
+        {{ if not .NavBar.SpotifyEnabled }}
+        <p class="service-note">The server owner has turned off Spotify tracking.</p>
+        {{ else if and .User .User.SpotifyID }}
+        <p class="account-line">Signed in as <strong>{{ .User.SpotifyID }}</strong></p>
+        {{ if .SpotifyTrack }}
+        <div class="latest-listen">
+          <p class="detail-label">Last tracked play</p>
+          <p class="track-name">{{ .SpotifyTrack.Name }}</p>
+          <p class="track-artist">{{ artistNames .SpotifyTrack.Artist }}</p>
+          <time datetime="{{ .SpotifyTrack.Timestamp.Format "2006-01-02T15:04:05Z07:00" }}">{{ formatTime .SpotifyTrack.Timestamp }}</time>
+        </div>
+        {{ else }}
+        <div class="empty-listen"><p class="detail-label">Last tracked play</p><p>Nothing yet. Play something on Spotify and Piper will pick it up.</p></div>
+        {{ end }}
+        {{ else }}
+        <p class="service-note">Connect Spotify to start recording what you play.</p>
+        {{ end }}
+      </div>
+      <footer class="service-actions">
+        {{ if .NavBar.SpotifyEnabled }}
+          {{ if and .User .User.SpotifyID }}
+          <a class="text-action" href="/history">View history <span aria-hidden="true">↗</span></a>
+          <a class="quiet-action" href="/login/spotify">Reconnect</a>
+          {{ else }}<a class="primary-action" href="/login/spotify">Connect Spotify</a>{{ end }}
+        {{ end }}
+      </footer>
+    </article>
+
+    <article class="service-panel {{ if not .NavBar.AppleMusicEnabled }}is-unavailable{{ else if and .User .User.AppleMusicUserToken }}is-connected{{ else }}is-not-connected{{ end }}">
+      <header class="service-header">
+        <div class="service-identity">
+          <span class="service-mark apple-mark" aria-hidden="true">♪</span>
+          <div>
+            <h2>Apple Music</h2>
+            {{ if not .NavBar.AppleMusicEnabled }}<p class="status-label"><span class="status-dot"></span>Unavailable on this Piper</p>
+            {{ else if and .User .User.AppleMusicUserToken }}<p class="status-label"><span class="status-dot"></span>Connected</p>
+            {{ else }}<p class="status-label"><span class="status-dot"></span>Not connected</p>{{ end }}
+          </div>
+        </div>
+      </header>
+      <div class="service-body">
+        {{ if not .NavBar.AppleMusicEnabled }}
+        <p class="service-note">The server owner has turned off Apple Music tracking.</p>
+        {{ else if and .User .User.AppleMusicUserToken }}
+        <p class="account-line">MusicKit authorization is active.</p>
+        {{ if .AppleMusicTrack }}
+        <div class="latest-listen">
+          <p class="detail-label">Last tracked play</p>
+          <p class="track-name">{{ .AppleMusicTrack.Name }}</p>
+          <p class="track-artist">{{ artistNames .AppleMusicTrack.Artist }}</p>
+          <time datetime="{{ .AppleMusicTrack.Timestamp.Format "2006-01-02T15:04:05Z07:00" }}">{{ formatTime .AppleMusicTrack.Timestamp }}</time>
+        </div>
+        {{ else }}
+        <div class="empty-listen"><p class="detail-label">Last tracked play</p><p>Nothing yet. Your next recent play will appear here.</p></div>
+        {{ end }}
+        {{ else }}
+        <p class="service-note">Authorize Apple Music to import your recent plays.</p>
+        {{ end }}
+      </div>
+      <footer class="service-actions">
+        {{ if .NavBar.AppleMusicEnabled }}
+          {{ if and .User .User.AppleMusicUserToken }}
+          <button class="quiet-action" type="button" data-apple-unlink>Unlink Apple Music</button>
+          {{ else }}
+          <button class="primary-action" type="button" data-apple-authorize>Connect Apple Music</button>
+          {{ end }}
+        {{ end }}
+      </footer>
+      <p class="service-inline-status" data-apple-status role="status" aria-live="polite"></p>
+    </article>
+
+    <article class="service-panel {{ if not .NavBar.LastFMEnabled }}is-unavailable{{ else if .NavBar.LastFMUsername }}is-connected{{ else }}is-not-connected{{ end }}">
+      <header class="service-header">
+        <div class="service-identity">
+          <span class="service-mark lastfm-mark" aria-hidden="true">fm</span>
+          <div>
+            <h2>Last.fm</h2>
+            {{ if not .NavBar.LastFMEnabled }}<p class="status-label"><span class="status-dot"></span>Unavailable on this Piper</p>
+            {{ else if .NavBar.LastFMUsername }}<p class="status-label"><span class="status-dot"></span>Connected</p>
+            {{ else }}<p class="status-label"><span class="status-dot"></span>Not connected</p>{{ end }}
+          </div>
+        </div>
+      </header>
+      <div class="service-body">
+        {{ if not .NavBar.LastFMEnabled }}
+        <p class="service-note">The server owner has turned off Last.fm syncing.</p>
+        {{ else if .NavBar.LastFMUsername }}
+        <p class="account-line">Syncing <strong>{{ .NavBar.LastFMUsername }}</strong></p>
+        {{ if .LastFMTrack }}
+        <div class="latest-listen">
+          <p class="detail-label">Last tracked play</p>
+          <p class="track-name">{{ .LastFMTrack.Name }}</p>
+          <p class="track-artist">{{ artistNames .LastFMTrack.Artist }}</p>
+          <time datetime="{{ .LastFMTrack.Timestamp.Format "2006-01-02T15:04:05Z07:00" }}">{{ formatTime .LastFMTrack.Timestamp }}</time>
+        </div>
+        {{ else }}
+        <div class="empty-listen"><p class="detail-label">Last tracked play</p><p>No scrobbles have reached Piper yet.</p></div>
+        {{ end }}
+        {{ else }}
+        <p class="service-note">Add your Last.fm username to begin syncing scrobbles.</p>
+        {{ end }}
+      </div>
+      <footer class="service-actions">
+        {{ if or .NavBar.LastFMEnabled .NavBar.LastFMUsername }}
+        <a class="{{ if .NavBar.LastFMUsername }}quiet-action{{ else }}primary-action{{ end }}" href="/link-lastfm">{{ if .NavBar.LastFMUsername }}Change username{{ else }}Set username{{ end }}</a>
+        {{ end }}
+      </footer>
+    </article>
+  </div>
+
+  <div class="connection-lines" aria-hidden="true"><span></span><span></span><span></span></div>
+
+  <section class="atmosphere-account" aria-labelledby="atmosphere-title">
+    {{ if .Atmosphere.AvatarURL }}
+    <img class="atmosphere-avatar" src="{{ .Atmosphere.AvatarURL }}" alt="" />
     {{ else }}
-    <li class="text-gray-400">
-      <span title="Spotify is disabled on this server">Spotify tracking (disabled on this server)</span>
-    </li>
+    <div class="atmosphere-symbol" aria-hidden="true"><span></span><span></span><span></span></div>
     {{ end }}
+    <div>
+      <p class="detail-label">Atmosphere account</p>
+      <h2 id="atmosphere-title">{{ if .Atmosphere.Handle }}@{{ .Atmosphere.Handle }}{{ else }}Handle unavailable{{ end }}</h2>
+      <p>PDS: {{ if .Atmosphere.PDS }}{{ .Atmosphere.PDS }}{{ else }}Unavailable{{ end }}</p>
+      <a class="atmosphere-logout" href="/logout">Logout</a>
+    </div>
+  </section>
+</main>
 
-    {{ if .NavBar.LastFMEnabled }}
-    <li>
-      <a class="text-[#1DB954] font-bold" href="/link-lastfm"
-        >Link your Last.fm account</a
-      >
-      to track scrobbles.
-    </li>
-    {{ else }}
-    <li class="text-gray-400">
-      <span title="Last.fm is disabled on this server">Last.fm tracking (disabled on this server)</span>
-    </li>
-    {{ end }}
+{{ if .NavBar.AppleMusicEnabled }}
+<script src="https://js-cdn.music.apple.com/musickit/v3/musickit.js" data-web-components async></script>
+<script>
+  (() => {
+    const authorizeButton = document.querySelector("[data-apple-authorize]");
+    const unlinkButton = document.querySelector("[data-apple-unlink]");
+    const status = document.querySelector("[data-apple-status]");
+    const developerToken = "{{ .AppleMusicDevToken }}";
 
-    {{ if .NavBar.AppleMusicEnabled }}
-    <li>
-      <a class="text-[#1DB954] font-bold" href="/link-applemusic"
-        >Link your Apple Music account</a
-      >
-      to fetch recently played.
-    </li>
-    {{ else }}
-    <li class="text-gray-400">
-      <span title="Apple Music is disabled on this server">Apple Music tracking (disabled on this server)</span>
-    </li>
-    {{ end }}
-  </ul>
-  <p class="mb-2">Once connected, you can check out your:</p>
-  <ul class="list-disc pl-5 mb-3">
-    {{ if .NavBar.SpotifyEnabled }}
-    <li>
-      <a class="text-[#1DB954] font-bold" href="/current-track"
-        >Spotify current track</a
-      >
-      or
-      <a class="text-[#1DB954] font-bold" href="/history">listening history</a>.
-    </li>
-    {{ end }}
-    {{ if and .NavBar.LastFMEnabled .NavBar.LastFMUsername }}
-    <li>
-      <a class="text-[#1DB954] font-bold" href="/lastfm/recent"
-        >Last.fm recent tracks</a
-      >.
-    </li>
-    {{ end }}
-  </ul>
-  <p class="mb-3">
-    You can also manage your
-    <a class="text-[#1DB954] font-bold" href="/api-keys">API keys</a> for
-    programmatic access.
-  </p>
+    function setStatus(message) {
+      status.textContent = message;
+    }
 
-  {{ if .NavBar.LastFMUsername }}
-  <p class="italic text-gray-600">
-    Last.fm Username: {{ .NavBar.LastFMUsername }}
-  </p>
-  {{else }}
-  <p class="italic text-gray-600">Last.fm account not linked.</p>
-  {{ end }}
+    async function getMusicKit() {
+      if (!window.MusicKit) {
+        await new Promise((resolve) => document.addEventListener("musickitloaded", resolve, { once: true }));
+      }
+      try {
+        window.MusicKit.configure({ developerToken, app: { name: "Piper", build: "1.0.0" } });
+      } catch (error) {
+        if (!String(error).includes("already")) throw error;
+      }
+      return window.MusicKit.getInstance();
+    }
 
-  {{ else }}
+    authorizeButton?.addEventListener("click", async () => {
+      authorizeButton.disabled = true;
+      setStatus("Waiting for Apple Music authorization…");
+      try {
+        const music = await getMusicKit();
+        const userToken = await music.authorize();
+        const response = await fetch("/api/v1/applemusic/authorize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ userToken })
+        });
+        if (!response.ok) throw new Error("Piper could not save the Apple Music authorization.");
+        window.location.reload();
+      } catch (error) {
+        console.error("Apple Music authorization failed", error);
+        setStatus(error.message || "Apple Music authorization failed.");
+        authorizeButton.disabled = false;
+      }
+    });
 
-  <p class="mb-3">Login with ATProto to get started!</p>
-  <form class="space-y-2" action="/login/atproto">
-    <label class="block" for="handle">handle:</label>
-    <input
-      class="block w-[95%] p-2 border border-gray-300 rounded"
-      type="text"
-      id="handle"
-      name="handle"
-    />
-    <input
-      class="bg-[#1DB954] text-white px-4 py-2.5 rounded cursor-pointer hover:opacity-90"
-      type="submit"
-      value="submit"
-    />
-  </form>
+    unlinkButton?.addEventListener("click", async () => {
+      if (!confirm("Unlink Apple Music from Piper? Recent play imports will stop.")) return;
+      unlinkButton.disabled = true;
+      setStatus("Removing Apple Music access…");
+      try {
+        try {
+          const music = await getMusicKit();
+          await music.unauthorize();
+        } catch (error) {
+          console.warn("Apple Music session could not be cleared locally", error);
+        }
+        const response = await fetch("/api/v1/applemusic/unlink", { method: "POST", credentials: "same-origin" });
+        if (!response.ok) throw new Error("Piper could not remove the Apple Music connection.");
+        window.location.reload();
+      } catch (error) {
+        console.error("Apple Music unlink failed", error);
+        setStatus(error.message || "Apple Music could not be unlinked.");
+        unlinkButton.disabled = false;
+      }
+    });
+  })();
+</script>
+{{ end }}
 
-  {{ end }}
-</div>
-<!-- Close card div -->
+{{ else }}
+<main class="login-shell">
+  <section class="login-copy" aria-labelledby="login-title">
+    <p class="eyebrow">Music, under your name</p>
+    <h1 id="login-title">your music, in your atmosphere.</h1>
+    <p>Connect the services you listen with. Piper sends each play to the Atmosphere account you own.</p>
+  </section>
+  <section class="login-panel" aria-label="Sign in to Piper">
+    <div class="login-panel-heading">
+      <span class="atmosphere-symbol" aria-hidden="true"><span></span><span></span><span></span></span>
+      <div><p class="detail-label">Get started</p><h2>Sign in with ATProto</h2></div>
+    </div>
+    <form class="stacked-form" action="/login/atproto" data-handle-form>
+      <label for="handle">Your handle</label>
+      <div class="typeahead-control">
+        <div class="input-group">
+          <input
+            type="text"
+            id="handle"
+            name="handle"
+            autocomplete="off"
+            autocapitalize="none"
+            spellcheck="false"
+            placeholder="you.bsky.social"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-controls="actor-results"
+            aria-expanded="false"
+            required
+          />
+          <button type="submit">Continue <span aria-hidden="true">→</span></button>
+        </div>
+        <div id="actor-results" class="typeahead-results" role="listbox" aria-label="Matching Atmosphere accounts" hidden></div>
+      </div>
+      <p id="typeahead-status" class="sr-only" role="status" aria-live="polite"></p>
+      <p class="field-help">Piper uses your handle to start ATProto sign-in. It never asks for your password.</p>
+    </form>
+  </section>
+</main>
 
+<script>
+  (() => {
+    const form = document.querySelector("[data-handle-form]");
+    if (!form) return;
+
+    const input = form.querySelector("#handle");
+    const resultsElement = form.querySelector("#actor-results");
+    const statusElement = form.querySelector("#typeahead-status");
+    const endpoint = "https://typeahead.waow.tech/xrpc/tech.waow.typeahead.searchActors";
+    const resultCache = new Map();
+    let actors = [];
+    let activeIndex = -1;
+    let debounceTimer;
+    let requestController;
+
+    function normalizedQuery() {
+      return input.value.trim().replace(/^@/, "");
+    }
+
+    function closeResults() {
+      actors = [];
+      activeIndex = -1;
+      resultsElement.replaceChildren();
+      resultsElement.hidden = true;
+      input.setAttribute("aria-expanded", "false");
+      input.removeAttribute("aria-activedescendant");
+    }
+
+    function selectActor(actor) {
+      input.value = actor.handle;
+      closeResults();
+      input.focus();
+    }
+
+    function setActiveIndex(nextIndex) {
+      if (!actors.length) return;
+      activeIndex = (nextIndex + actors.length) % actors.length;
+      const options = resultsElement.querySelectorAll("[role='option']");
+      options.forEach((option, index) => {
+        const selected = index === activeIndex;
+        option.setAttribute("aria-selected", String(selected));
+        if (selected) {
+          input.setAttribute("aria-activedescendant", option.id);
+          option.scrollIntoView({ block: "nearest" });
+        }
+      });
+    }
+
+    function renderActors(nextActors) {
+      actors = nextActors.slice(0, 6);
+      activeIndex = -1;
+      resultsElement.replaceChildren();
+
+      if (!actors.length) {
+        closeResults();
+        statusElement.textContent = "No matching accounts found.";
+        return;
+      }
+
+      actors.forEach((actor, index) => {
+        const option = document.createElement("button");
+        option.type = "button";
+        option.id = `actor-option-${index}`;
+        option.className = "typeahead-option";
+        option.setAttribute("role", "option");
+        option.setAttribute("aria-selected", "false");
+
+        const avatar = document.createElement("span");
+        avatar.className = "actor-avatar";
+        avatar.setAttribute("aria-hidden", "true");
+        if (actor.avatar) {
+          const image = document.createElement("img");
+          image.src = actor.avatar;
+          image.alt = "";
+          image.loading = "lazy";
+          image.referrerPolicy = "no-referrer";
+          image.addEventListener("error", () => {
+            image.remove();
+            avatar.textContent = (actor.displayName || actor.handle || "?").slice(0, 1).toUpperCase();
+          }, { once: true });
+          avatar.append(image);
+        } else {
+          avatar.textContent = (actor.displayName || actor.handle || "?").slice(0, 1).toUpperCase();
+        }
+
+        const identity = document.createElement("span");
+        identity.className = "actor-identity";
+        const name = document.createElement("strong");
+        name.textContent = actor.displayName || actor.handle;
+        const handle = document.createElement("span");
+        handle.textContent = `@${actor.handle}`;
+        identity.append(name, handle);
+
+        option.append(avatar, identity);
+        option.addEventListener("pointerdown", (event) => event.preventDefault());
+        option.addEventListener("click", () => selectActor(actor));
+        option.addEventListener("mouseenter", () => setActiveIndex(index));
+        resultsElement.append(option);
+      });
+
+      resultsElement.hidden = false;
+      input.setAttribute("aria-expanded", "true");
+      statusElement.textContent = `${actors.length} matching accounts found.`;
+    }
+
+    async function searchActors(query) {
+      if (resultCache.has(query)) {
+        renderActors(resultCache.get(query));
+        return;
+      }
+
+      requestController?.abort();
+      const controller = new AbortController();
+      requestController = controller;
+      form.querySelector(".typeahead-control").classList.add("is-loading");
+      input.setAttribute("aria-busy", "true");
+      statusElement.textContent = "Searching Atmosphere accounts.";
+
+      try {
+        const url = new URL(endpoint);
+        url.searchParams.set("q", query);
+        url.searchParams.set("limit", "6");
+        const response = await fetch(url, {
+          headers: { "X-Client": "github.com/teal-fm/piper" },
+          signal: controller.signal
+        });
+        if (!response.ok) throw new Error(`Typeahead returned ${response.status}`);
+        const data = await response.json();
+        const nextActors = Array.isArray(data.actors) ? data.actors : [];
+        resultCache.set(query, nextActors);
+        if (normalizedQuery() === query) renderActors(nextActors);
+      } catch (error) {
+        if (error.name === "AbortError") return;
+        closeResults();
+        statusElement.textContent = "Account suggestions are unavailable. You can still continue with the handle you entered.";
+      } finally {
+        if (requestController === controller) {
+          form.querySelector(".typeahead-control").classList.remove("is-loading");
+          input.removeAttribute("aria-busy");
+        }
+      }
+    }
+
+    input.addEventListener("input", () => {
+      window.clearTimeout(debounceTimer);
+      requestController?.abort();
+      closeResults();
+      const query = normalizedQuery();
+      if (query.length < 2) return;
+      debounceTimer = window.setTimeout(() => searchActors(query), 240);
+    });
+
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown" && actors.length) {
+        event.preventDefault();
+        setActiveIndex(activeIndex + 1);
+      } else if (event.key === "ArrowUp" && actors.length) {
+        event.preventDefault();
+        setActiveIndex(activeIndex - 1);
+      } else if (event.key === "Enter" && activeIndex >= 0) {
+        event.preventDefault();
+        selectActor(actors[activeIndex]);
+        form.requestSubmit();
+      } else if (event.key === "Escape") {
+        closeResults();
+      }
+    });
+
+    input.addEventListener("focus", () => {
+      const cached = resultCache.get(normalizedQuery());
+      if (cached) renderActors(cached);
+    });
+
+    document.addEventListener("pointerdown", (event) => {
+      if (!form.contains(event.target)) closeResults();
+    });
+  })();
+</script>
+{{ end }}
 {{ end }}

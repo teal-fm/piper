@@ -1,14 +1,34 @@
 {{ define "content" }}
-    {{ template "components/navBar" .NavBar }}
-
-    <div class="max-w-[600px] mx-auto my-5 p-5 border border-gray-300 rounded-lg">
-        <h2 class="text-xl font-semibold mb-2">Link Your Last.fm Account</h2>
-        <p class="mb-3">Enter your Last.fm username to start tracking your scrobbles.</p>
-        <form class="space-y-2" method="post" action="/link-lastfm">
-            <label class="block" for="lastfm_username">Last.fm Username:</label>
-            <input class="block w-[95%] p-2 border border-gray-300 rounded" type="text" id="lastfm_username" name="lastfm_username" value="{{.CurrentUsername}}" required>
-            <input class="bg-[#d51007] text-white px-4 py-2.5 rounded cursor-pointer hover:opacity-90" type="submit" value="Save Username">
-        </form>
+{{ template "components/navBar" .NavBar }}
+<main class="content-page">
+  <header class="content-page-heading">
+    <p class="eyebrow">Last.fm connection</p>
+    <h1>{{ if .CurrentUsername }}Update your username.{{ else }}Connect Last.fm.{{ end }}</h1>
+    <p>Piper reads your public scrobbles and adds them to the listening record tied to your Atmosphere account.</p>
+  </header>
+  <section class="settings-section">
+    <h2>Account details</h2>
+    <form method="post" action="/link-lastfm">
+      <div class="field">
+        <label for="lastfm_username">Last.fm username</label>
+        <input class="text-input" type="text" id="lastfm_username" name="lastfm_username" value="{{.CurrentUsername}}" autocomplete="username" placeholder="Your Last.fm username" required />
+      </div>
+      <div class="form-actions">
+        <button class="form-button" type="submit">{{ if .CurrentUsername }}Save changes{{ else }}Connect Last.fm{{ end }}</button>
+        <a class="quiet-action" href="/">Cancel</a>
+      </div>
+    </form>
+  </section>
+  {{ if .CurrentUsername }}
+  <section class="settings-section remove-connection">
+    <div>
+      <h2>Remove Last.fm</h2>
+      <p>Stop syncing this account and remove the username from Piper.</p>
     </div>
-
+    <form method="post" action="/unlink-lastfm">
+      <button class="danger-button" type="submit">Remove Last.fm account</button>
+    </form>
+  </section>
+  {{ end }}
+</main>
 {{ end }}
