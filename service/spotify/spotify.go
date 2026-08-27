@@ -288,7 +288,7 @@ func (s *Service) refreshTokenForUser(user *models.User) (string, error) {
 
 		// Only discard the refresh token when Spotify says it is genuinely dead.
 		if isRefreshTokenRejected(resp.StatusCode, body) {
-			if updateErr := s.DB.UpdateUserToken(userID, "", "", time.Now().UTC()); updateErr != nil {
+			if updateErr := s.DB.ClearUserSpotifyTokens(userID); updateErr != nil {
 				s.logger.Printf("Failed to clear bad refresh token for user %d: %v", userID, updateErr)
 			}
 			return "", fmt.Errorf("spotify refresh token rejected for user %d (%d): %s", userID, resp.StatusCode, string(body))
