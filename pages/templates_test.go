@@ -1,6 +1,10 @@
 package pages
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -147,4 +151,46 @@ func TestPagesRenderIndependently(t *testing.T) {
 			t.Error("expected the MusicKit loader on the Apple Music page")
 		}
 	})
+}
+
+// Cache lets a CDN hold /static/main.css for a day, so a deploy that changes the
+// stylesheet but not its URL serves the old one against the new markup. The
+// fingerprint is what stops that, so it has to track the file's actual content.
+func TestStylesheetIsFingerprinted(t *testing.T) {
+	css, err := Files.ReadFile("static/main.css")
+	if err != nil {
+		t.Fatalf("reading the embedded stylesheet: %v", err)
+	}
+	sum := sha256.Sum256(css)
+	want := "/static/main.css?v=" + hex.EncodeToString(sum[:])[:8]
+
+	var sb strings.Builder
+	if err := NewPages().Execute("home", &sb, homeParams{NavBar: NavBar{}}); err != nil {
+		t.Fatalf("rendering home: %v", err)
+	}
+	if !strings.Contains(sb.String(), want) {
+		t.Errorf("stylesheet link is not fingerprinted, want %q", want)
+	}
+}
+
+// The fingerprint is only worth anything if the URL carrying it still serves.
+func TestFingerprintedStylesheetServes(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, staticURL("main.css"), nil)
+	rr := httptest.NewRecorder()
+	NewPages().Static().ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+	if !strings.Contains(rr.Body.String(), "tailwindcss") {
+		t.Error("expected the stylesheet body")
+	}
+}
+
+// An asset with no embedded copy still has to render a usable URL rather than
+// one pointing at a version that does not exist.
+func TestStaticURLWithoutAnEmbeddedFile(t *testing.T) {
+	if got, want := staticURL("nothing.css"), "/static/nothing.css"; got != want {
+		t.Errorf("staticURL() = %q, want %q", got, want)
+	}
 }

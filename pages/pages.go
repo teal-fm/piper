@@ -5,7 +5,9 @@ package pages
 //https://tangled.org/@tangled.org/core/blob/master/appview/pages/pages.go
 
 import (
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"html/template"
 	"io"
 	"io/fs"
@@ -19,6 +21,38 @@ import (
 
 //go:embed templates/* static/*
 var Files embed.FS
+
+// staticVersions fingerprints each embedded static file by its content.
+var staticVersions = hashStatic()
+
+func hashStatic() map[string]string {
+	versions := map[string]string{}
+	entries, err := fs.ReadDir(Files, "static")
+	if err != nil {
+		return versions
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		content, err := fs.ReadFile(Files, "static/"+entry.Name())
+		if err != nil {
+			continue
+		}
+		sum := sha256.Sum256(content)
+		versions[entry.Name()] = hex.EncodeToString(sum[:])[:8]
+	}
+	return versions
+}
+
+// staticURL addresses an embedded asset by its content, so a deploy that
+// changes the file changes the URL.
+func staticURL(name string) string {
+	if version, ok := staticVersions[name]; ok {
+		return "/static/" + name + "?v=" + version
+	}
+	return "/static/" + name
+}
 
 type Pages struct {
 	cache       *TmplCache[string, *template.Template]
@@ -104,6 +138,7 @@ func (p *Pages) parse(stack ...string) (*template.Template, error) {
 
 func (p *Pages) funcMap() template.FuncMap {
 	return template.FuncMap{
+		"static": staticURL,
 		"formatTime": func(t time.Time) string {
 			if t.IsZero() {
 				return "N/A"
