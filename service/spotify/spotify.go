@@ -281,11 +281,15 @@ func (s *Service) refreshTokenForUser(user *models.User) (string, error) {
 		s.mu.Lock()
 		delete(s.userTokens, userID)
 		s.mu.Unlock()
-		// Also clear the bad refresh token from the DB
-		updateErr := s.DB.UpdateUserToken(userID, "", "", time.Now().UTC()) // Clear tokens
-		if updateErr != nil {
-			s.logger.Printf("Failed to clear bad refresh token for user %d: %v", userID, updateErr)
+
+		// Only discard the refresh token when Spotify says it is genuinely dead.
+		if isRefreshTokenRejected(resp.StatusCode, body) {
+			if updateErr := s.DB.ClearUserSpotifyTokens(userID); updateErr != nil {
+				s.logger.Printf("Failed to clear bad refresh token for user %d: %v", userID, updateErr)
+			}
+			return "", fmt.Errorf("spotify refresh token rejected for user %d (%d): %s", userID, resp.StatusCode, string(body))
 		}
+
 		return "", fmt.Errorf("spotify token refresh failed (%d): %s", resp.StatusCode, string(body))
 	}
 
@@ -320,6 +324,23 @@ func (s *Service) refreshTokenForUser(user *models.User) (string, error) {
 
 	s.logger.Printf("Successfully refreshed token for user %d", userID)
 	return tokenResponse.AccessToken, nil
+}
+
+// isRefreshTokenRejected reports whether Spotify permanently rejected the
+// refresh token, as opposed to failing for a transient reason.
+func isRefreshTokenRejected(statusCode int, body []byte) bool {
+	if statusCode != http.StatusBadRequest {
+		return false
+	}
+
+	var errorResponse struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &errorResponse); err != nil {
+		return false
+	}
+
+	return errorResponse.Error == "invalid_grant"
 }
 
 // RefreshToken attempts to refresh the token for a given user ID.

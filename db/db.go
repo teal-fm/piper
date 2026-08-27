@@ -367,6 +367,19 @@ func (db *DB) UpdateUserToken(userID int64, accessToken, refreshToken string, ex
 	return err
 }
 
+// ClearUserSpotifyTokens removes the stored Spotify tokens for a user, so
+// queries that look for usable tokens skip them.
+func (db *DB) ClearUserSpotifyTokens(userID int64) error {
+	now := time.Now().UTC()
+	_, err := db.Exec(`
+	UPDATE users
+	SET access_token = NULL, refresh_token = NULL, token_expiry = NULL, updated_at = ?
+	WHERE id = ?`,
+		now, userID)
+
+	return err
+}
+
 func (db *DB) UpdateAppleMusicUserToken(userID int64, userToken string) error {
 	now := time.Now().UTC()
 	_, err := db.Exec(`
@@ -633,7 +646,7 @@ func (db *DB) GetUsersWithExpiredTokens() ([]*models.User, error) {
 	rows, err := db.Query(`
     SELECT id, username, email, spotify_id, access_token, refresh_token, token_expiry, created_at, updated_at
     FROM users
-    WHERE refresh_token IS NOT NULL AND token_expiry < ?
+    WHERE refresh_token IS NOT NULL AND refresh_token != '' AND token_expiry < ?
     ORDER BY id`, time.Now().UTC())
 
 	if err != nil {
