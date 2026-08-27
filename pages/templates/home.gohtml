@@ -146,7 +146,10 @@
       <p class="detail-label">Atmosphere account</p>
       <h2 id="atmosphere-title" data-atmosphere-handle>{{ if .Atmosphere.Handle }}@{{ .Atmosphere.Handle }}{{ else }}Loading account…{{ end }}</h2>
       <p data-atmosphere-pds>PDS: {{ if .Atmosphere.PDS }}{{ .Atmosphere.PDS }}{{ else }}Loading…{{ end }}</p>
-      <a class="atmosphere-logout" href="/logout">Logout</a>
+      <div class="atmosphere-links">
+        <a class="atmosphere-record" href="#" target="_blank" rel="noreferrer" data-view-record hidden>View Record</a>
+        <a class="atmosphere-logout" href="/logout">Logout</a>
+      </div>
     </div>
   </section>
 </main>
@@ -185,7 +188,26 @@
       account.querySelector("[data-atmosphere-handle]").textContent = "Handle unavailable";
       account.querySelector("[data-atmosphere-pds]").textContent = "PDS: Unavailable";
     }
+    async function loadLatestRecord() {
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        try {
+          const response = await fetch("/api/v1/latest-record", { credentials: "same-origin" });
+          if (response.ok && response.status !== 204) {
+            const record = await response.json();
+            const link = account.querySelector("[data-view-record]");
+            link.href = record.url;
+            link.hidden = false;
+            return;
+          }
+          if (response.status !== 202) return;
+        } catch (error) {
+          console.warn("Latest listening record is not available yet", error);
+        }
+        await wait(500);
+      }
+    }
     loadProfile();
+    loadLatestRecord();
   })();
 </script>
 

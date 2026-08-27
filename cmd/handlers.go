@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -451,6 +452,43 @@ func apiAtmosphereProfile(database *db.DB, resolver *profileservice.Resolver) ht
 			return
 		}
 		jsonResponse(w, http.StatusOK, account)
+	}
+}
+
+func apiLatestRecord(database *db.DB, resolver *profileservice.Resolver) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			jsonResponse(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
+			return
+		}
+		userID, authenticated := session.GetUserID(r.Context())
+		if !authenticated {
+			jsonResponse(w, http.StatusUnauthorized, map[string]string{"error": "Unauthorized"})
+			return
+		}
+		user, err := database.GetUserByID(userID)
+		if err != nil || user == nil || user.ATProtoDID == nil {
+			jsonResponse(w, http.StatusNotFound, map[string]string{"error": "Atmosphere account not found"})
+			return
+		}
+		atURI, err := resolver.LatestRecord(r.Context(), *user.ATProtoDID)
+		if errors.Is(err, profileservice.ErrProfilePending) {
+			jsonResponse(w, http.StatusAccepted, map[string]string{"status": "pending"})
+			return
+		}
+		if err != nil {
+			log.Printf("Error loading latest record for user %d: %v", userID, err)
+			jsonResponse(w, http.StatusBadGateway, map[string]string{"error": "Latest record unavailable"})
+			return
+		}
+		if atURI == "" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		jsonResponse(w, http.StatusOK, map[string]string{
+			"at_uri": atURI,
+			"url":    "https://pds.ls/at://" + strings.TrimPrefix(atURI, "at://"),
+		})
 	}
 }
 

@@ -18,6 +18,9 @@ import (
 )
 
 const tealProfileCollection = "fm.teal.actor.profile"
+const playCollection = "fm.teal.feed.play"
+
+var ErrProfilePending = errors.New("profile lookup is still pending")
 
 type Account struct {
 	Handle    string `json:"handle"`
@@ -185,6 +188,39 @@ func (r *Resolver) blueskyAvatar(ctx context.Context, did string) string {
 		return ""
 	}
 	return actor.Avatar
+}
+
+func (r *Resolver) LatestRecord(ctx context.Context, rawDID string) (string, error) {
+	account, ready := r.Cached(rawDID)
+	if !ready || account.PDS == "" {
+		return "", ErrProfilePending
+	}
+	endpoint, err := url.Parse("https://" + account.PDS + "/xrpc/com.atproto.repo.listRecords")
+	if err != nil {
+		return "", err
+	}
+	query := endpoint.Query()
+	query.Set("repo", rawDID)
+	query.Set("collection", playCollection)
+	query.Set("limit", "1")
+	query.Set("reverse", "true")
+	endpoint.RawQuery = query.Encode()
+	var result struct {
+		Records []struct {
+			URI string `json:"uri"`
+		} `json:"records"`
+	}
+	if err := r.getJSON(ctx, endpoint.String(), &result); err != nil {
+		return "", err
+	}
+	if len(result.Records) == 0 {
+		return "", nil
+	}
+	atURI, err := syntax.ParseATURI(result.Records[0].URI)
+	if err != nil {
+		return "", fmt.Errorf("invalid latest record URI: %w", err)
+	}
+	return atURI.String(), nil
 }
 
 func (r *Resolver) getJSON(ctx context.Context, endpoint string, target any) error {

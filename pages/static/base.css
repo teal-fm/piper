@@ -241,8 +241,9 @@ h1, h2 { font-family: "Gabarito", sans-serif; }
 .atmosphere-account .detail-label { margin-bottom: 0.18rem; }
 .atmosphere-account h2 { margin-bottom: 0.08rem; font-size: 1.18rem; font-weight: 600; letter-spacing: -0.025em; }
 .atmosphere-account h2 + p { margin: 0; color: var(--muted); font-size: 0.76rem; }
-.atmosphere-logout { display: inline-block; margin-top: var(--space-md); color: var(--teal-dark); font-size: 0.74rem; font-weight: 600; text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--teal) 45%, transparent); text-underline-offset: 0.2em; }
-.atmosphere-logout:hover { text-decoration-color: currentColor; }
+.atmosphere-links { display: flex; align-items: center; gap: var(--space-lg); margin-top: var(--space-md); }
+.atmosphere-links a { color: var(--teal-dark); font-size: 0.74rem; font-weight: 600; text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--teal) 45%, transparent); text-underline-offset: 0.2em; }
+.atmosphere-links a:hover { text-decoration-color: currentColor; }
 
 .remove-connection { display: flex; align-items: center; justify-content: space-between; gap: var(--space-xl); }
 .remove-connection h2 { margin-bottom: var(--space-sm); }

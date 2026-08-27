@@ -1,8 +1,12 @@
 package profile
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"net/netip"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 )
@@ -25,6 +29,34 @@ func TestCachedReturnsExpiredAccountWithoutWaiting(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 20*time.Millisecond {
 		t.Fatalf("cached lookup took %s", elapsed)
+	}
+}
+
+func TestLatestRecordReturnsNewestATURI(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/xrpc/com.atproto.repo.listRecords" || r.URL.Query().Get("reverse") != "true" || r.URL.Query().Get("limit") != "1" {
+			t.Errorf("unexpected request: %s", r.URL.String())
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"records":[{"uri":"at://did:plc:listener/fm.teal.feed.play/3latest"}]}`))
+	}))
+	defer server.Close()
+	resolver := &Resolver{
+		client: server.Client(),
+		cache: map[string]cacheEntry{
+			"did:plc:listener": {
+				account:   Account{PDS: strings.TrimPrefix(server.URL, "https://")},
+				expiresAt: time.Now().Add(time.Minute),
+			},
+		},
+		refreshing: make(map[string]bool),
+	}
+	atURI, err := resolver.LatestRecord(context.Background(), "did:plc:listener")
+	if err != nil {
+		t.Fatalf("LatestRecord: %v", err)
+	}
+	if atURI != "at://did:plc:listener/fm.teal.feed.play/3latest" {
+		t.Fatalf("got %q", atURI)
 	}
 }
 
