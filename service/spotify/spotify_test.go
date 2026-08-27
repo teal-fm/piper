@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/viper"
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
 	"github.com/teal-fm/piper/session"
@@ -1412,4 +1413,161 @@ func TestGenerateLocalHash(t *testing.T) {
 			t.Errorf("Expected different hashes for different albums, both got %s", hashA)
 		}
 	})
+}
+
+// ===== Token Refresh Tests =====
+
+// stubRoundTripper answers every request with a canned response, standing in
+// for accounts.spotify.com.
+type stubRoundTripper struct {
+	statusCode int
+	body       string
+}
+
+func (s stubRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: s.statusCode,
+		Body:       io.NopCloser(strings.NewReader(s.body)),
+		Header:     make(http.Header),
+		Request:    req,
+	}, nil
+}
+
+func newRefreshTestService(t *testing.T, database *db.DB, statusCode int, body string) *Service {
+	t.Helper()
+
+	previousID := viper.Get("spotify.client_id")
+	previousSecret := viper.Get("spotify.client_secret")
+	t.Cleanup(func() {
+		viper.Set("spotify.client_id", previousID)
+		viper.Set("spotify.client_secret", previousSecret)
+	})
+
+	viper.Set("spotify.client_id", "id")
+	viper.Set("spotify.client_secret", "secret")
+
+	service := newTestService(database, &mockPlayingNowService{})
+	service.httpClient = &http.Client{
+		Transport: stubRoundTripper{statusCode: statusCode, body: body},
+	}
+	return service
+}
+
+// A 502 from Spotify is transient -- we should keep the refresh token & retry later.
+func TestRefreshTokenForUser_TransientFailureKeepsRefreshToken(t *testing.T) {
+	database := setupTestDB(t)
+	userID := createTestUser(t, database)
+
+	user, err := database.AddSpotifySession(userID, "RUSH", "moving@pict.ures", "rush", "access", "refresh", time.Now().UTC().Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("Failed to link Spotify session: %v", err)
+	}
+
+	service := newRefreshTestService(t, database, http.StatusBadGateway, "<html><head><title>502 Server Error</title></head></html>")
+	service.userTokens[userID] = "access"
+
+	if _, err := service.refreshTokenForUser(user); err == nil {
+		t.Fatal("expected the refresh to fail")
+	}
+
+	reloaded, err := database.GetUserByID(userID)
+	if err != nil {
+		t.Fatalf("Failed to reload user: %v", err)
+	}
+	if reloaded.RefreshToken == nil || *reloaded.RefreshToken != "refresh" {
+		t.Errorf("RefreshToken = %v, want it kept for the next retry", reloaded.RefreshToken)
+	}
+
+	if _, exists := service.userTokens[userID]; exists {
+		t.Error("expected the stale cached access token to be dropped")
+	}
+}
+
+// A legitimately bad refresh token should clear the token from the DB.
+func TestRefreshTokenForUser_InvalidGrantClearsRefreshToken(t *testing.T) {
+	database := setupTestDB(t)
+	userID := createTestUser(t, database)
+
+	user, err := database.AddSpotifySession(userID, "YES", "close@to.the.edge", "yes", "access", "refresh", time.Now().UTC().Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("Failed to link Spotify session: %v", err)
+	}
+
+	service := newRefreshTestService(t, database, http.StatusBadRequest, `{"error":"invalid_grant","error_description":"Refresh token revoked"}`)
+	service.userTokens[userID] = "access"
+
+	if _, err := service.refreshTokenForUser(user); err == nil {
+		t.Fatal("expected the refresh to fail")
+	}
+
+	reloaded, err := database.GetUserByID(userID)
+	if err != nil {
+		t.Fatalf("Failed to reload user: %v", err)
+	}
+	if reloaded.RefreshToken != nil && *reloaded.RefreshToken != "" {
+		t.Errorf("RefreshToken = %v, want the dead token cleared", *reloaded.RefreshToken)
+	}
+}
+
+func TestIsRefreshTokenRejected(t *testing.T) {
+	testCases := []struct {
+		name       string
+		statusCode int
+		body       string
+		expected   bool
+	}{
+		{
+			name:       "revoked refresh token",
+			statusCode: http.StatusBadRequest,
+			body:       `{"error":"invalid_grant","error_description":"Refresh token revoked"}`,
+			expected:   true,
+		},
+		{
+			name:       "bad gateway HTML page",
+			statusCode: http.StatusBadGateway,
+			body:       "<html><head><title>502 Server Error</title></head></html>",
+			expected:   false,
+		},
+		{
+			name:       "service unavailable",
+			statusCode: http.StatusServiceUnavailable,
+			body:       "",
+			expected:   false,
+		},
+		{
+			name:       "rate limited",
+			statusCode: http.StatusTooManyRequests,
+			body:       `{"error":"too_many_requests"}`,
+			expected:   false,
+		},
+		{
+			// Our credentials are wrong, not the user's token.
+			name:       "client misconfigured",
+			statusCode: http.StatusUnauthorized,
+			body:       `{"error":"invalid_client"}`,
+			expected:   false,
+		},
+		{
+			// Spotify only documents the 400 for a dead token, so an
+			// invalid_grant under any other status stays retryable.
+			name:       "invalid_grant under an undocumented status",
+			statusCode: http.StatusUnauthorized,
+			body:       `{"error":"invalid_grant"}`,
+			expected:   false,
+		},
+		{
+			name:       "bad request with unparseable body",
+			statusCode: http.StatusBadRequest,
+			body:       "not json",
+			expected:   false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isRefreshTokenRejected(tc.statusCode, []byte(tc.body)); got != tc.expected {
+				t.Errorf("isRefreshTokenRejected() = %v, want %v", got, tc.expected)
+			}
+		})
+	}
 }
