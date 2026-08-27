@@ -17,8 +17,6 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("/", session.WithPossibleAuth(home(app.database, app.pages), app.sessionManager))
 
 	// OAuth Routes
-	mux.HandleFunc("/login/spotify", app.oauthManager.HandleLogin("spotify"))
-	mux.HandleFunc("/callback/spotify", session.WithPossibleAuth(app.oauthManager.HandleCallback("spotify"), app.sessionManager)) // Use possible auth
 	mux.HandleFunc("/login/atproto", app.oauthManager.HandleLogin("atproto"))
 	mux.HandleFunc("/callback/atproto", session.WithPossibleAuth(app.oauthManager.HandleCallback("atproto"), app.sessionManager)) // Use possible auth
 
@@ -26,6 +24,10 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("/current-track", session.WithAuth(app.spotifyService.HandleCurrentTrack, app.sessionManager))
 	mux.HandleFunc("/history", session.WithAuth(app.spotifyService.HandleTrackHistory, app.sessionManager))
 	mux.HandleFunc("/api-keys", session.WithAuth(app.apiKeyService.HandleAPIKeyManagement(app.database, app.pages), app.sessionManager))
+
+	mux.HandleFunc("/login/spotify", session.WithAuth(app.oauthManager.HandleLogin("spotify"), app.sessionManager))
+	mux.HandleFunc("/callback/spotify", session.WithAuth(app.oauthManager.HandleCallback("spotify"), app.sessionManager))
+
 	mux.HandleFunc("/link-lastfm", session.WithAuth(handleLinkLastfmForm(app.database, app.pages), app.sessionManager)) // GET form
 	mux.HandleFunc("/link-lastfm/submit", session.WithAuth(handleLinkLastfmSubmit(app.database), app.sessionManager))   // POST submit - Changed route slightly
 	mux.HandleFunc("/link-applemusic", session.WithAuth(handleAppleMusicLink(app.pages, app.appleMusicService), app.sessionManager))

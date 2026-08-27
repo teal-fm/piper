@@ -1,6 +1,7 @@
 package spotify
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -15,12 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"context" // Added for context.Context
-
-	// Added for atproto.RepoCreateRecord_Input
-	// Added for lexutil.LexiconTypeDecoder
-	// Added for xrpc.Client
-	"github.com/spf13/viper" // Added for teal.FeedPlay
+	"github.com/spf13/viper"
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
 	atprotoauth "github.com/teal-fm/piper/oauth/atproto"
@@ -106,8 +102,8 @@ func (s *Service) SubmitTrackToPDS(did string, mostRecentAtProtoSessionID string
 	return atprotoservice.SubmitPlayToPDS(ctx, did, mostRecentAtProtoSessionID, track, s.atprotoAuthService)
 }
 
-func (s *Service) SetAccessToken(token string, refreshToken string, userId int64, hasSession bool) (int64, error) {
-	userID, err := s.identifyAndStoreUser(token, refreshToken, userId, hasSession)
+func (s *Service) SetAccessToken(token string, refreshToken string, userId int64) (int64, error) {
+	userID, err := s.identifyAndStoreUser(token, refreshToken, userId)
 	if err != nil {
 		s.logger.Printf("Error identifying and storing user: %v", err)
 		return 0, err
@@ -115,14 +111,14 @@ func (s *Service) SetAccessToken(token string, refreshToken string, userId int64
 	return userID, nil
 }
 
-func (s *Service) identifyAndStoreUser(token string, refreshToken string, userId int64, hasSession bool) (int64, error) {
+func (s *Service) identifyAndStoreUser(token string, refreshToken string, userId int64) (int64, error) {
 	userProfile, err := s.fetchSpotifyProfile(token)
 	if err != nil {
 		s.logger.Printf("Error fetching Spotify profile: %v", err)
 		return 0, err
 	}
 
-	s.logger.Printf("uid: %d hasSession: %t", userId, hasSession)
+	s.logger.Printf("uid: %d", userId)
 
 	user, err := s.DB.GetUserBySpotifyID(userProfile.ID)
 	if err != nil {
@@ -135,7 +131,7 @@ func (s *Service) identifyAndStoreUser(token string, refreshToken string, userId
 
 	// We don't intend users to log in via spotify!
 	if user == nil {
-		if !hasSession {
+		if userId == 0 {
 			s.logger.Printf("User does not seem to exist")
 			return 0, fmt.Errorf("user does not seem to exist")
 		}
