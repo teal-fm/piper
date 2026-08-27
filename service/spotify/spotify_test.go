@@ -1415,7 +1415,69 @@ func TestGenerateLocalHash(t *testing.T) {
 	})
 }
 
-// ===== Token Refresh Tests =====
+// ===== Token Persistence and Refresh Tests =====
+
+func TestSetAccessToken_ExistingUserUpdateFailureReturnsError(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	userID := createTestUser(t, database)
+	_, err := database.AddSpotifySession(
+		userID,
+		"Existing User",
+		"existing@example.com",
+		"existing-spotify-id",
+		"old-access",
+		"old-refresh",
+		time.Now().UTC().Add(time.Hour),
+	)
+	if err != nil {
+		t.Fatalf("Failed to link Spotify session: %v", err)
+	}
+
+	_, err = database.Exec(`
+		CREATE TRIGGER fail_spotify_token_update
+		BEFORE UPDATE OF access_token ON users
+		WHEN OLD.spotify_id = 'existing-spotify-id'
+		BEGIN
+			SELECT RAISE(FAIL, 'token update failed');
+		END
+	`)
+	if err != nil {
+		t.Fatalf("Failed to install update failure trigger: %v", err)
+	}
+
+	service := newTestService(database, nil)
+	service.httpClient = &http.Client{
+		Transport: stubRoundTripper{
+			statusCode: http.StatusOK,
+			body:       `{"id":"existing-spotify-id","display_name":"Existing User","email":"existing@example.com"}`,
+		},
+	}
+	service.userTokens[userID] = "old-access"
+
+	gotID, err := service.SetAccessToken("new-access", "new-refresh", userID)
+	if err == nil {
+		t.Fatal("expected the token update to fail")
+	}
+	if gotID != 0 {
+		t.Errorf("user ID = %d, want 0", gotID)
+	}
+	if got := service.userTokens[userID]; got != "old-access" {
+		t.Errorf("cached token = %q, want old-access", got)
+	}
+
+	user, err := database.GetUserByID(userID)
+	if err != nil {
+		t.Fatalf("Failed to reload user: %v", err)
+	}
+	if user.AccessToken == nil || *user.AccessToken != "old-access" {
+		t.Errorf("stored access token = %v, want old-access", user.AccessToken)
+	}
+	if user.RefreshToken == nil || *user.RefreshToken != "old-refresh" {
+		t.Errorf("stored refresh token = %v, want old-refresh", user.RefreshToken)
+	}
+}
 
 // stubRoundTripper answers every request with a canned response, standing in
 // for accounts.spotify.com.
