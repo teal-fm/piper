@@ -28,6 +28,11 @@ type Account struct {
 	AvatarURL string `json:"avatar_url"`
 }
 
+type RecordTarget struct {
+	TrackName string
+	PlayedAt  time.Time
+}
+
 type cacheEntry struct {
 	account   Account
 	expiresAt time.Time
@@ -190,37 +195,86 @@ func (r *Resolver) blueskyAvatar(ctx context.Context, did string) string {
 	return actor.Avatar
 }
 
-func (r *Resolver) LatestRecord(ctx context.Context, rawDID string) (string, error) {
+func (r *Resolver) LatestRecords(ctx context.Context, rawDID string, targets map[string]RecordTarget) (map[string]string, error) {
 	account, ready := r.Cached(rawDID)
 	if !ready || account.PDS == "" {
-		return "", ErrProfilePending
+		return nil, ErrProfilePending
 	}
 	endpoint, err := url.Parse("https://" + account.PDS + "/xrpc/com.atproto.repo.listRecords")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	query := endpoint.Query()
-	query.Set("repo", rawDID)
-	query.Set("collection", playCollection)
-	query.Set("limit", "1")
-	query.Set("reverse", "true")
-	endpoint.RawQuery = query.Encode()
-	var result struct {
-		Records []struct {
-			URI string `json:"uri"`
-		} `json:"records"`
+	records := make(map[string]string)
+	if len(targets) == 0 {
+		return records, nil
 	}
-	if err := r.getJSON(ctx, endpoint.String(), &result); err != nil {
-		return "", err
+	cursor := ""
+	for page := 0; page < 10 && len(records) < len(targets); page++ {
+		query := endpoint.Query()
+		query.Set("repo", rawDID)
+		query.Set("collection", playCollection)
+		query.Set("limit", "100")
+		if cursor != "" {
+			query.Set("cursor", cursor)
+		}
+		endpoint.RawQuery = query.Encode()
+		var result struct {
+			Cursor  string `json:"cursor"`
+			Records []struct {
+				URI   string `json:"uri"`
+				Value struct {
+					MusicServiceURI string `json:"musicServiceUri"`
+					TrackName       string `json:"trackName"`
+					PlayedTime      string `json:"playedTime"`
+				} `json:"value"`
+			} `json:"records"`
+		}
+		if err := r.getJSON(ctx, endpoint.String(), &result); err != nil {
+			return nil, err
+		}
+		for _, record := range result.Records {
+			service := musicServiceName(record.Value.MusicServiceURI)
+			target, wanted := targets[service]
+			if !wanted || records[service] != "" || !recordMatchesTarget(record.Value.TrackName, record.Value.PlayedTime, target) {
+				continue
+			}
+			atURI, err := syntax.ParseATURI(record.URI)
+			if err != nil {
+				continue
+			}
+			records[service] = atURI.String()
+		}
+		cursor = result.Cursor
+		if cursor == "" {
+			break
+		}
 	}
-	if len(result.Records) == 0 {
-		return "", nil
+	return records, nil
+}
+
+func recordMatchesTarget(trackName, playedTime string, target RecordTarget) bool {
+	if target.TrackName != "" && !strings.EqualFold(strings.TrimSpace(trackName), strings.TrimSpace(target.TrackName)) {
+		return false
 	}
-	atURI, err := syntax.ParseATURI(result.Records[0].URI)
-	if err != nil {
-		return "", fmt.Errorf("invalid latest record URI: %w", err)
+	if target.PlayedAt.IsZero() {
+		return true
 	}
-	return atURI.String(), nil
+	recordedAt, err := time.Parse(time.RFC3339Nano, playedTime)
+	return err == nil && recordedAt.Equal(target.PlayedAt)
+}
+
+func musicServiceName(rawURI string) string {
+	normalized := strings.ToLower(rawURI)
+	switch {
+	case strings.Contains(normalized, "spotify"):
+		return "spotify"
+	case strings.Contains(normalized, "music.apple"), strings.Contains(normalized, "applemusic"):
+		return "applemusic"
+	case strings.Contains(normalized, "last.fm"), strings.Contains(normalized, "lastfm"):
+		return "lastfm"
+	default:
+		return ""
+	}
 }
 
 func (r *Resolver) getJSON(ctx context.Context, endpoint string, target any) error {

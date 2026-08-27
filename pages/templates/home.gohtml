@@ -34,6 +34,7 @@
           <p class="track-name">{{ .SpotifyTrack.Name }}</p>
           <p class="track-artist">{{ artistNames .SpotifyTrack.Artist }}</p>
           <time datetime="{{ .SpotifyTrack.Timestamp.Format "2006-01-02T15:04:05Z07:00" }}">{{ formatTime .SpotifyTrack.Timestamp }}</time>
+          <a class="record-action" href="#" target="_blank" rel="noreferrer" data-view-record="spotify" hidden>View Record <span aria-hidden="true">↗</span></a>
         </div>
         {{ else }}
         <div class="empty-listen"><p class="detail-label">Last tracked play</p><p>Nothing yet. Play something on Spotify and Piper will pick it up.</p></div>
@@ -75,6 +76,7 @@
           <p class="track-name">{{ .AppleMusicTrack.Name }}</p>
           <p class="track-artist">{{ artistNames .AppleMusicTrack.Artist }}</p>
           <time datetime="{{ .AppleMusicTrack.Timestamp.Format "2006-01-02T15:04:05Z07:00" }}">{{ formatTime .AppleMusicTrack.Timestamp }}</time>
+          <a class="record-action" href="#" target="_blank" rel="noreferrer" data-view-record="applemusic" hidden>View Record <span aria-hidden="true">↗</span></a>
         </div>
         {{ else }}
         <div class="empty-listen"><p class="detail-label">Last tracked play</p><p>Nothing yet. Your next recent play will appear here.</p></div>
@@ -118,6 +120,7 @@
           <p class="track-name">{{ .LastFMTrack.Name }}</p>
           <p class="track-artist">{{ artistNames .LastFMTrack.Artist }}</p>
           <time datetime="{{ .LastFMTrack.Timestamp.Format "2006-01-02T15:04:05Z07:00" }}">{{ formatTime .LastFMTrack.Timestamp }}</time>
+          <a class="record-action" href="#" target="_blank" rel="noreferrer" data-view-record="lastfm" hidden>View Record <span aria-hidden="true">↗</span></a>
         </div>
         {{ else }}
         <div class="empty-listen"><p class="detail-label">Last tracked play</p><p>No scrobbles have reached Piper yet.</p></div>
@@ -146,10 +149,7 @@
       <p class="detail-label">Atmosphere account</p>
       <h2 id="atmosphere-title" data-atmosphere-handle>{{ if .Atmosphere.Handle }}@{{ .Atmosphere.Handle }}{{ else }}Loading account…{{ end }}</h2>
       <p data-atmosphere-pds>PDS: {{ if .Atmosphere.PDS }}{{ .Atmosphere.PDS }}{{ else }}Loading…{{ end }}</p>
-      <div class="atmosphere-links">
-        <a class="atmosphere-record" href="#" target="_blank" rel="noreferrer" data-view-record hidden>View Record</a>
-        <a class="atmosphere-logout" href="/logout">Logout</a>
-      </div>
+      <a class="atmosphere-logout" href="/logout">Logout</a>
     </div>
   </section>
 </main>
@@ -157,7 +157,7 @@
 <script>
   (() => {
     const account = document.querySelector("[data-atmosphere-account]");
-    if (!account || account.dataset.profileReady === "true") return;
+    const shouldLoadProfile = account && account.dataset.profileReady !== "true";
 
     const wait = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
     async function loadProfile() {
@@ -188,15 +188,18 @@
       account.querySelector("[data-atmosphere-handle]").textContent = "Handle unavailable";
       account.querySelector("[data-atmosphere-pds]").textContent = "PDS: Unavailable";
     }
-    async function loadLatestRecord() {
+    async function loadLatestRecords() {
       for (let attempt = 0; attempt < 10; attempt += 1) {
         try {
-          const response = await fetch("/api/v1/latest-record", { credentials: "same-origin" });
-          if (response.ok && response.status !== 204) {
-            const record = await response.json();
-            const link = account.querySelector("[data-view-record]");
-            link.href = record.url;
-            link.hidden = false;
+          const response = await fetch("/api/v1/latest-records", { credentials: "same-origin" });
+          if (response.ok) {
+            const records = await response.json();
+            Object.entries(records).forEach(([service, recordURL]) => {
+              const link = document.querySelector(`[data-view-record="${service}"]`);
+              if (!link) return;
+              link.href = recordURL;
+              link.hidden = false;
+            });
             return;
           }
           if (response.status !== 202) return;
@@ -206,8 +209,8 @@
         await wait(500);
       }
     }
-    loadProfile();
-    loadLatestRecord();
+    if (shouldLoadProfile) loadProfile();
+    loadLatestRecords();
   })();
 </script>
 

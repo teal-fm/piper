@@ -194,7 +194,7 @@ h1, h2 { font-family: "Gabarito", sans-serif; }
 .latest-listen .detail-label, .empty-listen .detail-label { color: var(--muted); }
 .track-name { margin-bottom: 0.05rem; font-family: "Gabarito", sans-serif; font-size: 1.4rem; font-weight: 600; letter-spacing: -0.025em; line-height: 1.15; }
 .track-artist { margin-bottom: var(--space-md); color: var(--muted); font-size: 0.85rem; }
-.latest-listen time { color: var(--faint); font-size: 0.72rem; }
+.latest-listen time { display: block; color: var(--faint); font-size: 0.72rem; }
 .empty-listen { margin-top: auto; color: var(--muted); font-size: 0.82rem; }
 .empty-listen p:last-child { max-width: 27ch; margin-bottom: 0; }
 
@@ -241,9 +241,13 @@ h1, h2 { font-family: "Gabarito", sans-serif; }
 .atmosphere-account .detail-label { margin-bottom: 0.18rem; }
 .atmosphere-account h2 { margin-bottom: 0.08rem; font-size: 1.18rem; font-weight: 600; letter-spacing: -0.025em; }
 .atmosphere-account h2 + p { margin: 0; color: var(--muted); font-size: 0.76rem; }
-.atmosphere-links { display: flex; align-items: center; gap: var(--space-lg); margin-top: var(--space-md); }
-.atmosphere-links a { color: var(--teal-dark); font-size: 0.74rem; font-weight: 600; text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--teal) 45%, transparent); text-underline-offset: 0.2em; }
-.atmosphere-links a:hover { text-decoration-color: currentColor; }
+.atmosphere-logout { display: inline-block; margin-top: var(--space-md); color: var(--teal-dark); font-size: 0.74rem; font-weight: 600; text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--teal) 45%, transparent); text-underline-offset: 0.2em; }
+.atmosphere-logout:hover { text-decoration-color: currentColor; }
+.record-action { display: inline-flex; align-items: center; width: fit-content; min-height: 2.15rem; margin-top: var(--space-md); padding-inline: 0.85rem; border: 1px solid color-mix(in oklab, var(--teal) 36%, var(--line)); border-radius: 999px; color: var(--teal-dark); font-size: 0.74rem; font-weight: 600; white-space: nowrap; transition: border-color 160ms ease, background 160ms ease; }
+.record-action[hidden] { display: none; }
+.record-action:hover { border-color: var(--teal); background: color-mix(in oklab, var(--mint) 55%, transparent); }
+.record-action span { display: inline-block; margin-left: 0.2rem; transition: transform 160ms ease; }
+.record-action:hover span { transform: translate(2px, -2px); }
 
 .remove-connection { display: flex; align-items: center; justify-content: space-between; gap: var(--space-xl); }
 .remove-connection h2 { margin-bottom: var(--space-sm); }

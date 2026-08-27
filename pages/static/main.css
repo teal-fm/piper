@@ -574,6 +574,7 @@ h1, h2 {
   font-size: 0.85rem;
 }
 .latest-listen time {
+  display: block;
   color: var(--faint);
   font-size: 0.72rem;
 }
@@ -767,13 +768,9 @@ h1, h2 {
   color: var(--muted);
   font-size: 0.76rem;
 }
-.atmosphere-links {
-  display: flex;
-  align-items: center;
-  gap: var(--space-lg);
+.atmosphere-logout {
+  display: inline-block;
   margin-top: var(--space-md);
-}
-.atmosphere-links a {
   color: var(--teal-dark);
   font-size: 0.74rem;
   font-weight: 600;
@@ -784,8 +781,44 @@ h1, h2 {
   }
   text-underline-offset: 0.2em;
 }
-.atmosphere-links a:hover {
+.atmosphere-logout:hover {
   text-decoration-color: currentColor;
+}
+.record-action {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 2.15rem;
+  margin-top: var(--space-md);
+  padding-inline: 0.85rem;
+  border: 1px solid var(--teal);
+  @supports (color: color-mix(in lab, red, red)) {
+    border: 1px solid color-mix(in oklab, var(--teal) 36%, var(--line));
+  }
+  border-radius: 999px;
+  color: var(--teal-dark);
+  font-size: 0.74rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+.record-action[hidden] {
+  display: none;
+}
+.record-action:hover {
+  border-color: var(--teal);
+  background: var(--mint);
+  @supports (color: color-mix(in lab, red, red)) {
+    background: color-mix(in oklab, var(--mint) 55%, transparent);
+  }
+}
+.record-action span {
+  display: inline-block;
+  margin-left: 0.2rem;
+  transition: transform 160ms ease;
+}
+.record-action:hover span {
+  transform: translate(2px, -2px);
 }
 .remove-connection {
   display: flex;

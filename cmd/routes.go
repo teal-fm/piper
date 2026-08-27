@@ -49,7 +49,7 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("/api/v1/applemusic/authorize", session.WithAuth(apiAppleMusicAuthorize(app.database), app.sessionManager))
 	mux.HandleFunc("/api/v1/applemusic/unlink", session.WithAuth(apiAppleMusicUnlink(app.database), app.sessionManager))
 	mux.HandleFunc("/api/v1/atmosphere-profile", session.WithAuth(apiAtmosphereProfile(app.database, app.profileResolver), app.sessionManager))
-	mux.HandleFunc("/api/v1/latest-record", session.WithAuth(apiLatestRecord(app.database, app.profileResolver), app.sessionManager))
+	mux.HandleFunc("/api/v1/latest-records", session.WithAuth(apiLatestRecords(app.database, app.profileResolver), app.sessionManager))
 
 	// ListenBrainz-compatible endpoint
 	mux.HandleFunc("/1/submit-listens", session.WithAPIAuth(apiSubmitListensHandler(app.database, app.atprotoService, app.playingNowService, app.mbService), app.sessionManager))

@@ -32,13 +32,18 @@ func TestCachedReturnsExpiredAccountWithoutWaiting(t *testing.T) {
 	}
 }
 
-func TestLatestRecordReturnsNewestATURI(t *testing.T) {
+func TestLatestRecordsReturnsNewestRecordPerService(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/xrpc/com.atproto.repo.listRecords" || r.URL.Query().Get("reverse") != "true" || r.URL.Query().Get("limit") != "1" {
+		if r.URL.Path != "/xrpc/com.atproto.repo.listRecords" || r.URL.Query().Has("reverse") || r.URL.Query().Get("limit") != "100" {
 			t.Errorf("unexpected request: %s", r.URL.String())
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"records":[{"uri":"at://did:plc:listener/fm.teal.feed.play/3latest"}]}`))
+		_, _ = w.Write([]byte(`{"records":[
+			{"uri":"at://did:plc:listener/fm.teal.feed.play/3wrong","value":{"musicServiceUri":"https://last.fm","trackName":"Older","playedTime":"2026-08-26T22:36:19Z"}},
+			{"uri":"at://did:plc:listener/fm.teal.feed.play/3lastfm","value":{"musicServiceUri":"https://last.fm","trackName":"Latest Last.fm","playedTime":"2026-08-27T22:36:19Z"}},
+			{"uri":"at://did:plc:listener/fm.teal.feed.play/3spotify","value":{"musicServiceUri":"https://open.spotify.com","trackName":"Latest Spotify","playedTime":"2026-08-27T21:00:00Z"}},
+			{"uri":"at://did:plc:listener/fm.teal.feed.play/3apple","value":{"musicServiceUri":"https://music.apple.com","trackName":"Latest Apple","playedTime":"2026-08-27T20:00:00Z"}}
+		]}`))
 	}))
 	defer server.Close()
 	resolver := &Resolver{
@@ -51,12 +56,18 @@ func TestLatestRecordReturnsNewestATURI(t *testing.T) {
 		},
 		refreshing: make(map[string]bool),
 	}
-	atURI, err := resolver.LatestRecord(context.Background(), "did:plc:listener")
+	records, err := resolver.LatestRecords(context.Background(), "did:plc:listener", map[string]RecordTarget{
+		"lastfm":     {TrackName: "Latest Last.fm", PlayedAt: time.Date(2026, 8, 27, 22, 36, 19, 0, time.UTC)},
+		"spotify":    {TrackName: "Latest Spotify", PlayedAt: time.Date(2026, 8, 27, 21, 0, 0, 0, time.UTC)},
+		"applemusic": {TrackName: "Latest Apple", PlayedAt: time.Date(2026, 8, 27, 20, 0, 0, 0, time.UTC)},
+	})
 	if err != nil {
-		t.Fatalf("LatestRecord: %v", err)
+		t.Fatalf("LatestRecords: %v", err)
 	}
-	if atURI != "at://did:plc:listener/fm.teal.feed.play/3latest" {
-		t.Fatalf("got %q", atURI)
+	if records["lastfm"] != "at://did:plc:listener/fm.teal.feed.play/3lastfm" ||
+		records["spotify"] != "at://did:plc:listener/fm.teal.feed.play/3spotify" ||
+		records["applemusic"] != "at://did:plc:listener/fm.teal.feed.play/3apple" {
+		t.Fatalf("got %#v", records)
 	}
 }
 

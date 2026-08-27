@@ -455,7 +455,7 @@ func apiAtmosphereProfile(database *db.DB, resolver *profileservice.Resolver) ht
 	}
 }
 
-func apiLatestRecord(database *db.DB, resolver *profileservice.Resolver) http.HandlerFunc {
+func apiLatestRecords(database *db.DB, resolver *profileservice.Resolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			jsonResponse(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
@@ -471,7 +471,23 @@ func apiLatestRecord(database *db.DB, resolver *profileservice.Resolver) http.Ha
 			jsonResponse(w, http.StatusNotFound, map[string]string{"error": "Atmosphere account not found"})
 			return
 		}
-		atURI, err := resolver.LatestRecord(r.Context(), *user.ATProtoDID)
+		targets := make(map[string]profileservice.RecordTarget, 3)
+		if user.SpotifyID != nil && *user.SpotifyID != "" {
+			if track, trackErr := database.GetLatestTrackForService(userID, db.SourceSpotify); trackErr == nil && track != nil {
+				targets["spotify"] = profileservice.RecordTarget{TrackName: track.Name, PlayedAt: track.Timestamp}
+			}
+		}
+		if user.AppleMusicUserToken != nil && *user.AppleMusicUserToken != "" {
+			if track, trackErr := database.GetLatestTrackForService(userID, db.SourceAppleMusic); trackErr == nil && track != nil {
+				targets["applemusic"] = profileservice.RecordTarget{TrackName: track.Name, PlayedAt: track.Timestamp}
+			}
+		}
+		if user.LastFMUsername != nil && strings.TrimSpace(*user.LastFMUsername) != "" {
+			if track, trackErr := database.GetLatestTrackForService(userID, db.SourceLastfm); trackErr == nil && track != nil {
+				targets["lastfm"] = profileservice.RecordTarget{TrackName: track.Name, PlayedAt: track.Timestamp}
+			}
+		}
+		records, err := resolver.LatestRecords(r.Context(), *user.ATProtoDID, targets)
 		if errors.Is(err, profileservice.ErrProfilePending) {
 			jsonResponse(w, http.StatusAccepted, map[string]string{"status": "pending"})
 			return
@@ -481,14 +497,11 @@ func apiLatestRecord(database *db.DB, resolver *profileservice.Resolver) http.Ha
 			jsonResponse(w, http.StatusBadGateway, map[string]string{"error": "Latest record unavailable"})
 			return
 		}
-		if atURI == "" {
-			w.WriteHeader(http.StatusNoContent)
-			return
+		links := make(map[string]string, len(records))
+		for service, atURI := range records {
+			links[service] = "https://pds.ls/at://" + strings.TrimPrefix(atURI, "at://")
 		}
-		jsonResponse(w, http.StatusOK, map[string]string{
-			"at_uri": atURI,
-			"url":    "https://pds.ls/at://" + strings.TrimPrefix(atURI, "at://"),
-		})
+		jsonResponse(w, http.StatusOK, links)
 	}
 }
 
