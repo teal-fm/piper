@@ -10,30 +10,20 @@
     <span class="text-neutral-400 dark:text-neutral-500" aria-hidden="true">&rsaquo;</span>
     <span
       class="text-lg tracking-tight truncate text-neutral-600 dark:text-neutral-300"
-      aria-current="page"
-      >{{ .Breadcrumb }}</span
-    >
+      aria-current="page">{{ .Breadcrumb }}</span>
     {{ end }}
   </nav>
 
   {{ if .IsLoggedIn }}
   <nav class="flex flex-wrap items-center gap-x-4 gap-y-2 min-w-0 text-sm sm:ml-auto">
     {{ if .SpotifyEnabled }}
-    <a class="text-accent font-medium no-underline hover:underline" href="/current-track"
-      >Now playing</a
-    >
-    <a class="text-accent font-medium no-underline hover:underline" href="/history"
-      >History</a
-    >
+    <a class="text-accent font-medium no-underline hover:underline" href="/current-track">Now playing</a>
+    <a class="text-accent font-medium no-underline hover:underline" href="/history">History</a>
     {{ end }}
-    <a class="text-accent font-medium no-underline hover:underline" href="/api-keys"
-      >API keys</a
-    >
+    <a class="text-accent font-medium no-underline hover:underline" href="/api-keys">API keys</a>
     <a
       class="text-neutral-500 dark:text-neutral-400 no-underline hover:underline"
-      href="/logout"
-      >Log out</a
-    >
+      href="/logout">Log out</a>
 
     {{ if .Handle }}
     <span class="flex items-center gap-2 min-w-0">
@@ -47,15 +37,11 @@
       {{ else }}
       <span
         class="w-7 h-7 rounded-full bg-neutral-200 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 text-xs uppercase flex items-center justify-center shrink-0"
-        aria-hidden="true"
-        >{{ slice .Handle 0 1 }}</span
-      >
+        aria-hidden="true">{{ slice .Handle 0 1 }}</span>
       {{ end }}
       <span
         class="truncate max-w-[12rem] text-neutral-500 dark:text-neutral-400"
-        title="@{{ .Handle }}"
-        >@{{ .Handle }}</span
-      >
+        title="@{{ .Handle }}">@{{ .Handle }}</span>
     </span>
     {{ end }}
   </nav>

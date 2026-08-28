@@ -93,8 +93,7 @@ func TestPagesRenderIndependently(t *testing.T) {
 				if strings.Contains(out, `aria-current="page"`) {
 					t.Error("home is the brand itself and should carry no breadcrumb")
 				}
-			} else if !strings.Contains(out, `aria-current="page"
-      >`+tt.breadcrumb+`<`) {
+			} else if !strings.Contains(out, `aria-current="page">`+tt.breadcrumb+`<`) {
 				t.Errorf("missing breadcrumb %q", tt.breadcrumb)
 			}
 			for _, absent := range tt.absent {

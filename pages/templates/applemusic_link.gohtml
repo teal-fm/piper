@@ -5,8 +5,7 @@
 <script
   src="https://js-cdn.music.apple.com/musickit/v3/musickit.js"
   data-web-components
-  async
-></script>
+  async></script>
 
 {{ template "components/navBar" .NavBar }}
 
@@ -19,8 +18,7 @@
   <div class="space-y-3">
     <button
       id="authorizeBtn"
-      class="block w-full px-4 py-2 rounded-lg bg-accent text-neutral-950 font-medium cursor-pointer hover:opacity-90"
-    >
+      class="block w-full px-4 py-2 rounded-lg bg-accent text-neutral-950 font-medium cursor-pointer hover:opacity-90">
       Authorize Apple Music
     </button>
 
@@ -34,12 +32,10 @@
           await music.unauthorize();
           handleUnlink(event);
         })()
-      "
-    >
+      ">
       <button
         class="block w-full px-4 py-2 rounded-lg border border-neutral-400/30 bg-white/50 dark:bg-neutral-900/50 backdrop-blur-sm text-neutral-600 dark:text-neutral-300 font-medium cursor-pointer hover:border-neutral-400/50"
-        type="submit"
-      >
+        type="submit">
         Unlink Apple Music
       </button>
     </form>
@@ -47,8 +43,7 @@
 
   <pre
     id="status"
-    class="mt-4 font-mono text-sm whitespace-pre-wrap text-neutral-500 dark:text-neutral-400"
-  ></pre>
+    class="mt-4 font-mono text-sm whitespace-pre-wrap text-neutral-500 dark:text-neutral-400"></pre>
 </div>
 
 <script>

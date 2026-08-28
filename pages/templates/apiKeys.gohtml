@@ -14,9 +14,7 @@
   <form class="space-y-3" method="POST" action="/api-keys">
     <label
       class="block text-sm font-medium text-neutral-600 dark:text-neutral-300"
-      for="name"
-      >Key name (for your reference)</label
-    >
+      for="name">Key name (for your reference)</label>
     <input
       class="block w-full px-3 py-2 rounded-lg border border-neutral-400/30 bg-white/60 dark:bg-neutral-900/60 backdrop-blur-sm placeholder:text-neutral-400 dark:placeholder:text-neutral-600 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
       type="text"
@@ -26,8 +24,7 @@
     />
     <button
       class="px-4 py-2 rounded-lg bg-accent text-neutral-950 font-medium cursor-pointer hover:opacity-90"
-      type="submit"
-    >
+      type="submit">
       Generate new API key
     </button>
   </form>
@@ -37,8 +34,7 @@
 <div class="rounded-xl border border-accent/40 bg-accent/10 backdrop-blur-sm p-5 mb-5">
   <h2 class="font-medium text-accent mb-2">Your new API key</h2>
   <pre
-    class="font-mono text-sm p-3 rounded-lg whitespace-pre-wrap break-all bg-white/60 dark:bg-neutral-900/60 border border-neutral-400/20"
-  >{{ .NewKeyID }}</pre>
+    class="font-mono text-sm p-3 rounded-lg whitespace-pre-wrap break-all bg-white/60 dark:bg-neutral-900/60 border border-neutral-400/20">{{ .NewKeyID }}</pre>
   <p class="text-sm text-neutral-600 dark:text-neutral-300 mt-3">
     <strong>Important:</strong> treat this like a password.
   </p>
@@ -52,8 +48,7 @@
     <table class="w-full border-collapse text-sm">
       <thead>
         <tr
-          class="text-left border-b border-neutral-400/20 text-neutral-600 dark:text-neutral-400"
-        >
+          class="text-left border-b border-neutral-400/20 text-neutral-600 dark:text-neutral-400">
           <th class="py-2 pr-2 font-medium">Name</th>
           <th class="py-2 pr-2 font-medium">Created</th>
           <th class="py-2 pr-2 font-medium">Expires</th>
@@ -69,8 +64,7 @@
           <td class="py-2">
             <button
               class="text-red-600 dark:text-red-400 underline cursor-pointer p-0 bg-transparent"
-              onclick="deleteKey('{{ .ID }}')"
-            >
+              onclick="deleteKey('{{ .ID }}')">
               Delete
             </button>
           </td>
@@ -93,14 +87,12 @@
     requests:
   </p>
   <pre
-    class="font-mono text-sm p-3 rounded-lg overflow-x-auto bg-white/60 dark:bg-neutral-900/60 border border-neutral-400/20"
-  >Authorization: Bearer YOUR_API_KEY</pre>
+    class="font-mono text-sm p-3 rounded-lg overflow-x-auto bg-white/60 dark:bg-neutral-900/60 border border-neutral-400/20">Authorization: Bearer YOUR_API_KEY</pre>
   <p class="text-sm mt-4 mb-2">
     Or include it as a query parameter (less secure for the key itself):
   </p>
   <pre
-    class="font-mono text-sm p-3 rounded-lg overflow-x-auto bg-white/60 dark:bg-neutral-900/60 border border-neutral-400/20"
-  >https://your-piper-instance.com/endpoint?api_key=YOUR_API_KEY</pre>
+    class="font-mono text-sm p-3 rounded-lg overflow-x-auto bg-white/60 dark:bg-neutral-900/60 border border-neutral-400/20">https://your-piper-instance.com/endpoint?api_key=YOUR_API_KEY</pre>
 </div>
 
 <script>
