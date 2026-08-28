@@ -7,8 +7,7 @@ import (
 )
 
 func (db *DB) AddLastFMUsername(userID int64, lastfmUsername string) error {
-	// Clearing the cached avatar makes the next page load re-fetch it, so
-	// pointing piper at a different Last.fm account shows the right picture.
+	// Clearing the cached avatar makes the next page load re-fetch it.
 	_, err := db.Exec(`
     UPDATE users
     SET lastfm_username = ?,
@@ -18,8 +17,8 @@ func (db *DB) AddLastFMUsername(userID int64, lastfmUsername string) error {
 	return err
 }
 
-// ClearLastFMUsername unlinks the Last.fm account. It writes NULL rather than
-// an empty string so "linked" stays a simple nullness check everywhere.
+// ClearLastFMUsername unlinks the Last.fm account, writing NULL so "linked"
+// stays a nullness check everywhere.
 func (db *DB) ClearLastFMUsername(userID int64) error {
 	_, err := db.Exec(`
     UPDATE users
@@ -30,9 +29,8 @@ func (db *DB) ClearLastFMUsername(userID int64) error {
 	return err
 }
 
-// SaveLastFMAvatarURL caches the avatar from user.getinfo. An empty url is
-// stored deliberately: it records that the account simply has no avatar, so we
-// stop asking on every page load.
+// SaveLastFMAvatarURL caches the avatar from user.getinfo. An empty url records
+// that the account has no avatar, so we stop asking.
 func (db *DB) SaveLastFMAvatarURL(userID int64, avatarURL string) error {
 	_, err := db.Exec(`
     UPDATE users

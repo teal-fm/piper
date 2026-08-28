@@ -5,13 +5,11 @@ import (
 	"time"
 )
 
-// buildTime can be stamped at link time with
-// -ldflags "-X main.buildTime=2006-01-02T15:04:05Z".
+// buildTime is stamped at link time with -ldflags "-X main.buildTime=...".
 var buildTime string
 
-// resolveBuildTime falls back to the binary's own mtime, which is what go
-// build, air and Docker leave behind. Returns the zero time if neither is
-// available, which the template renders as "N/A".
+// resolveBuildTime falls back to the binary's mtime, or the zero time if
+// neither is available.
 func resolveBuildTime() time.Time {
 	if t, err := time.Parse(time.RFC3339, buildTime); err == nil {
 		return t.UTC()

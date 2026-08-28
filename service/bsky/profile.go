@@ -1,8 +1,5 @@
-// Package bsky reads public account profiles from the Bluesky AppView.
-//
-// Piper only ever persists a user's DID, which is not something anyone
-// recognises. The AppView turns that DID into a handle, a display name and an
-// avatar so the web UI can show who is logged in.
+// Package bsky reads public account profiles from the Bluesky AppView, turning
+// the DID piper persists into a handle, display name and avatar.
 package bsky
 
 import (
@@ -18,13 +15,12 @@ import (
 const appViewURL = "https://public.api.bsky.app"
 
 // Profile is the subset of app.bsky.actor.defs#profileViewDetailed that piper
-// displays. Every field except DID may be empty: handles can be invalidated,
-// and display names and avatars are optional.
+// displays. Every field except DID may be empty.
 type Profile struct {
 	DID         string `json:"did"`
 	Handle      string `json:"handle"`
 	DisplayName string `json:"displayName"`
-	// Avatar is a ready-to-use CDN URL, not a blob reference.
+	// A ready-to-use CDN URL, not a blob reference.
 	Avatar string `json:"avatar"`
 }
 
@@ -34,8 +30,8 @@ var DefaultClient = &http.Client{
 	Timeout: 5 * time.Second,
 }
 
-// FetchProfile looks up an actor's public profile by DID (or handle). Pass a nil
-// client to use DefaultClient; tests pass one pointed at an httptest server.
+// FetchProfile looks up an actor's public profile by DID (or handle). A nil
+// client uses DefaultClient.
 func FetchProfile(ctx context.Context, client *http.Client, actor string) (*Profile, error) {
 	if actor == "" {
 		return nil, fmt.Errorf("actor cannot be empty")

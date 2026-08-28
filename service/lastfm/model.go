@@ -53,8 +53,7 @@ type UserInfo struct {
 }
 
 // AvatarURL returns the user's avatar at the requested size, falling back to any
-// other size Last.fm offers. Accounts without a picture return every size as an
-// empty string, so an empty result means "no avatar", not "lookup failed".
+// other size Last.fm offers. An empty result means "no avatar", not "lookup failed".
 func (u UserInfo) AvatarURL(preferred string) string {
 	for _, img := range u.Image {
 		if img.Size == preferred && img.Text != "" {

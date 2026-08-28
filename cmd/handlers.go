@@ -60,10 +60,8 @@ func home(database *db.DB, pg *pages.Pages, lastfmService *lastfm.Service, build
 	}
 }
 
-// backfillProfile fills in the cached handle and avatar for users who logged in
-// before piper started storing them. Profiles are normally cached during the
-// ATProto callback, so this runs at most once per user and is best-effort: on
-// failure the nav bar just falls back to a placeholder.
+// backfillProfile caches the handle and avatar for users who logged in before
+// piper started storing them. Best-effort: the nav bar falls back to a placeholder.
 func backfillProfile(ctx context.Context, database *db.DB, user *models.User) *models.User {
 	if user == nil || user.ATProtoDID == nil || user.ProfileFetchedAt != nil {
 		return user
@@ -86,10 +84,8 @@ func backfillProfile(ctx context.Context, database *db.DB, user *models.User) *m
 	return user
 }
 
-// backfillLastFMAvatar caches the linked Last.fm account's picture. The cached
-// value is cleared whenever the username changes, so this refetches on a
-// re-link; otherwise it runs once and is best-effort. Accounts with no picture
-// cache an empty string, which stops us asking again on every page load.
+// backfillLastFMAvatar caches the linked Last.fm account's picture. Best-effort;
+// accounts with no picture cache an empty string so we stop asking.
 func backfillLastFMAvatar(ctx context.Context, database *db.DB, lastfmService *lastfm.Service, user *models.User) *models.User {
 	if user == nil || lastfmService == nil || user.LastFMUsername == nil || user.LastFMAvatarURL != nil {
 		return user
@@ -190,7 +186,7 @@ func handleLinkLastfmSubmit(database *db.DB) http.HandlerFunc {
 	}
 }
 
-// handleUnlinkSpotify logs the user out of Spotify. Note that the application is still
+// handleUnlinkSpotify logs the user out of Spotify. The application is still
 // authorised on the Spotify end!
 func handleUnlinkSpotify(database *db.DB, spotifyService *spotify.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -221,8 +217,7 @@ func handleAppleMusicLink(database *db.DB, pg *pages.Pages, am *applemusic.Servi
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 
-		// The service is left nil when Apple Music is enabled but its credentials
-		// are missing, the same as the Spotify and Last.fm services.
+		// The service is nil when Apple Music is enabled but its credentials are missing.
 		if am == nil {
 			http.Error(w, "Apple Music is not configured on this server", http.StatusServiceUnavailable)
 			return
@@ -255,8 +250,7 @@ func handleAppleMusicLink(database *db.DB, pg *pages.Pages, am *applemusic.Servi
 	}
 }
 
-// handleUnlinkLastfm unlinks the Last.fm account from the home page. Mirrors
-// handleUnlinkSpotify: POST only, then back to the home page.
+// handleUnlinkLastfm unlinks the Last.fm account from the home page.
 func handleUnlinkLastfm(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -278,10 +272,8 @@ func handleUnlinkLastfm(database *db.DB) http.HandlerFunc {
 	}
 }
 
-// handleUnlinkAppleMusic drops piper's copy of the MusicKit user token. Note
-// that the browser stays authorised with Apple: music.unauthorize() only exists
-// on the link page, so this stops piper reading the account but doesn't revoke
-// the grant on Apple's end.
+// handleUnlinkAppleMusic drops piper's copy of the MusicKit user token. The
+// browser stays authorised with Apple.
 func handleUnlinkAppleMusic(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

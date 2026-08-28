@@ -21,8 +21,7 @@ import (
 	"time"
 )
 
-// profileFetchTimeout bounds the AppView lookup that runs inside the login
-// redirect, so a stalled AppView doesn't leave the user staring at a blank page.
+// profileFetchTimeout bounds the AppView lookup inside the login redirect.
 const profileFetchTimeout = 5 * time.Second
 
 type AuthService struct {
@@ -176,9 +175,7 @@ func (a *AuthService) HandleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 // cacheProfile refreshes the user's cached handle and avatar from the AppView.
-// It is best-effort on purpose: a slow or unreachable AppView must never block
-// or fail a login, so failures are logged and the nav bar falls back to a
-// placeholder until the next attempt.
+// Best-effort: a slow or unreachable AppView must never fail a login.
 func (a *AuthService) cacheProfile(ctx context.Context, did string) {
 	ctx, cancel := context.WithTimeout(ctx, profileFetchTimeout)
 	defer cancel()

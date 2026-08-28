@@ -25,8 +25,7 @@ const (
 	lastfmAPIBaseURL = "https://ws.audioscrobbler.com/2.0/"
 	downloadLimit    = 200
 	noTimestampLimit = 5
-	// avatarSize is the Last.fm image size piper displays. "large" is 174px,
-	// which stays sharp on a retina screen at the size the nav renders it.
+	// "large" is 174px, which stays sharp on a retina screen in the nav.
 	avatarSize = "large"
 )
 
@@ -87,8 +86,7 @@ func (l *Service) FetchUserInfo(ctx context.Context, username string) (*UserInfo
 	return &userInfoResp.User, nil
 }
 
-// FetchAvatarURL returns the account's avatar, or an empty string when it has
-// none. Callers cache the result either way.
+// FetchAvatarURL returns the account's avatar, or an empty string when it has none.
 func (l *Service) FetchAvatarURL(ctx context.Context, username string) (string, error) {
 	info, err := l.FetchUserInfo(ctx, username)
 	if err != nil {

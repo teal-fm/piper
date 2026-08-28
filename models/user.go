@@ -16,8 +16,7 @@ type User struct {
 
 	// lfm information
 	LastFMUsername *string
-	// LastFMAvatarURL is cached from user.getinfo. An empty (but non-nil) value
-	// means we looked and the account has no avatar, so we don't ask again.
+	// An empty (but non-nil) value means the account has no avatar.
 	LastFMAvatarURL *string
 
 	// Apple Music
@@ -29,8 +28,7 @@ type User struct {
 	//atproto action from the web ui use the atproto session id for the logged-in session
 	MostRecentAtProtoSessionID *string
 
-	// Public profile, fetched from the Bluesky AppView and cached here so we
-	// don't hit the network on every page render
+	// Public profile, cached from the Bluesky AppView.
 	Handle           *string
 	DisplayName      *string
 	AvatarURL        *string

@@ -8,8 +8,7 @@ import (
 	"time"
 )
 
-// newTestClient returns a client whose requests all land on srv, so FetchProfile
-// can be exercised without reaching the real AppView.
+// newTestClient returns a client whose requests all land on srv.
 func newTestClient(srv *httptest.Server) *http.Client {
 	client := srv.Client()
 	client.Transport = rewriteHost{base: srv.URL, rt: client.Transport}
@@ -119,8 +118,7 @@ func TestFetchProfileEmptyActor(t *testing.T) {
 	}
 }
 
-// A hanging AppView must surface as an error rather than blocking the login
-// redirect forever.
+// A hanging AppView must error rather than block the login redirect forever.
 func TestFetchProfileTimeout(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()

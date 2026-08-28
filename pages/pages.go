@@ -45,8 +45,7 @@ func hashStatic() map[string]string {
 	return versions
 }
 
-// staticURL addresses an embedded asset by its content, so a deploy that
-// changes the file changes the URL.
+// staticURL addresses an embedded asset by its content, so changing the file changes the URL.
 func staticURL(name string) string {
 	if version, ok := staticVersions[name]; ok {
 		return "/static/" + name + "?v=" + version
@@ -211,9 +210,8 @@ type NavBar struct {
 	AppleMusicConnected bool
 }
 
-// NewNavBar builds the shared nav params from the current user. user may be nil
-// (logged out, or the lookup failed), in which case only the server's enabled
-// services are filled in.
+// NewNavBar builds the shared nav params from the current user, which may be
+// nil when logged out or when the lookup failed.
 func NewNavBar(user *models.User, isLoggedIn bool) NavBar {
 	nav := NavBar{
 		IsLoggedIn:        isLoggedIn,

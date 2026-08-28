@@ -9,11 +9,8 @@ import (
 	"testing"
 )
 
-// Every page template is parsed into the same namespace as every other one (see
-// Pages.fragmentPaths), and Go's parser won't let an *empty* definition displace
-// a non-empty one it already has. So a block left empty in the base layout —
-// a per-page {{ block "head" }}, say — silently inherits whatever some unrelated
-// page defined for it. These render each page and check nothing bleeds across.
+// Every page is parsed into one namespace, so an empty block definition
+// silently inherits whatever another page defined for it. Check nothing bleeds across.
 func TestPagesRenderIndependently(t *testing.T) {
 	type apiKeysParams struct {
 		Keys     []struct{}
@@ -153,9 +150,8 @@ func TestPagesRenderIndependently(t *testing.T) {
 	})
 }
 
-// Cache lets a CDN hold /static/main.css for a day, so a deploy that changes the
-// stylesheet but not its URL serves the old one against the new markup. The
-// fingerprint is what stops that, so it has to track the file's actual content.
+// Cache lets a CDN hold /static/main.css for a day, so the fingerprint has to
+// track the file's actual content.
 func TestStylesheetIsFingerprinted(t *testing.T) {
 	css, err := Files.ReadFile("static/main.css")
 	if err != nil {
@@ -187,8 +183,7 @@ func TestFingerprintedStylesheetServes(t *testing.T) {
 	}
 }
 
-// An asset with no embedded copy still has to render a usable URL rather than
-// one pointing at a version that does not exist.
+// An asset with no embedded copy still has to render a usable URL.
 func TestStaticURLWithoutAnEmbeddedFile(t *testing.T) {
 	if got, want := staticURL("nothing.css"), "/static/nothing.css"; got != want {
 		t.Errorf("staticURL() = %q, want %q", got, want)

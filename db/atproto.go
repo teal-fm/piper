@@ -84,7 +84,6 @@ func (db *DB) SetLatestATProtoSessionId(did string, atProtoSessionID string) err
 }
 
 // SaveATProtoProfile caches the public profile piper renders in the nav bar.
-// It is written at login and never read back from the network per request.
 func (db *DB) SaveATProtoProfile(did string, handle string, displayName string, avatarURL string) error {
 	now := time.Now().UTC()
 

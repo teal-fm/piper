@@ -48,8 +48,8 @@ func TestNewNavBar(t *testing.T) {
 		}
 	})
 
-	// users.username holds Spotify's display name, but only once the Spotify
-	// callback has run — so the ID is what says the name is really Spotify's.
+	// users.username only holds Spotify's display name once the callback has
+	// run, so the ID is what says the name is really Spotify's.
 	t.Run("user with a linked Spotify account", func(t *testing.T) {
 		nav := NewNavBar(&models.User{
 			Username:  ptr("Charles"),
@@ -75,8 +75,8 @@ func TestNewNavBar(t *testing.T) {
 		}
 	})
 
-	// apiUnlinkLastfmHandler unlinks by writing an empty username rather than
-	// NULL, so a non-nil pointer isn't enough to say the account is still linked.
+	// apiUnlinkLastfmHandler writes an empty username rather than NULL, so a
+	// non-nil pointer isn't enough to say the account is still linked.
 	t.Run("an empty Last.fm username is not linked", func(t *testing.T) {
 		nav := NewNavBar(&models.User{LastFMUsername: ptr("")}, true)
 
@@ -140,9 +140,8 @@ func TestServices(t *testing.T) {
 	}
 }
 
-// Each service tile has three looks: greyed out when the server doesn't offer
-// the service, plain grey when it does but the account isn't linked, and accent
-// teal once it is.
+// Each service tile has three looks: greyed out when unavailable, plain grey
+// when available but unlinked, and accent teal once linked.
 func TestHomeServiceCards(t *testing.T) {
 	const (
 		connected = `border-accent bg-accent/10`
@@ -161,8 +160,7 @@ func TestHomeServiceCards(t *testing.T) {
 		return buf.String()
 	}
 
-	// Each card carries its service's brand mark; an unknown slug silently
-	// renders nothing, so check the paths actually land.
+	// An unknown icon slug silently renders nothing, so check the paths land.
 	t.Run("every card renders its brand icon", func(t *testing.T) {
 		out := render(t, NavBar{
 			IsLoggedIn: true, SpotifyEnabled: true, LastFMEnabled: true, AppleMusicEnabled: true,
@@ -210,15 +208,13 @@ func TestHomeServiceCards(t *testing.T) {
 		if strings.Contains(out, "Not connected") {
 			t.Error("did not expect the unlinked state for a linked account")
 		}
-		// Unlinking is destructive, so it has to be a POST form rather than a
-		// link the browser might prefetch.
+		// Unlinking is destructive, so it needs a POST form, not a link.
 		if !strings.Contains(out, `method="post" action="/unlink-spotify"`) {
 			t.Error("expected the unlink form to POST to /unlink-spotify")
 		}
 	})
 
-	// Re-running a completed OAuth flow by misclicking the card is the thing to
-	// avoid: once linked, the only control is Unlink.
+	// Once linked, the only control is Unlink — misclicking must not re-run OAuth.
 	t.Run("linked card is inert apart from unlinking", func(t *testing.T) {
 		out := render(t, NavBar{
 			IsLoggedIn:       true,
@@ -294,8 +290,8 @@ func TestHomeServiceCards(t *testing.T) {
 	})
 }
 
-// The header has to stay readable whether or not the AppView answered, so the
-// chip degrades from avatar, to an initial, to nothing at all.
+// The chip degrades from avatar, to an initial, to nothing, so the header stays
+// readable whether or not the AppView answered.
 func TestNavBarChipRendering(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -325,8 +321,7 @@ func TestNavBarChipRendering(t *testing.T) {
 			absent: []string{`title="@`, "<img"},
 		},
 		{
-			// Logged out, the login form is the only call to action — the header
-			// carries nothing on the right at all.
+			// Logged out, the login form is the only call to action.
 			name:   "logged out",
 			nav:    NavBar{},
 			want:   []string{"Log in", `name="handle"`},
@@ -388,7 +383,7 @@ func TestHomeBuildTime(t *testing.T) {
 	})
 
 	// Nothing sets an empty agent in practice, but a bare separator would look
-	// like a rendering bug if anything ever did.
+	// like a rendering bug.
 	t.Run("no dangling separator without an agent", func(t *testing.T) {
 		out := render(t, homeParams{Agent: ""})
 		if strings.Contains(out, "&middot;") {
@@ -396,8 +391,7 @@ func TestHomeBuildTime(t *testing.T) {
 		}
 	})
 
-	// os.Executable and stat both have to fail for this, but "unknown" beats
-	// the "N/A UTC" that formatTime would produce on its own.
+	// "unknown" beats the "N/A UTC" that formatTime would produce on its own.
 	t.Run("unknown build time", func(t *testing.T) {
 		out := render(t, homeParams{})
 		if !strings.Contains(out, "Built unknown") {

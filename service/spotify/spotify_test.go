@@ -1636,8 +1636,7 @@ func TestIsRefreshTokenRejected(t *testing.T) {
 
 // ===== Unlink Tests =====
 
-// Unlinking has to clear both halves of the link: the DB row, and the
-// in-memory caches the polling loop walks.
+// Unlinking clears both halves: the DB row and the in-memory caches.
 func TestUnlinkSpotify(t *testing.T) {
 	database := setupTestDB(t)
 	userID := createTestUser(t, database)
@@ -1683,8 +1682,7 @@ func TestUnlinkSpotify(t *testing.T) {
 		t.Error("expected the cached play state to be dropped")
 	}
 
-	// A cleared link must not look active to the pollers, which filter on
-	// access_token IS NOT NULL.
+	// The pollers filter on access_token IS NOT NULL.
 	active, err := database.GetAllActiveUsers()
 	if err != nil {
 		t.Fatalf("GetAllActiveUsers failed: %v", err)
@@ -1696,8 +1694,7 @@ func TestUnlinkSpotify(t *testing.T) {
 	}
 }
 
-// The user must be able to reconnect afterwards; Spotify still remembers the
-// approval, so this is the common path back.
+// Spotify still remembers the approval, so reconnecting is the common path back.
 func TestUnlinkSpotifyThenRelink(t *testing.T) {
 	database := setupTestDB(t)
 	userID := createTestUser(t, database)
@@ -1709,8 +1706,7 @@ func TestUnlinkSpotifyThenRelink(t *testing.T) {
 		t.Fatalf("ClearSpotifySession failed: %v", err)
 	}
 
-	// The lookup the OAuth callback does must miss, so it takes the
-	// AddSpotifySession branch rather than the "existing user" one.
+	// The callback's lookup must miss, so it takes the AddSpotifySession branch.
 	found, err := database.GetUserBySpotifyID("patd")
 	if err != nil {
 		t.Fatalf("GetUserBySpotifyID failed: %v", err)

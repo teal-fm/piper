@@ -26,8 +26,7 @@ func TestUserInfoAvatarURL(t *testing.T) {
 			want: "https://example.com/34s.png",
 		},
 		{
-			// Last.fm returns every size as an empty string for accounts with no
-			// picture, rather than omitting the field.
+			// Last.fm empties every size rather than omitting the field.
 			name: "account without a picture",
 			images: []Image{
 				{Size: "small", Text: ""},

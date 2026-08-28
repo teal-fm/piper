@@ -314,8 +314,8 @@ func (db *DB) AddSpotifySession(userID int64, username, email, spotifyId, access
 	return user, err
 }
 
-// ClearSpotifySession removes the user's Spotify link. Only spotify sets
-// username and email, so these gotta be deleted as well.
+// ClearSpotifySession removes the user's Spotify link. Only Spotify sets
+// username and email, so those go too.
 func (db *DB) ClearSpotifySession(userID int64) error {
 	_, err := db.Exec(`
 	UPDATE users
