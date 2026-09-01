@@ -14,7 +14,7 @@ func (app *application) routes() http.Handler {
 	//Handles static file routes
 	mux.Handle("/static/{file_name}", app.pages.Static())
 
-	mux.HandleFunc("/", session.WithPossibleAuth(home(app.database, app.pages, app.lastfmService, app.buildTime), app.sessionManager))
+	mux.HandleFunc("/", session.WithPossibleAuth(home(app.database, app.pages, app.lastfmService, app.atprotoService, app.buildTime), app.sessionManager))
 
 	// OAuth Routes
 	mux.HandleFunc("/login/atproto", app.oauthManager.HandleLogin("atproto"))

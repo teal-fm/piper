@@ -30,7 +30,7 @@ type HomeParams struct {
 	Agent     string
 }
 
-func home(database *db.DB, pg *pages.Pages, lastfmService *lastfm.Service, buildTime time.Time) http.HandlerFunc {
+func home(database *db.DB, pg *pages.Pages, lastfmService *lastfm.Service, atprotoService *atprotoauth.AuthService, buildTime time.Time) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "text/html")
@@ -44,7 +44,7 @@ func home(database *db.DB, pg *pages.Pages, lastfmService *lastfm.Service, build
 			if err != nil {
 				log.Printf("Error fetching user %d details for home page: %v", userID, err)
 			}
-			user = backfillProfile(r.Context(), database, user)
+			user = backfillProfile(r.Context(), database, atprotoService, user)
 			user = backfillLastFMAvatar(r.Context(), database, lastfmService, user)
 		}
 
@@ -62,7 +62,7 @@ func home(database *db.DB, pg *pages.Pages, lastfmService *lastfm.Service, build
 
 // backfillProfile caches the handle and avatar for users who logged in before
 // piper started storing them. Best-effort: the nav bar falls back to a placeholder.
-func backfillProfile(ctx context.Context, database *db.DB, user *models.User) *models.User {
+func backfillProfile(ctx context.Context, database *db.DB, atprotoService *atprotoauth.AuthService, user *models.User) *models.User {
 	if user == nil || user.ATProtoDID == nil || user.ProfileFetchedAt != nil {
 		return user
 	}
@@ -73,14 +73,29 @@ func backfillProfile(ctx context.Context, database *db.DB, user *models.User) *m
 		return user
 	}
 
-	if err := database.SaveATProtoProfile(*user.ATProtoDID, profile.Handle, profile.DisplayName, profile.Avatar); err != nil {
+	// If a user has a fm.teal.actor.profile record, use that one instead of Bluesky
+	displayName, avatar := profile.DisplayName, profile.Avatar
+	if user.MostRecentAtProtoSessionID != nil {
+		tealProfile, err := atprotoService.TealProfile(ctx, *user.ATProtoDID, *user.MostRecentAtProtoSessionID)
+		if err != nil {
+			log.Printf("Error reading teal.fm profile for DID %s: %v", *user.ATProtoDID, err)
+		}
+		if tealProfile.DisplayName != "" {
+			displayName = tealProfile.DisplayName
+		}
+		if tealProfile.AvatarURL != "" {
+			avatar = tealProfile.AvatarURL
+		}
+	}
+
+	if err := database.SaveATProtoProfile(*user.ATProtoDID, profile.Handle, displayName, avatar); err != nil {
 		log.Printf("Error saving profile for DID %s: %v", *user.ATProtoDID, err)
 		return user
 	}
 
 	user.Handle = &profile.Handle
-	user.DisplayName = &profile.DisplayName
-	user.AvatarURL = &profile.Avatar
+	user.DisplayName = &displayName
+	user.AvatarURL = &avatar
 	return user
 }
 

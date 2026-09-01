@@ -174,9 +174,8 @@ func (a *AuthService) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-// cacheProfile refreshes the user's cached handle and avatar from the AppView.
-// Best-effort: a slow or unreachable AppView must never fail a login.
-func (a *AuthService) cacheProfile(ctx context.Context, did string) {
+// cacheProfile refreshes the user's cached handle and avatar.
+func (a *AuthService) cacheProfile(ctx context.Context, did, sessionID string) {
 	ctx, cancel := context.WithTimeout(ctx, profileFetchTimeout)
 	defer cancel()
 
@@ -186,7 +185,20 @@ func (a *AuthService) cacheProfile(ctx context.Context, did string) {
 		return
 	}
 
-	if err := a.DB.SaveATProtoProfile(did, profile.Handle, profile.DisplayName, profile.Avatar); err != nil {
+	// Use fm.teal.actor.profile if the user's got one; fall back to Bluesky
+	displayName, avatar := profile.DisplayName, profile.Avatar
+	tealProfile, err := a.TealProfile(ctx, did, sessionID)
+	if err != nil {
+		a.logger.Printf("Failed to read teal.fm profile for DID %s: %v", did, err)
+	}
+	if tealProfile.DisplayName != "" {
+		displayName = tealProfile.DisplayName
+	}
+	if tealProfile.AvatarURL != "" {
+		avatar = tealProfile.AvatarURL
+	}
+
+	if err := a.DB.SaveATProtoProfile(did, profile.Handle, displayName, avatar); err != nil {
 		a.logger.Printf("Failed to save profile for DID %s: %v", did, err)
 	}
 }
@@ -224,7 +236,7 @@ func (a *AuthService) HandleCallback(w http.ResponseWriter, r *http.Request) (in
 		a.logger.Printf("Failed to set latest atproto session id for user %d: %v", user.ID, err)
 	}
 
-	a.cacheProfile(ctx, sessData.AccountDID.String())
+	a.cacheProfile(ctx, sessData.AccountDID.String(), sessData.SessionID)
 
 	a.logger.Printf("ATProto Callback Success: User %d (DID: %v) authenticated.", user.ID, user.ATProtoDID)
 	return user.ID, nil
