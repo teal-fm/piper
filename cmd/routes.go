@@ -14,26 +14,32 @@ func (app *application) routes() http.Handler {
 	//Handles static file routes
 	mux.Handle("/static/{file_name}", app.pages.Static())
 
-	mux.HandleFunc("/", session.WithPossibleAuth(home(app.database, app.pages), app.sessionManager))
+	mux.HandleFunc("/", session.WithPossibleAuth(home(app.database, app.pages, app.lastfmService, app.atprotoService, app.buildTime), app.sessionManager))
 
 	// OAuth Routes
 	mux.HandleFunc("/login/atproto", app.oauthManager.HandleLogin("atproto"))
 	mux.HandleFunc("/callback/atproto", session.WithPossibleAuth(app.oauthManager.HandleCallback("atproto"), app.sessionManager)) // Use possible auth
+	mux.HandleFunc("/logout", app.oauthManager.HandleLogout("atproto"))
+	mux.HandleFunc("/debug/", session.WithAuth(app.sessionManager.HandleDebug, app.sessionManager))
 
 	// Authenticated Web Routes
 	mux.HandleFunc("/current-track", session.WithAuth(app.spotifyService.HandleCurrentTrack, app.sessionManager))
 	mux.HandleFunc("/history", session.WithAuth(app.spotifyService.HandleTrackHistory, app.sessionManager))
 	mux.HandleFunc("/api-keys", session.WithAuth(app.apiKeyService.HandleAPIKeyManagement(app.database, app.pages), app.sessionManager))
-
+	mux.HandleFunc("/unlink-spotify", session.WithAuth(handleUnlinkSpotify(app.database, app.spotifyService), app.sessionManager))
 	mux.HandleFunc("/login/spotify", session.WithAuth(app.oauthManager.HandleLogin("spotify"), app.sessionManager))
 	mux.HandleFunc("/callback/spotify", session.WithAuth(app.oauthManager.HandleCallback("spotify"), app.sessionManager))
 
+	// Last.fm
 	mux.HandleFunc("/link-lastfm", session.WithAuth(handleLinkLastfmForm(app.database, app.pages), app.sessionManager)) // GET form
 	mux.HandleFunc("/link-lastfm/submit", session.WithAuth(handleLinkLastfmSubmit(app.database), app.sessionManager))   // POST submit - Changed route slightly
-	mux.HandleFunc("/link-applemusic", session.WithAuth(handleAppleMusicLink(app.pages, app.appleMusicService), app.sessionManager))
-	mux.HandleFunc("/logout", app.oauthManager.HandleLogout("atproto"))
-	mux.HandleFunc("/debug/", session.WithAuth(app.sessionManager.HandleDebug, app.sessionManager))
+	mux.HandleFunc("/unlink-lastfm", session.WithAuth(handleUnlinkLastfm(app.database), app.sessionManager))
 
+	// Apple Music
+	mux.HandleFunc("/link-applemusic", session.WithAuth(handleAppleMusicLink(app.database, app.pages, app.appleMusicService), app.sessionManager))
+	mux.HandleFunc("/unlink-applemusic", session.WithAuth(handleUnlinkAppleMusic(app.database), app.sessionManager))
+
+	// API routes
 	mux.HandleFunc("/api/v1/me", session.WithAPIAuth(apiMeHandler(app.database), app.sessionManager))
 	mux.HandleFunc("/api/v1/lastfm", session.WithAPIAuth(apiGetLastfmUserHandler(app.database), app.sessionManager))
 	mux.HandleFunc("/api/v1/lastfm/set", session.WithAPIAuth(apiLinkLastfmHandler(app.database), app.sessionManager))

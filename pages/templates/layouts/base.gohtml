@@ -1,13 +1,24 @@
 {{ define "layouts/base" }}
-
+<!DOCTYPE html>
 <html lang="en">
-<head>
-    <title>Piper - Spotify & Last.fm Tracker</title>
-    <link rel="stylesheet" href="/static/main.css">
-</head>
-<body class="font-sans max-w-[800px] mx-auto p-5 leading-relaxed">
-{{ block "content" . }}{{ end }}
-
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>{{ block "title" . }}piper{{ end }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap"
+    />
+    <link rel="stylesheet" href="{{ static "main.css" }}" />
+  </head>
+  <body
+    class="font-sans antialiased leading-relaxed min-h-screen bg-linear-to-br from-[#e2e8f0] via-[#e9d5ff]/70 to-[#99f6e4] text-neutral-800 dark:from-[#111827] dark:via-[#030712] dark:to-[#042f2e] dark:text-white">
+    <div class="max-w-3xl mx-auto px-6 py-8">
+      {{ block "content" . }}{{ end }}
+    </div>
+  </body>
 </html>
 {{ end }}

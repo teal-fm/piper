@@ -9,6 +9,7 @@ import (
 	"github.com/bluesky-social/indigo/atproto/crypto"
 	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/teal-fm/piper/db"
+	"github.com/teal-fm/piper/service/bsky"
 
 	"github.com/teal-fm/piper/session"
 
@@ -17,7 +18,11 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"time"
 )
+
+// profileFetchTimeout bounds the AppView lookup inside the login redirect.
+const profileFetchTimeout = 5 * time.Second
 
 type AuthService struct {
 	clientApp      *oauth.ClientApp
@@ -169,6 +174,35 @@ func (a *AuthService) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+// cacheProfile refreshes the user's cached handle and avatar.
+func (a *AuthService) cacheProfile(ctx context.Context, did, sessionID string) {
+	ctx, cancel := context.WithTimeout(ctx, profileFetchTimeout)
+	defer cancel()
+
+	profile, err := bsky.FetchProfile(ctx, nil, did)
+	if err != nil {
+		a.logger.Printf("Failed to fetch profile for DID %s: %v", did, err)
+		return
+	}
+
+	// Use fm.teal.actor.profile if the user's got one; fall back to Bluesky
+	displayName, avatar := profile.DisplayName, profile.Avatar
+	tealProfile, err := a.TealProfile(ctx, did, sessionID)
+	if err != nil {
+		a.logger.Printf("Failed to read teal.fm profile for DID %s: %v", did, err)
+	}
+	if tealProfile.DisplayName != "" {
+		displayName = tealProfile.DisplayName
+	}
+	if tealProfile.AvatarURL != "" {
+		avatar = tealProfile.AvatarURL
+	}
+
+	if err := a.DB.SaveATProtoProfile(did, profile.Handle, displayName, avatar); err != nil {
+		a.logger.Printf("Failed to save profile for DID %s: %v", did, err)
+	}
+}
+
 func (a *AuthService) HandleCallback(w http.ResponseWriter, r *http.Request) (int64, error) {
 	ctx := r.Context()
 
@@ -201,6 +235,8 @@ func (a *AuthService) HandleCallback(w http.ResponseWriter, r *http.Request) (in
 	if err != nil {
 		a.logger.Printf("Failed to set latest atproto session id for user %d: %v", user.ID, err)
 	}
+
+	a.cacheProfile(ctx, sessData.AccountDID.String(), sessData.SessionID)
 
 	a.logger.Printf("ATProto Callback Success: User %d (DID: %v) authenticated.", user.ID, user.ATProtoDID)
 	return user.ID, nil

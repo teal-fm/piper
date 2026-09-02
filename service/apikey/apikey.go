@@ -56,11 +56,8 @@ func (s *Service) HandleAPIKeyManagement(database *db.DB, pg *pages.Pages) http.
 			return
 		}
 
-		lastfmUsername := ""
 		user, err := database.GetUserByID(userID)
-		if err == nil && user != nil && user.LastFMUsername != nil {
-			lastfmUsername = *user.LastFMUsername
-		} else if err != nil {
+		if err != nil {
 			log.Printf("Error fetching user %d details for home page: %v", userID, err)
 		}
 		isAPI := session.IsAPIRequest(r.Context())
@@ -210,11 +207,7 @@ func (s *Service) HandleAPIKeyManagement(database *db.DB, pg *pages.Pages) http.
 		}{
 			Keys:     keys,
 			NewKeyID: newKeyValueToShow,
-			NavBar: pages.NavBar{
-				IsLoggedIn: ok,
-				//Just leaving empty so we don't have to pull in the db here, may change
-				LastFMUsername: lastfmUsername,
-			},
+			NavBar:   pages.NewNavBar(user, ok).WithBreadcrumb("API keys"),
 		}
 
 		w.Header().Set("Content-Type", "text/html")

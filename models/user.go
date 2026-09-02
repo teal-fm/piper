@@ -16,6 +16,8 @@ type User struct {
 
 	// lfm information
 	LastFMUsername *string
+	// An empty (but non-nil) value means the account has no avatar.
+	LastFMAvatarURL *string
 
 	// Apple Music
 	AppleMusicUserToken *string
@@ -25,6 +27,12 @@ type User struct {
 	//This is meant to only be used by the automated music stamping service. If the user ever does an
 	//atproto action from the web ui use the atproto session id for the logged-in session
 	MostRecentAtProtoSessionID *string
+
+	// Public profile, cached from the Bluesky AppView.
+	Handle           *string
+	DisplayName      *string
+	AvatarURL        *string
+	ProfileFetchedAt *time.Time
 	//ATProtoAccessToken  *string
 	//ATProtoRefreshToken *string
 	//ATProtoTokenExpiry  *time.Time

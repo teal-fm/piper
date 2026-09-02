@@ -25,6 +25,8 @@ const (
 	lastfmAPIBaseURL = "https://ws.audioscrobbler.com/2.0/"
 	downloadLimit    = 200
 	noTimestampLimit = 5
+	// "large" is 174px, which stays sharp on a retina screen in the nav.
+	avatarSize = "large"
 )
 
 type Service struct {
@@ -42,6 +44,55 @@ type Service struct {
 	lastSeenNowPlaying map[string]Track
 	mu                 sync.Mutex
 	logger             *log.Logger
+}
+
+// FetchUserInfo looks up a Last.fm account's public profile (user.getinfo).
+func (l *Service) FetchUserInfo(ctx context.Context, username string) (*UserInfo, error) {
+	if username == "" {
+		return nil, fmt.Errorf("username cannot be empty")
+	}
+
+	params := url.Values{}
+	params.Set("method", "user.getinfo")
+	params.Set("user", username)
+	params.Set("api_key", l.apiKey)
+	params.Set("format", "json")
+
+	if err := l.limiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("rate limiter error: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, lastfmAPIBaseURL+"?"+params.Encode(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request for %s: %w", username, err)
+	}
+
+	resp, err := l.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch user info for %s: %w", username, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("last.fm API error for %s: status %d, body: %s", username, resp.StatusCode, string(bodyBytes))
+	}
+
+	var userInfoResp UserInfoResponse
+	if err := json.NewDecoder(resp.Body).Decode(&userInfoResp); err != nil {
+		return nil, fmt.Errorf("failed to decode user info for %s: %w", username, err)
+	}
+
+	return &userInfoResp.User, nil
+}
+
+// FetchAvatarURL returns the account's avatar, or an empty string when it has none.
+func (l *Service) FetchAvatarURL(ctx context.Context, username string) (string, error) {
+	info, err := l.FetchUserInfo(ctx, username)
+	if err != nil {
+		return "", err
+	}
+	return info.AvatarURL(avatarSize), nil
 }
 
 func NewLastFMService(db *db.DB, apiKey string, musicBrainzService *musicbrainz.Service, atprotoService *atprotoauth.AuthService, playingNowService interface {
