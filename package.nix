@@ -1,16 +1,16 @@
 { lib, buildGoModule, tailwindcss_4, fetchFromGitHub, source ? fetchFromGitHub {
   owner = "teal-fm";
   repo = "piper";
-  rev = "ccb72442021bd9f6ed20acc63f9703cf475b0f51";
-  hash = "sha256-wXA2RnvQ0J0QwUeDIg2gLRI2DNjgu07+QYjw5pRmyyI=";
+  rev = "6ff8c772debd067d2255f254780d22486d99b07f";
+  hash = "sha256-n1G6nbz3Lt38RxP9nwCRLvx31WOO8Au15geyiAWKcAo=";
 } }:
 buildGoModule {
   pname = "tealfm-piper";
-  version = "0.0.3";
+  version = "0.0.11";
 
   src = source;
 
-  vendorHash = "sha256-poQutY1V8X6BdmPMXdQuPWIWE/j3xNoEp4PKSimj2bA=";
+  vendorHash = "sha256-0CAKzBBARoHSqDv34Xx3Yek6r33Exhrhvn+FzGlby14=";
 
   nativeBuildInputs = [ tailwindcss_4 ];
 
@@ -18,12 +18,14 @@ buildGoModule {
 
   subPackages = [ "cmd" ];
 
-  ldflags = [ "-s" "-w" ];
+  ldflags = [
+    "-s"
+    "-w"
+    "-X main.buildTime=2026-09-02T13:18:08-05:00"
+  ];
 
-  postBuild = ''
-    cp -r ./pages/templates $out/
-    cp -r ./pages/static $out/
-    tailwindcss -i $out/static/base.css -o $out/static/main.css -m
+  preBuild = ''
+    tailwindcss -i ./pages/static/base.css -o ./pages/static/main.css -m
   '';
 
   postInstall = ''
