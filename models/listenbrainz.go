@@ -194,16 +194,6 @@ func (lbp *ListenBrainzPayload) ConvertToTrack() Track {
 			}
 		}
 
-		if track.URL == "" {
-			for _, relation := range mapping.URLRels {
-				if relation.URL == "" || !strings.Contains(strings.ToLower(relation.Type), "streaming") {
-					continue
-				}
-				track.URL = relation.URL
-				track.ServiceBaseUrl = serviceFromURL(relation.URL)
-				break
-			}
-		}
 	}
 
 	// Default service if not set

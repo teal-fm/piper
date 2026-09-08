@@ -192,7 +192,7 @@ func (s *Service) syncPlayingNow(ctx context.Context, user *models.User) error {
 		return nil
 	}
 
-	track := response.Payload.Listens[0].ConvertToTrack()
+	track := syncedTrack(&response.Payload.Listens[0], *user.ListenBrainzUsername)
 	track.HasStamped = false
 	signature := nowPlayingSignature(&track)
 
@@ -250,7 +250,7 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 			continue
 		}
 
-		track := listen.ConvertToTrack()
+		track := syncedTrack(listen, *user.ListenBrainzUsername)
 		exists, err := s.db.HasTrackListen(user.ID, db.SourceListenBrainz, track.Name, track.Timestamp)
 		if err != nil {
 			return err
@@ -286,6 +286,15 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 		advanceUserCursor(user, track.Timestamp)
 	}
 	return nil
+}
+
+// Synced metadata can identify streaming catalog entries without proving where
+// playback occurred. Attribute these listens to the account we fetched them from.
+func syncedTrack(listen *models.ListenBrainzPayload, username string) models.Track {
+	track := listen.ConvertToTrack()
+	track.ServiceBaseUrl = "listenbrainz.org"
+	track.URL = "https://listenbrainz.org/user/" + url.PathEscape(username) + "/"
+	return track
 }
 
 func (s *Service) getJSON(ctx context.Context, path, token string, query url.Values, target any) error {

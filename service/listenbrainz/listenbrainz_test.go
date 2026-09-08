@@ -109,7 +109,7 @@ func TestSyncListensUsesResolvedMetadataAndDeduplicates(t *testing.T) {
 			"payload": {"count": 2, "user_id": "rob", "listens": [
 				{"listened_at": 200, "track_metadata": {
 					"artist_name": "Submitted Artist", "track_name": "Newer", "release_name": "Album",
-					"additional_info": {"recording_mbid": "unverified", "tracknumber": "2"},
+					"additional_info": {"recording_mbid": "unverified", "tracknumber": "2", "spotify_id": "catalog-id", "origin_url": "https://www.youtube.com/watch?v=catalog-id", "music_service": "spotify"},
 					"mbid_mapping": {
 						"recording_mbid": "recording-2", "release_mbid": "release-2",
 						"artists": [{"artist_mbid": "artist-2", "artist_credit_name": "Mapped Artist", "join_phrase": ""}],
@@ -153,8 +153,8 @@ func TestSyncListensUsesResolvedMetadataAndDeduplicates(t *testing.T) {
 	if len(newer.Artist) != 1 || newer.Artist[0].Name != "Mapped Artist" || newer.Artist[0].MBID == nil || *newer.Artist[0].MBID != "artist-2" {
 		t.Errorf("resolved artist was not stored: %+v", newer.Artist)
 	}
-	if newer.URL != "https://bandcamp.com/track/newer" || newer.ServiceBaseUrl != "bandcamp.com" {
-		t.Errorf("streaming relation was not stored: url=%q service=%q", newer.URL, newer.ServiceBaseUrl)
+	if newer.URL != "https://listenbrainz.org/user/rob/" || newer.ServiceBaseUrl != "listenbrainz.org" {
+		t.Errorf("incorrect listen provenance: url=%q service=%q", newer.URL, newer.ServiceBaseUrl)
 	}
 	older := tracks[1]
 	if older.DurationMs != 123000 || older.ISRC != "ISRC1" {
@@ -252,6 +252,9 @@ func TestSyncPlayingNowPublishesChangesAndClears(t *testing.T) {
 	}
 	if fake.published[0].HasStamped {
 		t.Error("playing-now track must not be marked as a completed listen")
+	}
+	if track := fake.published[0]; track.URL != "https://listenbrainz.org/user/listener/" || track.ServiceBaseUrl != "listenbrainz.org" {
+		t.Errorf("incorrect playing-now provenance: url=%q service=%q", track.URL, track.ServiceBaseUrl)
 	}
 	if fake.published[0].RecordingMBID == nil || *fake.published[0].RecordingMBID != "recording" {
 		t.Errorf("resolved recording missing: %+v", fake.published[0])
