@@ -25,9 +25,11 @@ import (
 )
 
 type HomeParams struct {
-	NavBar    pages.NavBar
-	BuildTime time.Time
-	Agent     string
+	LoginError  string
+	LoginHandle string
+	NavBar      pages.NavBar
+	BuildTime   time.Time
+	Agent       string
 }
 
 func home(database *db.DB, pg *pages.Pages, lastfmService *lastfm.Service, atprotoService *atprotoauth.AuthService, buildTime time.Time) http.HandlerFunc {
@@ -49,9 +51,11 @@ func home(database *db.DB, pg *pages.Pages, lastfmService *lastfm.Service, atpro
 		}
 
 		params := HomeParams{
-			NavBar:    pages.NewNavBar(user, isLoggedIn),
-			BuildTime: buildTime,
-			Agent:     models.SubmissionAgent,
+			NavBar:      pages.NewNavBar(user, isLoggedIn),
+			BuildTime:   buildTime,
+			Agent:       models.SubmissionAgent,
+			LoginError:  pages.LoginErrorMessage(r.URL.Query().Get("login_error")),
+			LoginHandle: r.URL.Query().Get("handle"),
 		}
 		err := pg.Execute("home", w, params)
 		if err != nil {

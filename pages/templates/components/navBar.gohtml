@@ -1,7 +1,7 @@
 {{ define "components/navBar" }}
 
-<header class="flex flex-col gap-3 mb-10 sm:flex-row sm:items-center sm:gap-4">
-  <nav class="flex items-center gap-2 min-w-0" aria-label="Breadcrumb">
+<header class="flex flex-col gap-3 mb-10 lg:flex-row lg:items-center lg:gap-4">
+  <nav class="flex items-center gap-2 min-w-0 shrink-0" aria-label="Breadcrumb">
     <a class="flex items-center gap-2 no-underline shrink-0" href="/">
       {{ template "components/logo" }}
       <span class="text-lg font-medium tracking-tight">piper</span>
@@ -9,13 +9,13 @@
     {{ if .Breadcrumb }}
     <span class="text-neutral-400 dark:text-neutral-500" aria-hidden="true">&rsaquo;</span>
     <span
-      class="text-lg tracking-tight truncate text-neutral-600 dark:text-neutral-300"
+      class="text-lg tracking-tight text-neutral-600 dark:text-neutral-300"
       aria-current="page">{{ .Breadcrumb }}</span>
     {{ end }}
   </nav>
 
   {{ if .IsLoggedIn }}
-  <nav class="flex flex-wrap items-center gap-x-4 gap-y-2 min-w-0 text-sm sm:ml-auto">
+  <nav class="flex flex-wrap items-center gap-x-4 gap-y-2 min-w-0 text-sm lg:ml-auto">
     {{ if .SpotifyEnabled }}
     <a class="text-accent font-medium no-underline hover:underline" href="/current-track">Now playing</a>
     <a class="text-accent font-medium no-underline hover:underline" href="/history">History</a>

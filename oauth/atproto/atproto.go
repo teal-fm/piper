@@ -93,7 +93,7 @@ func (a *AuthService) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	handle := r.URL.Query().Get("handle")
 	if handle == "" {
 		a.logger.Printf("ATProto Login Error: handle is required")
-		http.Error(w, "handle query parameter is required", http.StatusBadRequest)
+		redirectLoginError(w, r, "missing_handle", handle)
 		return
 	}
 	ctx := r.Context()
@@ -102,35 +102,45 @@ func (a *AuthService) HandleLogin(w http.ResponseWriter, r *http.Request) {
 
 	atid, err := syntax.ParseAtIdentifier(handle)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error parsing AT Identifier (%s): %v", handle, err), http.StatusInternalServerError)
+		a.logger.Printf("Error parsing AT Identifier %q: %v", handle, err)
+		redirectLoginError(w, r, "invalid_handle", handle)
 		return
 	}
 	ident, err := a.clientApp.Dir.Lookup(ctx, *atid)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error resolving DID for AT Identifier (%s): %v", handle, err), http.StatusInternalServerError)
+		a.logger.Printf("Error resolving AT Identifier %q: %v", handle, err)
+		redirectLoginError(w, r, "lookup_failed", handle)
 		return
 	}
 	accountDid := ident.DID.String()
 
 	if len(a.allowedDids) > 0 && !slices.Contains(a.allowedDids, accountDid) {
 		a.logger.Printf("ATProto Login Error: DID %s for handle %s is not in the allowed list", accountDid, handle)
-		http.Error(w, "Unauthorized", http.StatusForbidden)
+		redirectLoginError(w, r, "not_allowed", handle)
 		return
 	}
 
 	redirectURL, err := a.clientApp.StartAuthFlow(ctx, accountDid)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error initiating login: %v", err), http.StatusInternalServerError)
+		a.logger.Printf("Error initiating login: %v", err)
+		redirectLoginError(w, r, "login_failed", handle)
 		return
 	}
 	authUrl, err := url.Parse(redirectURL)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error initiating login: %v", err), http.StatusInternalServerError)
+		a.logger.Printf("Error initiating login: %v", err)
+		redirectLoginError(w, r, "login_failed", handle)
 		return
 	}
 
 	a.logger.Printf("ATProto Login: Redirecting user %s to %s", handle, authUrl.String())
 	http.Redirect(w, r, authUrl.String(), http.StatusFound)
+}
+
+// Redirect with a fixed error code so OAuth details never enter the page URL.
+func redirectLoginError(w http.ResponseWriter, r *http.Request, code, handle string) {
+	query := url.Values{"login_error": {code}, "handle": {handle}}
+	http.Redirect(w, r, "/?"+query.Encode(), http.StatusSeeOther)
 }
 
 func (a *AuthService) HandleLogout(w http.ResponseWriter, r *http.Request) {
@@ -209,7 +219,6 @@ func (a *AuthService) HandleCallback(w http.ResponseWriter, r *http.Request) (in
 	sessData, err := a.clientApp.ProcessCallback(ctx, r.URL.Query())
 	if err != nil {
 		errMsg := fmt.Errorf("processing OAuth callback: %w", err)
-		http.Error(w, errMsg.Error(), http.StatusBadRequest)
 		return 0, errMsg
 	}
 
@@ -222,7 +231,6 @@ func (a *AuthService) HandleCallback(w http.ResponseWriter, r *http.Request) (in
 	user, err := a.DB.FindOrCreateUserByDID(sessData.AccountDID.String())
 	if err != nil {
 		a.logger.Printf("ATProto Callback Error: Failed to find or create user for DID %s: %v", sessData.AccountDID.String(), err)
-		http.Error(w, "Failed to process user information.", http.StatusInternalServerError)
 		return 0, fmt.Errorf("failed to find or create user")
 	}
 
