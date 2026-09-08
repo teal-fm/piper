@@ -68,12 +68,14 @@ func (p *Service) PublishPlayingNow(ctx context.Context, userID int64, track *mo
 		return fmt.Errorf("failed to get ATProto atProtoClient: %w", err)
 	}
 
-	hydratedTrack, err := musicbrainz.HydrateTrack(p.mb, *track)
-	if err != nil {
-		p.logger.Printf("User %d: Error hydrating track '%s' with MusicBrainz: %v", userID, track.Name, err)
-	} else {
-		p.logger.Printf("User %d: Successfully hydrated track '%s'", userID, track.Name)
-		track = hydratedTrack
+	if p.mb != nil && track.RecordingMBID == nil {
+		hydratedTrack, err := musicbrainz.HydrateTrack(p.mb, *track)
+		if err != nil {
+			p.logger.Printf("User %d: Error hydrating track '%s' with MusicBrainz: %v", userID, track.Name, err)
+		} else {
+			p.logger.Printf("User %d: Successfully hydrated track '%s'", userID, track.Name)
+			track = hydratedTrack
+		}
 	}
 
 	// Convert track to PlayView format

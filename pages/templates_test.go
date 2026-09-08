@@ -25,6 +25,11 @@ func TestPagesRenderIndependently(t *testing.T) {
 		NavBar   NavBar
 		DevToken string
 	}
+	type listenBrainzParams struct {
+		NavBar          NavBar
+		CurrentUsername string
+		Error           string
+	}
 
 	nav := NavBar{IsLoggedIn: true, Handle: "charles.harries.me"}
 	// Handlers attach the breadcrumb; here we supply it the same way they do.
@@ -64,6 +69,13 @@ func TestPagesRenderIndependently(t *testing.T) {
 			params:     appleMusicParams{NavBar: crumb("Apple Music"), DevToken: "dev-token"},
 			title:      "Link Apple Music · piper",
 			absent:     []string{"Your services", "API keys allow"},
+		},
+		{
+			name:       "listenbrainz_link",
+			breadcrumb: "ListenBrainz",
+			params:     listenBrainzParams{NavBar: crumb("ListenBrainz"), CurrentUsername: "charles"},
+			title:      "Link ListenBrainz · piper",
+			absent:     []string{"musickit.js", "Your services", "API keys allow"},
 		},
 	}
 

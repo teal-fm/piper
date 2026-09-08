@@ -57,6 +57,9 @@ func (db *DB) Initialize() error {
 		refresh_token TEXT,                 -- Spotify refresh token
 		token_expiry TIMESTAMP,             -- Spotify token expiry
 		lastfm_username TEXT,               -- Last.fm username
+		listenbrainz_username TEXT,          -- ListenBrainz / MusicBrainz username
+		listenbrainz_token TEXT,             -- ListenBrainz user token
+		listenbrainz_synced_at TIMESTAMP,     -- Latest ListenBrainz account sync cursor
 		applemusic_user_token TEXT,         -- Apple Music MusicKit user token
 		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Use default
 		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP  -- Use default
@@ -78,12 +81,18 @@ func (db *DB) Initialize() error {
 		"avatar_url TEXT",
 		"profile_fetched_at TIMESTAMP",
 		"lastfm_avatar_url TEXT",
+		"listenbrainz_username TEXT",
+		"listenbrainz_token TEXT",
+		"listenbrainz_synced_at TIMESTAMP",
 	} {
 		name := strings.Fields(column)[0]
 		_, err = db.Exec(`ALTER TABLE users ADD COLUMN ` + column)
 		if err != nil && err.Error() != "duplicate column name: "+name {
 			return err
 		}
+	}
+	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_listenbrainz_username ON users(listenbrainz_username COLLATE NOCASE) WHERE listenbrainz_username IS NOT NULL`); err != nil {
+		return err
 	}
 
 	_, err = db.Exec(`
@@ -346,6 +355,9 @@ func (db *DB) GetUserByID(ID int64) (*models.User, error) {
            token_expiry,
            lastfm_username,
            lastfm_avatar_url,
+		   listenbrainz_username,
+		   listenbrainz_token,
+		   listenbrainz_synced_at,
            applemusic_user_token,
            handle,
            display_name,
@@ -356,7 +368,9 @@ func (db *DB) GetUserByID(ID int64) (*models.User, error) {
     FROM users WHERE id = ?`, ID).Scan(
 		&user.ID, &user.Username, &user.Email, &user.ATProtoDID, &user.MostRecentAtProtoSessionID, &user.SpotifyID,
 		&user.AccessToken, &user.RefreshToken, &user.TokenExpiry,
-		&user.LastFMUsername, &user.LastFMAvatarURL, &user.AppleMusicUserToken,
+		&user.LastFMUsername, &user.LastFMAvatarURL,
+		&user.ListenBrainzUsername, &user.ListenBrainzToken, &user.ListenBrainzSyncedAt,
+		&user.AppleMusicUserToken,
 		&user.Handle, &user.DisplayName, &user.AvatarURL, &user.ProfileFetchedAt,
 		&user.CreatedAt, &user.UpdatedAt)
 

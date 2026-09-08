@@ -1,0 +1,49 @@
+{{ define "title" }}Link ListenBrainz · piper{{ end }}
+
+{{ define "content" }}
+
+{{ template "components/navBar" .NavBar }}
+
+<div class="max-w-md">
+  <h1 class="text-2xl font-medium tracking-tight mb-2">Link ListenBrainz</h1>
+  <p class="text-neutral-500 dark:text-neutral-400 mb-5">
+    Piper reads your ListenBrainz history and publishes new listens to teal.fm.
+  </p>
+
+  {{ if .CurrentUsername }}
+  <p class="mb-5 text-sm text-neutral-600 dark:text-neutral-300">
+    Currently linked as <strong>{{ .CurrentUsername }}</strong>. Enter a token to replace this account.
+  </p>
+  {{ end }}
+
+  {{ if .Error }}
+  <p class="mb-4 rounded-lg border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-700 dark:text-red-300" role="alert">
+    {{ .Error }}
+  </p>
+  {{ end }}
+
+  <form class="space-y-4" method="post" action="/link-listenbrainz">
+    <div>
+      <label class="block text-sm font-medium text-neutral-600 dark:text-neutral-300 mb-1" for="listenbrainz_token">
+        User token
+      </label>
+      <input
+        class="block w-full px-3 py-2 rounded-lg border border-neutral-400/30 bg-white/60 dark:bg-neutral-900/60 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+        type="password"
+        id="listenbrainz_token"
+        name="listenbrainz_token"
+        autocomplete="off"
+        required
+      />
+      <p class="mt-2 text-sm text-neutral-500 dark:text-neutral-400">
+        Copy your token from <a class="text-accent underline" href="https://listenbrainz.org/settings/" rel="noreferrer">ListenBrainz settings</a>.
+        Piper uses it to verify which account belongs to you.
+      </p>
+    </div>
+    <button class="px-4 py-2 rounded-lg bg-accent text-neutral-950 font-medium cursor-pointer hover:opacity-90" type="submit">
+      Link account
+    </button>
+  </form>
+</div>
+
+{{ end }}

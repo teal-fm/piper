@@ -35,6 +35,10 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("/link-lastfm/submit", session.WithAuth(handleLinkLastfmSubmit(app.database), app.sessionManager))   // POST submit - Changed route slightly
 	mux.HandleFunc("/unlink-lastfm", session.WithAuth(handleUnlinkLastfm(app.database), app.sessionManager))
 
+	// ListenBrainz
+	mux.HandleFunc("/link-listenbrainz", session.WithAuth(handleLinkListenBrainz(app.database, app.pages, app.listenBrainzService), app.sessionManager))
+	mux.HandleFunc("/unlink-listenbrainz", session.WithAuth(handleUnlinkListenBrainz(app.database, app.listenBrainzService), app.sessionManager))
+
 	// Apple Music
 	mux.HandleFunc("/link-applemusic", session.WithAuth(handleAppleMusicLink(app.database, app.pages, app.appleMusicService), app.sessionManager))
 	mux.HandleFunc("/unlink-applemusic", session.WithAuth(handleUnlinkAppleMusic(app.database), app.sessionManager))
@@ -44,6 +48,9 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("/api/v1/lastfm", session.WithAPIAuth(apiGetLastfmUserHandler(app.database), app.sessionManager))
 	mux.HandleFunc("/api/v1/lastfm/set", session.WithAPIAuth(apiLinkLastfmHandler(app.database), app.sessionManager))
 	mux.HandleFunc("/api/v1/lastfm/unset", session.WithAPIAuth(apiUnlinkLastfmHandler(app.database), app.sessionManager))
+	mux.HandleFunc("/api/v1/listenbrainz", session.WithAPIAuth(apiGetListenBrainzHandler(app.database), app.sessionManager))
+	mux.HandleFunc("/api/v1/listenbrainz/set", session.WithAPIAuth(apiLinkListenBrainzHandler(app.database, app.listenBrainzService), app.sessionManager))
+	mux.HandleFunc("/api/v1/listenbrainz/unset", session.WithAPIAuth(apiUnlinkListenBrainzHandler(app.database, app.listenBrainzService), app.sessionManager))
 	mux.HandleFunc("/api/v1/current-track", session.WithAPIAuth(apiCurrentTrack(app.spotifyService), app.sessionManager)) // Spotify Current
 	mux.HandleFunc("/api/v1/history", session.WithAPIAuth(apiTrackHistory(app.spotifyService), app.sessionManager))       // Spotify History
 	mux.HandleFunc("/api/v1/musicbrainz/search", apiMusicBrainzSearch(app.mbService))                                     // MusicBrainz (public?)

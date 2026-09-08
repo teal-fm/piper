@@ -41,6 +41,7 @@ You now have to bring your own private key to run piper. Can do this via goat `g
 
 - `ENABLE_SPOTIFY` - Enables Spotify integration and validates envs
 - `ENABLE_LASTFM` - Enables Last.fm integration and validates envs
+- `ENABLE_LISTENBRAINZ` - Enables ListenBrainz account linking and listen syncing
 - `ENABLE_APPLEMUSIC` - Enables Apple Music integration and validates envs
 
 - `SPOTIFY_CLIENT_ID` - Client Id from setup in [Spotify developer dashboard](https://developer.spotify.com/documentation/web-api/tutorials/getting-started)
@@ -56,9 +57,20 @@ You now have to bring your own private key to run piper. Can do this via goat `g
 
 - `LASTFM_API_KEY` - Your lastfm api key. Can find out how to setup [here](https://www.last.fm/api)
 
+- `LISTENBRAINZ_API_URL` - ListenBrainz API base URL. Defaults to `https://api.listenbrainz.org`
+- `LISTENBRAINZ_INTERVAL_SECONDS` - Seconds between ListenBrainz checks. Defaults to `30`
+
 - `TRACKER_INTERVAL` - How long between checks to see if the registered users are listening to new music
 - `DB_PATH` - Path for the sqlite db. If you are using the docker compose probably want `/db/piper.db` to persist data
 - `ALLOWED_DIDS` - Restricts the ATProto accounts that can sign-in to the instance to a specific list of DIDs. Supply full DIDs as a space-separated list (e.g., `ALLOWED_DIDS=did:plc:abcdefg did:web:example.com`).
+
+##### listenbrainz
+
+Open the ListenBrainz card under "Your services" and paste the user token from your
+[ListenBrainz settings](https://listenbrainz.org/settings/). Piper validates the token,
+links the MusicBrainz username it belongs to, imports the latest 25 listens, and then
+polls for completed listens and playing-now updates. ListenBrainz-resolved MusicBrainz
+IDs and streaming links are used when they are available.
 
 ##### apple music
 

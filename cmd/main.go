@@ -15,12 +15,14 @@ import (
 
 	"github.com/teal-fm/piper/config"
 	"github.com/teal-fm/piper/db"
+	"github.com/teal-fm/piper/models"
 	"github.com/teal-fm/piper/oauth"
 	"github.com/teal-fm/piper/oauth/atproto"
 	"github.com/teal-fm/piper/pages"
 	apikeyService "github.com/teal-fm/piper/service/apikey"
 	"github.com/teal-fm/piper/service/applemusic"
 	"github.com/teal-fm/piper/service/lastfm"
+	"github.com/teal-fm/piper/service/listenbrainz"
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"github.com/teal-fm/piper/service/playingnow"
 	"github.com/teal-fm/piper/service/spotify"
@@ -28,18 +30,19 @@ import (
 )
 
 type application struct {
-	database          *db.DB
-	sessionManager    *session.Manager
-	oauthManager      *oauth.ServiceManager
-	spotifyService    *spotify.Service
-	lastfmService     *lastfm.Service
-	apiKeyService     *apikeyService.Service
-	mbService         *musicbrainz.Service
-	atprotoService    *atproto.AuthService
-	playingNowService *playingnow.Service
-	appleMusicService *applemusic.Service
-	pages             *pages.Pages
-	buildTime         time.Time
+	database            *db.DB
+	sessionManager      *session.Manager
+	oauthManager        *oauth.ServiceManager
+	spotifyService      *spotify.Service
+	lastfmService       *lastfm.Service
+	listenBrainzService *listenbrainz.Service
+	apiKeyService       *apikeyService.Service
+	mbService           *musicbrainz.Service
+	atprotoService      *atproto.AuthService
+	playingNowService   *playingnow.Service
+	appleMusicService   *applemusic.Service
+	pages               *pages.Pages
+	buildTime           time.Time
 }
 
 // JSON API handlers
@@ -107,10 +110,12 @@ func main() {
 	// Check feature toggles for music services
 	enableSpotify := viper.GetBool("enable_spotify")
 	enableLastFM := viper.GetBool("enable_lastfm")
+	enableListenBrainz := viper.GetBool("enable_listenbrainz")
 	enableAppleMusic := viper.GetBool("enable_applemusic")
 
 	var spotifyService *spotify.Service
 	var lastfmService *lastfm.Service
+	var listenBrainzService *listenbrainz.Service
 	var appleMusicService *applemusic.Service
 
 	// Initialize Spotify service if enabled and credentials are present
@@ -142,6 +147,24 @@ func main() {
 		}
 	} else {
 		log.Println("Last.fm service disabled via ENABLE_LASTFM=false")
+	}
+
+	if enableListenBrainz {
+		contactURL := viper.GetString("server.root_url")
+		if contactURL == "" {
+			contactURL = "https://teal.fm"
+		}
+		listenBrainzService = listenbrainz.NewService(
+			database,
+			viper.GetString("listenbrainz.api_url"),
+			fmt.Sprintf("%s (%s)", models.SubmissionAgent, contactURL),
+			mbService,
+			atprotoService,
+			playingNowService,
+		)
+		log.Println("ListenBrainz service enabled")
+	} else {
+		log.Println("ListenBrainz service disabled via ENABLE_LISTENBRAINZ=false")
 	}
 
 	// Initialize Apple Music service if enabled and credentials are present
@@ -211,18 +234,19 @@ func main() {
 	apiKeyService := apikeyService.NewAPIKeyService(database, sessionManager)
 
 	app := &application{
-		database:          database,
-		sessionManager:    sessionManager,
-		oauthManager:      oauthManager,
-		apiKeyService:     apiKeyService,
-		mbService:         mbService,
-		spotifyService:    spotifyService,
-		lastfmService:     lastfmService,
-		atprotoService:    atprotoService,
-		playingNowService: playingNowService,
-		appleMusicService: appleMusicService,
-		pages:             pages.NewPages(),
-		buildTime:         resolveBuildTime(),
+		database:            database,
+		sessionManager:      sessionManager,
+		oauthManager:        oauthManager,
+		apiKeyService:       apiKeyService,
+		mbService:           mbService,
+		spotifyService:      spotifyService,
+		lastfmService:       lastfmService,
+		listenBrainzService: listenBrainzService,
+		atprotoService:      atprotoService,
+		playingNowService:   playingNowService,
+		appleMusicService:   appleMusicService,
+		pages:               pages.NewPages(),
+		buildTime:           resolveBuildTime(),
 	}
 
 	trackerInterval := time.Duration(viper.GetInt("tracker.interval")) * time.Second
@@ -241,6 +265,12 @@ func main() {
 		}
 		go lastfmService.StartListeningTracker(lastfmInterval)
 		log.Println("Last.fm listening tracker started")
+	}
+
+	if listenBrainzService != nil {
+		listenBrainzInterval := time.Duration(viper.GetInt("listenbrainz.interval_seconds")) * time.Second
+		go listenBrainzService.StartListeningTracker(listenBrainzInterval)
+		log.Println("ListenBrainz listening tracker started")
 	}
 
 	// Start Apple Music tracker if service is configured
