@@ -215,6 +215,33 @@ func decodeResponse(resp *http.Response, endpoint string) (SearchResponse, error
 	return result, nil
 }
 
+// RecordingMetadata looks up a known recording without fuzzy matching it to
+// another version. It shares the search client's cache and rate limit.
+func (s *Service) RecordingMetadata(ctx context.Context, id string) (*Recording, error) {
+	key := "recording:" + id
+	if records, ok := s.getCacheEntry(key); ok && len(records) > 0 {
+		return &records[0], nil
+	}
+	if err := s.limiter.Wait(ctx); err != nil {
+		return nil, err
+	}
+	endpoint := "https://musicbrainz.org/ws/2/recording/" + url.PathEscape(id) + "?fmt=json&inc=isrcs"
+	resp, err := executeRequest(ctx, s.httpClient, endpoint)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("recording lookup returned status %d", resp.StatusCode)
+	}
+	var recording Recording
+	if err := json.NewDecoder(resp.Body).Decode(&recording); err != nil {
+		return nil, err
+	}
+	s.setCacheEntry(key, []Recording{recording})
+	return &recording, nil
+}
+
 func (s *Service) SearchMusicBrainz(ctx context.Context, params SearchParams) ([]Recording, error) {
 	if params.Track == "" && params.Artist == "" && params.Release == "" && params.ISRC == "" {
 		return nil, fmt.Errorf("at least one search parameter (Track, Artist, Release, ISRC) must be provided")
@@ -445,7 +472,7 @@ func HydrateTrack(mb *Service, track models.Track) (*models.Track, error) {
 		ISRC:           cmp.Or(track.ISRC, firstISRC),
 		Timestamp:      track.Timestamp,
 		ProgressMs:     track.ProgressMs,
-		DurationMs:     int64(firstResult.Length),
+		DurationMs:     cmp.Or(track.DurationMs, int64(firstResult.Length)),
 		Artist:         artists,
 	}
 

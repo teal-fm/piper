@@ -153,7 +153,7 @@ func TestSyncListensUsesResolvedMetadataAndDeduplicates(t *testing.T) {
 	if len(newer.Artist) != 1 || newer.Artist[0].Name != "Mapped Artist" || newer.Artist[0].MBID == nil || *newer.Artist[0].MBID != "artist-2" {
 		t.Errorf("resolved artist was not stored: %+v", newer.Artist)
 	}
-	if newer.URL != "https://listenbrainz.org/user/rob/" || newer.ServiceBaseUrl != "listenbrainz.org" {
+	if newer.URL != "https://listenbrainz.org/track/recording-2/" || newer.ServiceBaseUrl != "listenbrainz.org" {
 		t.Errorf("incorrect listen provenance: url=%q service=%q", newer.URL, newer.ServiceBaseUrl)
 	}
 	older := tracks[1]
@@ -253,7 +253,7 @@ func TestSyncPlayingNowPublishesChangesAndClears(t *testing.T) {
 	if fake.published[0].HasStamped {
 		t.Error("playing-now track must not be marked as a completed listen")
 	}
-	if track := fake.published[0]; track.URL != "https://listenbrainz.org/user/listener/" || track.ServiceBaseUrl != "listenbrainz.org" {
+	if track := fake.published[0]; track.URL != "https://listenbrainz.org/track/recording/" || track.ServiceBaseUrl != "listenbrainz.org" {
 		t.Errorf("incorrect playing-now provenance: url=%q service=%q", track.URL, track.ServiceBaseUrl)
 	}
 	if fake.published[0].RecordingMBID == nil || *fake.published[0].RecordingMBID != "recording" {

@@ -192,7 +192,8 @@ func (s *Service) syncPlayingNow(ctx context.Context, user *models.User) error {
 		return nil
 	}
 
-	track := syncedTrack(&response.Payload.Listens[0], *user.ListenBrainzUsername)
+	track := syncedTrack(&response.Payload.Listens[0])
+	s.enrichTrack(ctx, &track)
 	track.HasStamped = false
 	signature := nowPlayingSignature(&track)
 
@@ -250,7 +251,7 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 			continue
 		}
 
-		track := syncedTrack(listen, *user.ListenBrainzUsername)
+		track := syncedTrack(listen)
 		exists, err := s.db.HasTrackListen(user.ID, db.SourceListenBrainz, track.Name, track.Timestamp)
 		if err != nil {
 			return err
@@ -272,6 +273,7 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 			}
 		}
 
+		s.enrichTrack(ctx, &track)
 		if _, err := s.db.SaveTrack(user.ID, db.SourceListenBrainz, &track); err != nil {
 			return fmt.Errorf("saving %s by %s: %w", track.Name, track.Artist[0].Name, err)
 		}
@@ -290,11 +292,38 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 
 // Synced metadata can identify streaming catalog entries without proving where
 // playback occurred. Attribute these listens to the account we fetched them from.
-func syncedTrack(listen *models.ListenBrainzPayload, username string) models.Track {
+func syncedTrack(listen *models.ListenBrainzPayload) models.Track {
 	track := listen.ConvertToTrack()
 	track.ServiceBaseUrl = "listenbrainz.org"
-	track.URL = "https://listenbrainz.org/user/" + url.PathEscape(username) + "/"
+	track.URL = ""
+	setTrackURL(&track)
 	return track
+}
+
+func setTrackURL(track *models.Track) {
+	if track.RecordingMBID != nil && *track.RecordingMBID != "" {
+		track.URL = "https://listenbrainz.org/track/" + url.PathEscape(*track.RecordingMBID) + "/"
+	}
+}
+
+func (s *Service) enrichTrack(ctx context.Context, track *models.Track) {
+	setTrackURL(track)
+	if s.musicBrainzService == nil || track.RecordingMBID == nil || *track.RecordingMBID == "" || (track.DurationMs > 0 && track.ISRC != "") {
+		return
+	}
+	recording, err := s.musicBrainzService.RecordingMetadata(ctx, *track.RecordingMBID)
+	if err != nil {
+		s.logger.Printf("Could not enrich recording %s: %v", *track.RecordingMBID, err)
+		return
+	}
+	if track.DurationMs <= 0 {
+		track.DurationMs = int64(recording.Length)
+	}
+	// Multiple ISRCs can identify different releases of a recording. Do not
+	// arbitrarily claim which one was played.
+	if track.ISRC == "" && len(recording.ISRCs) == 1 {
+		track.ISRC = recording.ISRCs[0]
+	}
 }
 
 func (s *Service) getJSON(ctx context.Context, path, token string, query url.Values, target any) error {
