@@ -150,6 +150,9 @@ func main() {
 	}
 
 	if enableListenBrainz {
+		if err := listenbrainz.ValidateAPIURL(viper.GetString("listenbrainz.api_url")); err != nil {
+			log.Fatal(err)
+		}
 		contactURL := viper.GetString("server.root_url")
 		if contactURL == "" {
 			contactURL = "https://teal.fm"

@@ -1,6 +1,7 @@
 package models
 
 import (
+	"math"
 	"net/url"
 	"strings"
 	"time"
@@ -109,9 +110,9 @@ func (lbp *ListenBrainzPayload) ConvertToTrack() Track {
 		}
 
 		// Set duration
-		if info.DurationMs != nil {
+		if info.DurationMs != nil && *info.DurationMs > 0 {
 			track.DurationMs = *info.DurationMs
-		} else if info.Duration != nil {
+		} else if info.Duration != nil && *info.Duration > 0 && *info.Duration <= math.MaxInt64/1000 {
 			track.DurationMs = *info.Duration * 1000
 		}
 

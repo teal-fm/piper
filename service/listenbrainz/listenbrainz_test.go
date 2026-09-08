@@ -49,12 +49,13 @@ func linkedUser(t *testing.T, database *db.DB, username, token string) *models.U
 
 func testService(database *db.DB, server *httptest.Server, playingNow playingNowPublisher) *Service {
 	service := NewService(database, server.URL, "piper/test (test@example.com)", nil, nil, playingNow)
+	service.httpClient.Transport = server.Client().Transport
 	service.limiter = rate.NewLimiter(rate.Inf, 1)
 	return service
 }
 
 func TestValidateToken(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/1/validate-token" {
 			t.Errorf("path = %q", r.URL.Path)
 		}
@@ -84,7 +85,7 @@ func TestSyncListensUsesResolvedMetadataAndDeduplicates(t *testing.T) {
 	user := linkedUser(t, database, "rob", "secret")
 	var calls int
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		if r.URL.EscapedPath() != "/1/user/rob/listens" {
 			t.Errorf("path = %q", r.URL.EscapedPath())
@@ -176,7 +177,7 @@ func TestSyncListensIncludesLatestSecond(t *testing.T) {
 	}
 	user.ListenBrainzSyncedAt = &timestamp
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Query().Get("min_ts"); got != "99" {
 			t.Errorf("min_ts = %q, want 99", got)
 		}
@@ -229,7 +230,7 @@ func TestSyncPlayingNowPublishesChangesAndClears(t *testing.T) {
 	database := testDatabase(t)
 	user := linkedUser(t, database, "listener", "secret")
 	var requestCount int
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		requestCount++
 		w.Header().Set("Content-Type", "application/json")
 		if requestCount <= 2 {
@@ -265,7 +266,7 @@ func TestSyncPlayingNowPublishesChangesAndClears(t *testing.T) {
 }
 
 func TestGetJSONReportsAPIErrors(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "bad token", http.StatusUnauthorized)
 	}))
 	defer server.Close()

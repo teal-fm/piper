@@ -2,12 +2,24 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/teal-fm/piper/models"
 )
+
+// HasListenBrainzTrack distinguishes recordings sharing a title and timestamp.
+func (db *DB) HasListenBrainzTrack(userID int64, track *models.Track) (bool, error) {
+	artists, err := json.Marshal(track.Artist)
+	if err != nil {
+		return false, err
+	}
+	var exists bool
+	err = db.QueryRow(`SELECT EXISTS(SELECT 1 FROM tracks WHERE user_id = ? AND source = ? AND name = ? AND timestamp = ? AND artist = ? AND album = ? AND recording_mbid IS ? AND release_mbid IS ?)`, userID, SourceListenBrainz, track.Name, track.Timestamp, string(artists), track.Album, track.RecordingMBID, track.ReleaseMBID).Scan(&exists)
+	return exists, err
+}
 
 func (db *DB) LinkListenBrainz(userID int64, username, token string) error {
 	if username == "" || token == "" {

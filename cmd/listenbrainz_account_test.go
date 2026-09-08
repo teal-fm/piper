@@ -18,7 +18,7 @@ func TestListenBrainzAccountAPI(t *testing.T) {
 	defer database.Close()
 	userID, _ := createTestUser(t, database)
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Token lb-secret" {
 			t.Errorf("Authorization = %q", got)
 		}
@@ -27,6 +27,9 @@ func TestListenBrainzAccountAPI(t *testing.T) {
 		})
 	}))
 	defer server.Close()
+	oldTransport := http.DefaultTransport
+	http.DefaultTransport = server.Client().Transport
+	t.Cleanup(func() { http.DefaultTransport = oldTransport })
 	service := listenbrainz.NewService(database, server.URL, "piper/test (test@example.com)", nil, nil, nil)
 
 	setRequest := httptest.NewRequest(http.MethodPost, "/api/v1/listenbrainz/set", bytes.NewBufferString(`{"token":"lb-secret"}`))
@@ -72,10 +75,13 @@ func TestListenBrainzAccountAPIRejectsInvalidToken(t *testing.T) {
 	defer database.Close()
 	userID, _ := createTestUser(t, database)
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{"code": 200, "valid": false})
 	}))
 	defer server.Close()
+	oldTransport := http.DefaultTransport
+	http.DefaultTransport = server.Client().Transport
+	t.Cleanup(func() { http.DefaultTransport = oldTransport })
 	service := listenbrainz.NewService(database, server.URL, "piper/test (test@example.com)", nil, nil, nil)
 
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/listenbrainz/set", bytes.NewBufferString(`{"token":"bad"}`))

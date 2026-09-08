@@ -79,6 +79,9 @@ func NewService(database *db.DB, apiURL, userAgent string, musicBrainzService *m
 		db: database,
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
 		},
 		// ListenBrainz asks unauthenticated and authenticated clients to stay at
 		// or below one API request per second.
@@ -235,6 +238,36 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 	}
 
 	listens := response.Payload.Listens
+	// Initial linking intentionally imports only the latest 25 listens. For
+	// subsequent polls, collect every page before advancing the watermark.
+	if lastKnown != nil {
+		page := response.Payload.Listens
+		var previousOldest int64
+		for len(page) >= updateSyncLimit {
+			oldest := int64(0)
+			for _, listen := range page {
+				if listen.ListenedAt != nil && (oldest == 0 || *listen.ListenedAt < oldest) {
+					oldest = *listen.ListenedAt
+				}
+			}
+			if oldest == 0 || (previousOldest != 0 && oldest >= previousOldest) {
+				return errors.New("ListenBrainz pagination made no progress; keeping sync watermark")
+			}
+			if oldest < lastKnown.Unix() {
+				break
+			}
+			previousOldest = oldest
+			// Include the boundary second again to avoid dropping tied listens.
+			query.Del("min_ts")
+			query.Set("max_ts", strconv.FormatInt(oldest+1, 10))
+			var next listensResponse
+			if err := s.getJSON(ctx, path, *user.ListenBrainzToken, query, &next); err != nil {
+				return err
+			}
+			page = next.Payload.Listens
+			listens = append(listens, page...)
+		}
+	}
 	sort.SliceStable(listens, func(i, j int) bool {
 		if listens[i].ListenedAt == nil {
 			return false
@@ -245,6 +278,7 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 		return *listens[i].ListenedAt < *listens[j].ListenedAt
 	})
 
+	var newest time.Time
 	for i := range listens {
 		listen := &listens[i]
 		if listen.ListenedAt == nil || listen.TrackMetadata.TrackName == "" || listen.TrackMetadata.ArtistName == "" {
@@ -252,16 +286,11 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 		}
 
 		track := syncedTrack(listen)
-		exists, err := s.db.HasTrackListen(user.ID, db.SourceListenBrainz, track.Name, track.Timestamp)
-		if err != nil {
-			return err
-		}
-		if exists {
-			if err := s.db.SaveListenBrainzSyncTimestamp(user.ID, track.Timestamp); err != nil {
-				return err
-			}
-			advanceUserCursor(user, track.Timestamp)
+		if lastKnown != nil && track.Timestamp.Before(*lastKnown) {
 			continue
+		}
+		if track.Timestamp.After(newest) {
+			newest = track.Timestamp
 		}
 
 		if track.RecordingMBID == nil && s.musicBrainzService != nil {
@@ -274,6 +303,13 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 		}
 
 		s.enrichTrack(ctx, &track)
+		exists, err := s.db.HasListenBrainzTrack(user.ID, &track)
+		if err != nil {
+			return err
+		}
+		if exists {
+			continue
+		}
 		if _, err := s.db.SaveTrack(user.ID, db.SourceListenBrainz, &track); err != nil {
 			return fmt.Errorf("saving %s by %s: %w", track.Name, track.Artist[0].Name, err)
 		}
@@ -282,10 +318,12 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 				s.logger.Printf("Could not submit %s by %s for user %d: %v", track.Name, track.Artist[0].Name, user.ID, err)
 			}
 		}
-		if err := s.db.SaveListenBrainzSyncTimestamp(user.ID, track.Timestamp); err != nil {
+	}
+	if !newest.IsZero() {
+		if err := s.db.SaveListenBrainzSyncTimestamp(user.ID, newest); err != nil {
 			return err
 		}
-		advanceUserCursor(user, track.Timestamp)
+		advanceUserCursor(user, newest)
 	}
 	return nil
 }
@@ -327,6 +365,9 @@ func (s *Service) enrichTrack(ctx context.Context, track *models.Track) {
 }
 
 func (s *Service) getJSON(ctx context.Context, path, token string, query url.Values, target any) error {
+	if err := ValidateAPIURL(s.apiURL); err != nil {
+		return err
+	}
 	if err := s.limiter.Wait(ctx); err != nil {
 		return err
 	}
@@ -355,6 +396,18 @@ func (s *Service) getJSON(ctx context.Context, path, token string, query url.Val
 	}
 	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
 		return fmt.Errorf("decoding ListenBrainz response: %w", err)
+	}
+	return nil
+}
+
+// ValidateAPIURL prevents credentials being sent over plaintext connections.
+func ValidateAPIURL(raw string) error {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return errors.New("ListenBrainz API URL must be an HTTPS URL without credentials, query, or fragment")
 	}
 	return nil
 }
