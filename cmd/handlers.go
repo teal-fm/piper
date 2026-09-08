@@ -671,7 +671,7 @@ func apiSubmitListensHandler(database *db.DB, atprotoService *atprotoauth.AuthSe
 		// lookups are rate limited to 1/s, so doing them before responding
 		// can outlast the proxy timeout and trap clients in a retry loop
 		if len(savedListens) > 0 {
-			go hydrateAndSubmitListens(database, atprotoService, mbService, user, userID, savedListens)
+			go hydrateAndSubmitListens(database, atprotoService, mbService, userID, savedListens)
 		}
 
 		// Prepare response
@@ -704,7 +704,7 @@ type savedListen struct {
 // hydrateAndSubmitListens hydrates saved listens with MusicBrainz data and
 // submits them to the PDS. It runs detached from the request that saved them,
 // on its own context, since both steps can far outlast the client connection.
-func hydrateAndSubmitListens(database *db.DB, atprotoService *atprotoauth.AuthService, mbService *musicbrainz.Service, user *models.User, userID int64, listens []savedListen) {
+func hydrateAndSubmitListens(database *db.DB, atprotoService *atprotoauth.AuthService, mbService *musicbrainz.Service, userID int64, listens []savedListen) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
@@ -723,10 +723,8 @@ func hydrateAndSubmitListens(database *db.DB, atprotoService *atprotoauth.AuthSe
 			}
 		}
 
-		if user.ATProtoDID != nil && atprotoService != nil {
-			if err := atprotoservice.SubmitPlayToPDS(ctx, *user.ATProtoDID, *user.MostRecentAtProtoSessionID, &track, atprotoService); err != nil {
-				log.Printf("apiSubmitListensHandler: Error submitting play to PDS for user %d: %v", userID, err)
-			}
+		if err := atprotoservice.PublishStoredPlay(ctx, database, userID, saved.trackID, atprotoService); err != nil {
+			log.Printf("apiSubmitListensHandler: Error submitting play to PDS for user %d: %v", userID, err)
 		}
 	}
 }
