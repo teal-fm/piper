@@ -23,6 +23,11 @@ func (db *DB) initializeSubmissions() error {
  record_json TEXT,
  published_at TIMESTAMP
  )`)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_play_submissions_unpublished
+ ON play_submissions(track_id) WHERE status != 'published'`)
 	return err
 }
 

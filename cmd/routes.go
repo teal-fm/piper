@@ -11,7 +11,7 @@ import (
 func (app *application) routes() http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/failed-plays", session.WithAuth(failedPlays(app.database, app.pages, app.atprotoService), app.sessionManager))
+	mux.HandleFunc("/failed-plays", session.WithAuth(failedPlays(app.database, app.pages, app.atprotoService, viper.GetString("server.root_url")), app.sessionManager))
 
 	//Handles static file routes
 	mux.Handle("/static/{file_name}", app.pages.Static())

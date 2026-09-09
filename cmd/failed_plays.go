@@ -32,7 +32,9 @@ type failedPlaysParams struct {
 	HasNext     bool
 }
 
-func failedPlays(database *db.DB, pg *pages.Pages, auth *atprotoauth.AuthService) http.HandlerFunc {
+func failedPlays(database *db.DB, pg *pages.Pages, auth *atprotoauth.AuthService, publicRootURL string) http.HandlerFunc {
+	publicURL, err := url.Parse(publicRootURL)
+	publicHTTPS := err == nil && publicURL.Scheme == "https"
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID, ok := session.GetUserID(r.Context())
 		if !ok {
@@ -135,8 +137,9 @@ func failedPlays(database *db.DB, pg *pages.Pages, auth *atprotoauth.AuthService
 				return
 			}
 			token = hex.EncodeToString(b[:])
-			http.SetCookie(w, &http.Cookie{Name: "piper_retry_csrf", Value: token, Path: "/failed-plays", HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil})
 		}
+		// Reissue existing tokens too, upgrading cookies issued before HTTPS was configured.
+		http.SetCookie(w, &http.Cookie{Name: "piper_retry_csrf", Value: token, Path: "/failed-plays", HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: publicHTTPS || r.TLS != nil})
 		params := failedPlaysParams{NavBar: pages.NewNavBar(user, true).WithBreadcrumb("Failed plays"), Plays: plays, CSRF: token, Notice: r.URL.Query().Get("notice"), HasPrevious: offset > 0, Previous: max(0, offset-20), HasNext: len(plays) > 20, Next: offset + 20}
 		if len(params.Plays) > 20 {
 			params.Plays = params.Plays[:20]

@@ -44,9 +44,9 @@ func TestFailedPlaysPageAndRetryAuthorization(t *testing.T) {
 	}
 	own := save(uid, "<script>alert(1)</script>")
 	foreign := save(other, "Another user's private play")
-	handler := failedPlays(database, pages.NewPages(), nil)
+	handler := failedPlays(database, pages.NewPages(), nil, "http://localhost")
 	ctx := session.WithUserID(context.Background(), uid)
-	get := httptest.NewRequest(http.MethodGet, "/failed-plays", nil).WithContext(ctx)
+	get := httptest.NewRequestWithContext(ctx, http.MethodGet, "/failed-plays", nil)
 	response := httptest.NewRecorder()
 	handler(response, get)
 	if response.Code != http.StatusOK {
@@ -79,7 +79,7 @@ func TestFailedPlaysPageAndRetryAuthorization(t *testing.T) {
 			for _, id := range tc.ids {
 				form.Add("play_id", strconv.FormatInt(id, 10))
 			}
-			request := httptest.NewRequest(http.MethodPost, "/failed-plays", strings.NewReader(form.Encode())).WithContext(ctx)
+			request := httptest.NewRequestWithContext(ctx, http.MethodPost, "/failed-plays", strings.NewReader(form.Encode()))
 			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			request.Header.Set("Origin", tc.origin)
 			request.AddCookie(csrf)
@@ -95,8 +95,53 @@ func TestFailedPlaysPageAndRetryAuthorization(t *testing.T) {
 		t.Fatalf("retry failure not visible: %+v %v", plays, err)
 	}
 	result := httptest.NewRecorder()
-	handler(result, httptest.NewRequest(http.MethodGet, "/failed-plays", nil))
+	handler(result, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/failed-plays", nil))
 	if result.Code != http.StatusUnauthorized {
 		t.Fatal("anonymous access allowed")
+	}
+}
+
+func TestRetryCookieSecureBehindHTTPSProxy(t *testing.T) {
+	database, err := db.New(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if err := database.Initialize(); err != nil {
+		t.Fatal(err)
+	}
+	uid, err := database.CreateUser(&models.User{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, publicURL, requestURL string
+		secure                      bool
+	}{
+		{"HTTPS proxy", "https://piper.example", "http://localhost/failed-plays", true},
+		{"direct TLS", "http://localhost", "https://piper.example/failed-plays", true},
+		{"local HTTP", "http://localhost", "http://localhost/failed-plays", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := failedPlays(database, pages.NewPages(), nil, tc.publicURL)
+			request := httptest.NewRequestWithContext(session.WithUserID(t.Context(), uid), http.MethodGet, tc.requestURL, nil)
+			// Forwarded headers are not trusted to determine the transport policy.
+			request.Header.Set("X-Forwarded-Proto", "https")
+			token := strings.Repeat("a", 64)
+			request.AddCookie(&http.Cookie{Name: "piper_retry_csrf", Value: token})
+			response := httptest.NewRecorder()
+			handler(response, request)
+			if response.Code != http.StatusOK {
+				t.Fatalf("GET: %d", response.Code)
+			}
+			cookies := response.Result().Cookies()
+			if len(cookies) != 1 {
+				t.Fatal("expected existing cookie to be reissued")
+			}
+			cookie := cookies[0]
+			if cookie.Secure != tc.secure || cookie.Value != token || !cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode {
+				t.Fatalf("unexpected cookie: %+v", cookie)
+			}
+		})
 	}
 }
