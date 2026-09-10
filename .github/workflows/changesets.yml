@@ -24,7 +24,7 @@ jobs:
       - run: npm run check:version
       - run: npm run test:release
       - name: Validate pending changesets
-        run: npm run changeset -- status
+        run: npm run changeset -- status --since=origin/main
       - name: Require a changeset or a release version bump
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
