@@ -1,0 +1,12 @@
+.git
+.github
+node_modules
+.env
+.env.*
+*.db
+*.db-*
+*.p8
+*.pem
+jwk*.json
+tmp
+result

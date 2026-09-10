@@ -1,40 +1,22 @@
-FROM --platform=${BUILDPLATFORM:-linux/amd64} node:24-alpine3.21 as node_builder
+FROM --platform=$BUILDPLATFORM node:24-alpine AS node_builder
 WORKDIR /app
-RUN npm install tailwindcss @tailwindcss/cli
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+COPY ./pages ./pages
+RUN npm run build:css
 
-COPY ./pages/templates /app/templates
-COPY ./pages/static /app/static
-
-RUN npx @tailwindcss/cli -i /app/static/base.css -o /app/static/main.css -m
-
-FROM --platform=${BUILDPLATFORM:-linux/amd64} golang:1.24.3-alpine3.21 as builder
-
-ARG TARGETPLATFORM
-ARG BUILDPLATFORM
-ARG TARGETOS
-ARG TARGETARCH
-
-#needed for sqlite
-RUN apk add --update gcc musl-dev
-
-# step 1. dep cache
+# Build on the target architecture so SQLite's CGO code uses the correct compiler.
+FROM golang:1.24.3-alpine3.21 AS builder
+RUN apk add --no-cache gcc musl-dev
 WORKDIR /app
-ARG TARGETPLATFORM=${BUILDPLATFORM:-linux/amd64}
 COPY go.mod go.sum ./
 RUN go mod download
-
-# step 2. build the actual app
-WORKDIR /app
 COPY . .
-#Overwrite the main.css with the one from the builder
-COPY --from=node_builder /app/static/main.css /app/pages/static/main.css
- #generate the jwks
-RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags='-w -s -extldflags "-static"' -o main ./cmd
-ARG TARGETOS=${TARGETPLATFORM%%/*}
-ARG TARGETARCH=${TARGETPLATFORM##*/}
+COPY --from=node_builder /app/pages/static/main.css ./pages/static/main.css
+RUN CGO_ENABLED=1 go build -ldflags='-w -s -extldflags "-static"' -o main ./cmd
 
-FROM --platform=${TARGETPLATFORM:-linux/amd64} alpine:3.21
-#Creates an empty /db folder for docker compose
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /db
 WORKDIR /app
 COPY --from=builder /app/main /app/main

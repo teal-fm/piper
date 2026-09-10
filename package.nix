@@ -1,12 +1,7 @@
-{ lib, buildGoModule, tailwindcss_4, fetchFromGitHub, source ? fetchFromGitHub {
-  owner = "teal-fm";
-  repo = "piper";
-  rev = "ccb72442021bd9f6ed20acc63f9703cf475b0f51";
-  hash = "sha256-wXA2RnvQ0J0QwUeDIg2gLRI2DNjgu07+QYjw5pRmyyI=";
-} }:
+{ lib, buildGoModule, tailwindcss_4, source ? ./. }:
 buildGoModule {
   pname = "tealfm-piper";
-  version = "0.0.3";
+  version = (builtins.fromJSON (builtins.readFile (source + "/package.json"))).version;
 
   src = source;
 

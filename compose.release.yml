@@ -1,0 +1,17 @@
+services:
+  piper:
+    image: ${PIPER_IMAGE:?Set PIPER_IMAGE to ghcr.io/teal-fm/piper with an exact version tag}
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    volumes:
+      - piper_data:/db
+    networks:
+      - app_network
+volumes:
+  piper_data:
+networks:
+  app_network:
+    driver: bridge
