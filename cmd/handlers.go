@@ -723,7 +723,7 @@ func hydrateAndSubmitListens(database *db.DB, atprotoService *atprotoauth.AuthSe
 			}
 		}
 
-		if user.ATProtoDID != nil && atprotoService != nil {
+		if user.ATProtoDID != nil && user.MostRecentAtProtoSessionID != nil && *user.MostRecentAtProtoSessionID != "" && atprotoService != nil {
 			if err := atprotoservice.SubmitPlayToPDS(ctx, *user.ATProtoDID, *user.MostRecentAtProtoSessionID, &track, atprotoService); err != nil {
 				log.Printf("apiSubmitListensHandler: Error submitting play to PDS for user %d: %v", userID, err)
 			}

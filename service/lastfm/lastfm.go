@@ -486,10 +486,12 @@ func (l *Service) processTracks(ctx context.Context, username string, tracks []T
 		if err != nil {
 			return err
 		}
-		l.logger.Printf("Submitting track")
-		err = l.SubmitTrackToPDS(*user.ATProtoDID, *user.MostRecentAtProtoSessionID, hydratedTrack, ctx)
-		if err != nil {
-			l.logger.Printf("error submitting track for user %s: %s - %s: %v", username, track.Artist.Text, track.Name, err)
+		if user.ATProtoDID != nil && user.MostRecentAtProtoSessionID != nil && *user.MostRecentAtProtoSessionID != "" {
+			l.logger.Printf("Submitting track")
+			err = l.SubmitTrackToPDS(*user.ATProtoDID, *user.MostRecentAtProtoSessionID, hydratedTrack, ctx)
+			if err != nil {
+				l.logger.Printf("error submitting track for user %s: %s - %s: %v", username, track.Artist.Text, track.Name, err)
+			}
 		}
 		processedCount++
 

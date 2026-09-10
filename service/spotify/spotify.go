@@ -844,6 +844,9 @@ func (s *Service) stampTrack(ctx context.Context, userID int64, track *models.Tr
 		// No DID configured, skip PDS submission silently
 		return
 	}
+	if dbUser.MostRecentAtProtoSessionID == nil || *dbUser.MostRecentAtProtoSessionID == "" {
+		return
+	}
 
 	// Perform submission to PDS
 	s.logger.Printf("User %d: Submitting track '%s' to PDS (DID: %s)", userID, trackToSubmit.Name, *dbUser.ATProtoDID)
