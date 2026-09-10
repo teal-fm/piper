@@ -2,49 +2,149 @@ package atproto
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
+	"reflect"
+	"regexp"
+	"strings"
 	"time"
 
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
+	"github.com/bluesky-social/indigo/atproto/client"
 	lexutil "github.com/bluesky-social/indigo/lex/util"
 	"github.com/spf13/viper"
 	"github.com/teal-fm/piper/api/teal"
+	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
 	atprotoauth "github.com/teal-fm/piper/oauth/atproto"
 )
 
-// SubmitPlayToPDS submits a track play to the ATProto PDS as a feed.play record
-func SubmitPlayToPDS(ctx context.Context, did string, mostRecentAtProtoSessionID string, track *models.Track, atprotoService *atprotoauth.AuthService) error {
-	if did == "" {
-		return fmt.Errorf("DID cannot be empty")
-	}
+// PublishStoredPlay submits a saved, eligible play using the user's current session.
+// The durable claim is shared by ingestion and manual retries.
+func PublishStoredPlay(ctx context.Context, database *db.DB, userID, trackID int64, auth *atprotoauth.AuthService) error {
+	return publishStoredPlay(ctx, database, userID, trackID, func(ctx context.Context, user *models.User, key string, record *teal.FeedPlay) error {
+		if auth == nil || user.ATProtoDID == nil || user.MostRecentAtProtoSessionID == nil || *user.MostRecentAtProtoSessionID == "" {
+			return errors.New("Sign in to Piper again to reconnect publishing.")
+		}
+		client, err := auth.GetATProtoClient(*user.ATProtoDID, *user.MostRecentAtProtoSessionID, ctx)
+		if err != nil {
+			return fmt.Errorf("opening OAuth session: %s", submissionError(err))
+		}
+		if client == nil {
+			return errors.New("OAuth session returned no client. Sign in to Piper again.")
+		}
+		return createPlayRecord(ctx, client, *user.ATProtoDID, key, record)
+	})
+}
 
-	// Get ATProto client
-	client, err := atprotoService.GetATProtoClient(did, mostRecentAtProtoSessionID, ctx)
-	if err != nil || client == nil {
-		return fmt.Errorf("failed to get ATProto client: %w", err)
-	}
+type playPublisher func(context.Context, *models.User, string, *teal.FeedPlay) error
 
-	// Convert track to feed.play record
-	playRecord, err := TrackToPlayRecord(track)
+func publishStoredPlay(ctx context.Context, database *db.DB, userID, trackID int64, publish playPublisher) error {
+	p, err := database.ClaimSubmission(userID, trackID)
 	if err != nil {
-		return fmt.Errorf("failed to convert track to play record: %w", err)
+		return err
 	}
-
-	// Create the record
-	input := comatproto.RepoCreateRecord_Input{
-		Collection: "fm.teal.feed.play",
-		Repo:       client.AccountDID.String(),
-		Record:     &lexutil.LexiconTypeDecoder{Val: playRecord},
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	err = func() error {
+		user, err := database.GetUserByID(userID)
+		if err != nil {
+			return errors.New("Could not load the publishing account.")
+		}
+		if user == nil {
+			return errors.New("Publishing account was not found.")
+		}
+		var record *teal.FeedPlay
+		if p.RecordJSON.Valid {
+			if err := json.Unmarshal([]byte(p.RecordJSON.String), &record); err != nil {
+				return errors.New("Could not read saved play record.")
+			}
+		} else {
+			track, err := database.GetTrackForUser(userID, trackID)
+			if err != nil {
+				return errors.New("Could not load saved play.")
+			}
+			record, err = TrackToPlayRecord(track)
+			if err != nil {
+				return err
+			}
+			encoded, err := json.Marshal(record)
+			if err != nil {
+				return errors.New("Could not encode saved play.")
+			}
+			if err := database.SaveSubmissionRecord(p, string(encoded)); err != nil {
+				return errors.New("Could not save publishing record.")
+			}
+		}
+		return publish(ctx, user, p.RKey, record)
+	}()
+	message := ""
+	if err != nil {
+		message = err.Error()
 	}
+	if saveErr := database.FinishSubmission(p, message); saveErr != nil {
+		log.Printf("play_submission user_id=%d play_id=%d attempt=%d outcome=persistence_failed error=%q", userID, trackID, p.Attempts, saveErr)
+		return fmt.Errorf("saving publishing outcome: %w", saveErr)
+	}
+	outcome := "published"
+	if err != nil {
+		outcome = "failed"
+	}
+	log.Printf("play_submission user_id=%d play_id=%d rkey=%s attempt=%d outcome=%s error=%q", userID, trackID, p.RKey, p.Attempts, outcome, message)
+	return err
+}
 
+// createRecord retains create-only OAuth permissions. If the write succeeded
+// but its response was lost, verify the existing record at the same key.
+func createPlayRecord(ctx context.Context, client lexutil.LexClient, did, key string, record *teal.FeedPlay) error {
+	input := comatproto.RepoCreateRecord_Input{Collection: "fm.teal.feed.play", Repo: did, Rkey: &key, Record: &lexutil.LexiconTypeDecoder{Val: record}}
 	if _, err := comatproto.RepoCreateRecord(ctx, client, &input); err != nil {
-		return fmt.Errorf("failed to create play record for DID %s: %w", did, err)
+		existing, readErr := comatproto.RepoGetRecord(ctx, client, "", "fm.teal.feed.play", did, key)
+		if readErr == nil && existing != nil && existing.Value != nil {
+			// Compare decoded JSON so field order does not affect equality.
+			a, _ := json.Marshal(existing.Value)
+			b, _ := json.Marshal(record)
+			var av, bv any
+			if json.Unmarshal(a, &av) == nil && json.Unmarshal(b, &bv) == nil && reflect.DeepEqual(av, bv) {
+				return nil
+			}
+		}
+		return fmt.Errorf("publishing play: %s", submissionError(err))
 	}
-
-	log.Printf("Successfully submitted play to PDS for DID %s: %s - %s", did, track.Artist[0].Name, track.Name)
 	return nil
+}
+
+var httpStatusPattern = regexp.MustCompile(`HTTP[ )]*(\d{3})`)
+var errorNamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`)
+
+// Never persist arbitrary response bodies, URLs, or token-bearing OAuth errors.
+// Keep the actionable code, HTTP status, and operation instead.
+func submissionError(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "Request timed out. Retry this play."
+	}
+	if errors.Is(err, context.Canceled) {
+		return "Request was interrupted. Retry this play."
+	}
+	detail := "Request failed. Retry this play."
+	var apiErr *client.APIError
+	if errors.As(err, &apiErr) {
+		detail = fmt.Sprintf("HTTP %d", apiErr.StatusCode)
+		if errorNamePattern.MatchString(apiErr.Name) {
+			detail += ": " + apiErr.Name
+		}
+	} else if match := httpStatusPattern.FindStringSubmatch(err.Error()); len(match) > 1 {
+		detail = "HTTP " + match[1]
+	}
+	if strings.Contains(err.Error(), "invalid_grant") {
+		detail += ": invalid_grant. Sign in to Piper again, then retry."
+	}
+	if strings.Contains(err.Error(), "failed to refresh OAuth tokens") || strings.Contains(err.Error(), "token refresh failed") {
+		detail = "Failed to refresh OAuth tokens. " + detail
+	}
+	return detail
 }
 
 // TrackToPlayRecord converts a models.Track to teal.FeedPlay

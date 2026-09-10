@@ -1,0 +1,55 @@
+{{ define "title" }}Failed plays · piper{{ end }}
+{{ define "content" }}
+{{ template "components/navBar" .NavBar }}
+<h1 class="text-2xl font-medium tracking-tight mb-1">Failed plays</h1>
+<p class="text-neutral-600 dark:text-neutral-300 mb-5">Plays saved by Piper that have not been confirmed published. Retry them here after fixing the connection.</p>
+{{ if .Notice }}<p role="status" class="rounded-lg border border-neutral-400/30 p-3 mb-5">{{ .Notice }}</p>{{ end }}
+{{ if .Plays }}
+<p class="text-sm text-neutral-600 dark:text-neutral-300 mb-3">If an error says <code>invalid_grant</code>, log out and sign in again, then return here. Retries keep the original play time.</p>
+<form id="retry-page" method="POST" action="/failed-plays" class="mb-5">
+  <input type="hidden" name="csrf" value="{{ .CSRF }}">
+  {{ range .Plays }}<input type="hidden" name="play_id" value="{{ .TrackID }}">{{ end }}
+  <button type="submit" class="px-4 py-2 rounded-lg bg-accent text-neutral-950 font-medium cursor-pointer hover:opacity-90">Retry this page</button>
+  <p class="text-sm text-neutral-500 dark:text-neutral-400 mt-2">Up to 20 plays. Stops on the first failure. Plays being submitted are skipped.</p>
+</form>
+<ol class="space-y-5">
+{{ range .Plays }}
+<li class="border-t border-neutral-400/30 pt-4">
+  <div class="flex flex-wrap items-start justify-between gap-3">
+    <div class="min-w-0">
+      <h2 class="font-medium break-words">{{ .Name }}</h2>
+      <p class="text-sm">{{ range $i, $artist := .Artists }}{{ if $i }}, {{ end }}{{ $artist.Name }}{{ end }}</p>
+      <p class="text-sm text-neutral-500 dark:text-neutral-400">{{ .Source }} · {{ formatTime .PlayedAt.UTC }} UTC · Play #{{ .TrackID }}</p>
+    </div>
+    <form method="POST" action="/failed-plays">
+      <input type="hidden" name="csrf" value="{{ $.CSRF }}">
+      <input type="hidden" name="play_id" value="{{ .TrackID }}">
+      <button type="submit" class="px-3 py-2 rounded-lg border border-neutral-400/30 font-medium cursor-pointer hover:opacity-90" aria-label="Retry {{ .Name }}">Retry</button>
+    </form>
+  </div>
+  <p class="text-sm mt-2">{{ .Status }} · {{ .Attempts }} attempt{{ if ne .Attempts 1 }}s{{ end }}{{ if .LastAttemptAt.Valid }} · Last attempt {{ formatTime .LastAttemptAt.Time.UTC }} UTC{{ end }}</p>
+  {{ if .LastError }}<p class="text-sm mt-2 break-words">{{ .LastError }}</p>
+  {{ else }}<p class="text-sm mt-2 text-neutral-500 dark:text-neutral-400">{{ if eq .Status "submitting" }}Submission is in progress. If it was interrupted, retry after two minutes.{{ else }}Saved and waiting for submission.{{ end }}</p>{{ end }}
+</li>
+{{ end }}
+</ol>
+<nav aria-label="Failed plays pages" class="flex justify-between mt-6">
+{{ if .HasPrevious }}<a href="/failed-plays?offset={{ .Previous }}" class="text-accent underline">Previous</a>{{ end }}
+{{ if .HasNext }}<a href="/failed-plays?offset={{ .Next }}" class="text-accent underline">Next</a>{{ end }}
+</nav>
+{{ else }}
+<div class="border border-neutral-400/30 rounded-xl p-5 mb-5">
+<h2 class="font-medium mb-1">No failed or pending plays</h2>
+<p class="text-neutral-600 dark:text-neutral-300">New publishing failures will appear here with an error and a retry option.</p>
+</div>
+{{ end }}
+<p class="text-sm text-neutral-500 dark:text-neutral-400 mt-6">Older plays saved before submission tracking was added have an unknown publishing status and are not listed here. Recovering them requires checking which records are missing from your PDS.</p>
+<script>
+  document.querySelectorAll('form[action="/failed-plays"]').forEach(form => {
+    form.addEventListener('submit', () => {
+      document.querySelectorAll('button[type="submit"]').forEach(button => { button.disabled = true; });
+      form.querySelector('button').textContent = 'Retrying…';
+    });
+  });
+</script>
+{{ end }}

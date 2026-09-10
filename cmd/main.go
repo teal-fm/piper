@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -8,18 +9,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/teal-fm/piper/service/applemusic"
-	"github.com/teal-fm/piper/service/lastfm"
-	"github.com/teal-fm/piper/service/playingnow"
-
 	"github.com/spf13/viper"
+	"golang.org/x/oauth2"
+	spotifyOauth "golang.org/x/oauth2/spotify"
+
 	"github.com/teal-fm/piper/config"
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/oauth"
 	"github.com/teal-fm/piper/oauth/atproto"
 	"github.com/teal-fm/piper/pages"
 	apikeyService "github.com/teal-fm/piper/service/apikey"
+	"github.com/teal-fm/piper/service/applemusic"
+	"github.com/teal-fm/piper/service/lastfm"
 	"github.com/teal-fm/piper/service/musicbrainz"
+	"github.com/teal-fm/piper/service/playingnow"
 	"github.com/teal-fm/piper/service/spotify"
 	"github.com/teal-fm/piper/session"
 )
@@ -29,12 +32,14 @@ type application struct {
 	sessionManager    *session.Manager
 	oauthManager      *oauth.ServiceManager
 	spotifyService    *spotify.Service
+	lastfmService     *lastfm.Service
 	apiKeyService     *apikeyService.Service
 	mbService         *musicbrainz.Service
 	atprotoService    *atproto.AuthService
 	playingNowService *playingnow.Service
 	appleMusicService *applemusic.Service
 	pages             *pages.Pages
+	buildTime         time.Time
 }
 
 // JSON API handlers
@@ -118,6 +123,7 @@ func main() {
 			log.Println("Spotify service enabled and configured")
 		} else {
 			log.Println("Spotify enabled but credentials missing (client_id or client_secret). Spotify features will be disabled.")
+			viper.Set("enable_spotify", false)
 		}
 	} else {
 		log.Println("Spotify service disabled via ENABLE_SPOTIFY=false")
@@ -132,6 +138,7 @@ func main() {
 			log.Println("Last.fm service enabled and configured")
 		} else {
 			log.Println("Last.fm enabled but API key missing. Last.fm features will be disabled.")
+			viper.Set("enable_lastfm", false)
 		}
 	} else {
 		log.Println("Last.fm service disabled via ENABLE_LASTFM=false")
@@ -170,6 +177,7 @@ func main() {
 			log.Println("Apple Music service enabled and configured")
 		} else {
 			log.Println("Apple Music enabled but credentials missing (team_id, key_id, or private_key_path). Apple Music features will be disabled.")
+			viper.Set("enable_applemusic", false)
 		}
 	} else {
 		log.Println("Apple Music service disabled via ENABLE_APPLEMUSIC=false")
@@ -180,12 +188,19 @@ func main() {
 	// Register Spotify OAuth service only if Spotify is enabled and configured
 	if spotifyService != nil {
 		spotifyOAuth := oauth.NewOAuth2Service(
-			viper.GetString("spotify.client_id"),
-			viper.GetString("spotify.client_secret"),
-			viper.GetString("callback.spotify"),
-			viper.GetStringSlice("spotify.scopes"),
-			"spotify",
+			oauth2.Config{
+				ClientID:     viper.GetString("spotify.client_id"),
+				ClientSecret: viper.GetString("spotify.client_secret"),
+				RedirectURL:  viper.GetString("callback.spotify"),
+				Scopes:       viper.GetStringSlice("spotify.scopes"),
+				Endpoint:     spotifyOauth.Endpoint,
+			},
 			spotifyService,
+			log.Default(),
+			func(ctx context.Context) int64 {
+				id, _ := session.GetUserID(ctx)
+				return id
+			},
 		)
 		oauthManager.RegisterService("spotify", spotifyOAuth)
 		log.Println("Spotify OAuth service registered")
@@ -202,10 +217,12 @@ func main() {
 		apiKeyService:     apiKeyService,
 		mbService:         mbService,
 		spotifyService:    spotifyService,
+		lastfmService:     lastfmService,
 		atprotoService:    atprotoService,
 		playingNowService: playingNowService,
 		appleMusicService: appleMusicService,
 		pages:             pages.NewPages(),
+		buildTime:         resolveBuildTime(),
 	}
 
 	trackerInterval := time.Duration(viper.GetInt("tracker.interval")) * time.Second

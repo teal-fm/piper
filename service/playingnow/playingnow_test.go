@@ -1,12 +1,47 @@
 package playingnow
 
 import (
+	"context"
+	"io"
+	"log"
 	"testing"
 	"time"
 
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
 )
+
+func TestPlayingNowSkipsUserWithoutATProtoSession(t *testing.T) {
+	database, err := db.New(":memory:")
+	if err != nil {
+		t.Fatalf("create database: %v", err)
+	}
+	defer database.Close()
+
+	if err := database.Initialize(); err != nil {
+		t.Fatalf("initialize database: %v", err)
+	}
+
+	did := "did:plc:test"
+	userID, err := database.CreateUser(&models.User{ATProtoDID: &did})
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	service := &Service{
+		db:            database,
+		logger:        log.New(io.Discard, "", 0),
+		clearedStatus: make(map[int64]bool),
+	}
+
+	track := &models.Track{Name: "Test Track", Artist: []models.Artist{{Name: "Test Artist"}}}
+	if err := service.PublishPlayingNow(context.Background(), userID, track); err != nil {
+		t.Fatalf("PublishPlayingNow returned an error: %v", err)
+	}
+	if err := service.ClearPlayingNow(context.Background(), userID); err != nil {
+		t.Fatalf("ClearPlayingNow returned an error: %v", err)
+	}
+}
 
 func TestTrackToPlayView(t *testing.T) {
 	// Create a mock playing now service (we'll test the conversion logic)

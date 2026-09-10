@@ -40,6 +40,34 @@ type Image struct {
 	Text string `json:"#text"` // URL of the image
 }
 
+// UserInfoResponse is the Last.fm API response for user.getinfo.
+type UserInfoResponse struct {
+	User UserInfo `json:"user"`
+}
+
+type UserInfo struct {
+	Name     string  `json:"name"`
+	RealName string  `json:"realname"`
+	URL      string  `json:"url"`
+	Image    []Image `json:"image"`
+}
+
+// AvatarURL returns the user's avatar at the requested size, falling back to any
+// other size Last.fm offers. An empty result means "no avatar", not "lookup failed".
+func (u UserInfo) AvatarURL(preferred string) string {
+	for _, img := range u.Image {
+		if img.Size == preferred && img.Text != "" {
+			return img.Text
+		}
+	}
+	for _, img := range u.Image {
+		if img.Text != "" {
+			return img.Text
+		}
+	}
+	return ""
+}
+
 type Album struct {
 	MBID string `json:"mbid"`  // MusicBrainz ID for the album
 	Text string `json:"#text"` // Album name

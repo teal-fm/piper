@@ -242,13 +242,13 @@ func WithAuth(handler http.HandlerFunc, sm *Manager) http.HandlerFunc {
 		// if not found, check cookies for session value
 		cookie, err := r.Cookie("session")
 		if err != nil {
-			http.Redirect(w, r, "/login/spotify", http.StatusSeeOther)
+			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
 
 		session, exists := sm.GetSession(cookie.Value)
 		if !exists {
-			http.Redirect(w, r, "/login/spotify", http.StatusSeeOther)
+			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
 

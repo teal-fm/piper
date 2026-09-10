@@ -142,11 +142,12 @@ func newProcessUserTestEnv(t *testing.T, apiResponse string) *processUserTestEnv
 func (env *processUserTestEnv) seedUploadedTrack(t *testing.T, name, artist, album string) {
 	t.Helper()
 	hash := generateUploadHash(makeTestTrack(name, album, artist))
-	_, err := env.testDB.SaveTrack(env.user.ID, &models.Track{
-		Name:   name,
-		Artist: []models.Artist{{Name: artist}},
-		Album:  album,
-		URL:    hash,
+	_, err := env.testDB.SaveTrack(env.user.ID, db.SourceAppleMusic, &models.Track{
+		Name:           name,
+		Artist:         []models.Artist{{Name: artist}},
+		Album:          album,
+		URL:            hash,
+		ServiceBaseUrl: "music.apple.com",
 	})
 	if err != nil {
 		t.Fatalf("failed to seed track: %v", err)

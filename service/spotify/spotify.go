@@ -1,6 +1,7 @@
 package spotify
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -15,12 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"context" // Added for context.Context
-
-	// Added for atproto.RepoCreateRecord_Input
-	// Added for lexutil.LexiconTypeDecoder
-	// Added for xrpc.Client
-	"github.com/spf13/viper" // Added for teal.FeedPlay
+	"github.com/spf13/viper"
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
 	atprotoauth "github.com/teal-fm/piper/oauth/atproto"
@@ -95,19 +91,8 @@ func NewSpotifyService(database *db.DB, atprotoAuthService *atprotoauth.AuthServ
 	}
 }
 
-func (s *Service) SubmitTrackToPDS(did string, mostRecentAtProtoSessionID string, track *models.Track, ctx context.Context) error {
-	//Had a empty feed.play get submitted not sure why. Tracking here
-	if track.Name == "" {
-		s.logger.Println("Track name is empty. Skipping submission. Please record the logs before and send to the teal.fm Discord")
-		return nil
-	}
-
-	// Use shared atproto service for submission
-	return atprotoservice.SubmitPlayToPDS(ctx, did, mostRecentAtProtoSessionID, track, s.atprotoAuthService)
-}
-
-func (s *Service) SetAccessToken(token string, refreshToken string, userId int64, hasSession bool) (int64, error) {
-	userID, err := s.identifyAndStoreUser(token, refreshToken, userId, hasSession)
+func (s *Service) SetAccessToken(token string, refreshToken string, userId int64) (int64, error) {
+	userID, err := s.identifyAndStoreUser(token, refreshToken, userId)
 	if err != nil {
 		s.logger.Printf("Error identifying and storing user: %v", err)
 		return 0, err
@@ -115,14 +100,14 @@ func (s *Service) SetAccessToken(token string, refreshToken string, userId int64
 	return userID, nil
 }
 
-func (s *Service) identifyAndStoreUser(token string, refreshToken string, userId int64, hasSession bool) (int64, error) {
+func (s *Service) identifyAndStoreUser(token string, refreshToken string, userId int64) (int64, error) {
 	userProfile, err := s.fetchSpotifyProfile(token)
 	if err != nil {
 		s.logger.Printf("Error fetching Spotify profile: %v", err)
 		return 0, err
 	}
 
-	s.logger.Printf("uid: %d hasSession: %t", userId, hasSession)
+	s.logger.Printf("uid: %d", userId)
 
 	user, err := s.DB.GetUserBySpotifyID(userProfile.ID)
 	if err != nil {
@@ -135,7 +120,7 @@ func (s *Service) identifyAndStoreUser(token string, refreshToken string, userId
 
 	// We don't intend users to log in via spotify!
 	if user == nil {
-		if !hasSession {
+		if userId == 0 {
 			s.logger.Printf("User does not seem to exist")
 			return 0, fmt.Errorf("user does not seem to exist")
 		}
@@ -149,11 +134,10 @@ func (s *Service) identifyAndStoreUser(token string, refreshToken string, userId
 	} else {
 		err = s.DB.UpdateUserToken(user.ID, token, refreshToken, tokenExpiryTime)
 		if err != nil {
-			// for now log and continue
 			s.logger.Printf("Error updating user token for user ID %d: %v", user.ID, err)
-		} else {
-			s.logger.Printf("Updated token for existing user: %s (ID: %d)", *user.Username, user.ID)
+			return 0, err
 		}
+		s.logger.Printf("Updated token for existing user: %s (ID: %d)", *user.Username, user.ID)
 	}
 	if user == nil {
 		return 0, fmt.Errorf("user does not seem to exist")
@@ -215,6 +199,14 @@ func (s *Service) UnloadAllUsers() error {
 	defer s.mu.Unlock()
 	s.userTokens = make(map[int64]string)
 	return nil
+}
+
+// UnloadUser drops a single user's cached token and play state.
+func (s *Service) UnloadUser(userID int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.userTokens, userID)
+	delete(s.userPlayStates, userID)
 }
 
 // refreshTokenInner handles the actual Spotify token refresh logic.
@@ -285,11 +277,15 @@ func (s *Service) refreshTokenForUser(user *models.User) (string, error) {
 		s.mu.Lock()
 		delete(s.userTokens, userID)
 		s.mu.Unlock()
-		// Also clear the bad refresh token from the DB
-		updateErr := s.DB.UpdateUserToken(userID, "", "", time.Now().UTC()) // Clear tokens
-		if updateErr != nil {
-			s.logger.Printf("Failed to clear bad refresh token for user %d: %v", userID, updateErr)
+
+		// Only discard the refresh token when Spotify says it is genuinely dead.
+		if isRefreshTokenRejected(resp.StatusCode, body) {
+			if updateErr := s.DB.ClearUserSpotifyTokens(userID); updateErr != nil {
+				s.logger.Printf("Failed to clear bad refresh token for user %d: %v", userID, updateErr)
+			}
+			return "", fmt.Errorf("spotify refresh token rejected for user %d (%d): %s", userID, resp.StatusCode, string(body))
 		}
+
 		return "", fmt.Errorf("spotify token refresh failed (%d): %s", resp.StatusCode, string(body))
 	}
 
@@ -324,6 +320,23 @@ func (s *Service) refreshTokenForUser(user *models.User) (string, error) {
 
 	s.logger.Printf("Successfully refreshed token for user %d", userID)
 	return tokenResponse.AccessToken, nil
+}
+
+// isRefreshTokenRejected reports whether Spotify permanently rejected the
+// refresh token, as opposed to failing for a transient reason.
+func isRefreshTokenRejected(statusCode int, body []byte) bool {
+	if statusCode != http.StatusBadRequest {
+		return false
+	}
+
+	var errorResponse struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &errorResponse); err != nil {
+		return false
+	}
+
+	return errorResponse.Error == "invalid_grant"
 }
 
 // RefreshToken attempts to refresh the token for a given user ID.
@@ -799,34 +812,13 @@ func (s *Service) stampTrack(ctx context.Context, userID int64, track *models.Tr
 	}
 
 	// Save the track now that it is stamped and hydrated
-	if _, err := s.DB.SaveTrack(userID, trackToSubmit); err != nil {
+	if _, err := s.DB.SaveTrack(userID, db.SourceSpotify, trackToSubmit); err != nil {
 		s.logger.Printf("Error saving track for user %d: %v", userID, err)
 		return
 	}
 
-	// Submit play record to ATProto PDS
-
-	// Fetch the user
-	dbUser, err := s.DB.GetUserByID(userID)
-	if err != nil {
-		s.logger.Printf("User %d: Error fetching user for PDS: %v", userID, err)
-		return
-	}
-	if dbUser == nil {
-		s.logger.Printf("User %d: User not found in DB. Skipping PDS submission.", userID)
-		return
-	}
-	if dbUser.ATProtoDID == nil || *dbUser.ATProtoDID == "" {
-		// No DID configured, skip PDS submission silently
-		return
-	}
-
-	// Perform submission to PDS
-	s.logger.Printf("User %d: Submitting track '%s' to PDS (DID: %s)", userID, trackToSubmit.Name, *dbUser.ATProtoDID)
-	if err := s.SubmitTrackToPDS(*dbUser.ATProtoDID, *dbUser.MostRecentAtProtoSessionID, trackToSubmit, ctx); err != nil {
+	if err := atprotoservice.PublishStoredPlay(ctx, s.DB, userID, trackToSubmit.PlayID, s.atprotoAuthService); err != nil {
 		s.logger.Printf("User %d: Error submitting to PDS: %v", userID, err)
-	} else {
-		s.logger.Printf("User %d: Successfully submitted track '%s' to PDS", userID, trackToSubmit.Name)
 	}
 }
 

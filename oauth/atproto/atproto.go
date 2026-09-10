@@ -9,6 +9,7 @@ import (
 	"github.com/bluesky-social/indigo/atproto/crypto"
 	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/teal-fm/piper/db"
+	"github.com/teal-fm/piper/service/bsky"
 
 	"github.com/teal-fm/piper/session"
 
@@ -17,7 +18,11 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"time"
 )
+
+// profileFetchTimeout bounds the AppView lookup inside the login redirect.
+const profileFetchTimeout = 5 * time.Second
 
 type AuthService struct {
 	clientApp      *oauth.ClientApp
@@ -88,7 +93,7 @@ func (a *AuthService) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	handle := r.URL.Query().Get("handle")
 	if handle == "" {
 		a.logger.Printf("ATProto Login Error: handle is required")
-		http.Error(w, "handle query parameter is required", http.StatusBadRequest)
+		redirectLoginError(w, r, "missing_handle", handle)
 		return
 	}
 	ctx := r.Context()
@@ -97,35 +102,45 @@ func (a *AuthService) HandleLogin(w http.ResponseWriter, r *http.Request) {
 
 	atid, err := syntax.ParseAtIdentifier(handle)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error parsing AT Identifier (%s): %v", handle, err), http.StatusInternalServerError)
+		a.logger.Printf("Error parsing AT Identifier %q: %v", handle, err)
+		redirectLoginError(w, r, "invalid_handle", handle)
 		return
 	}
 	ident, err := a.clientApp.Dir.Lookup(ctx, *atid)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error resolving DID for AT Identifier (%s): %v", handle, err), http.StatusInternalServerError)
+		a.logger.Printf("Error resolving AT Identifier %q: %v", handle, err)
+		redirectLoginError(w, r, "lookup_failed", handle)
 		return
 	}
 	accountDid := ident.DID.String()
 
 	if len(a.allowedDids) > 0 && !slices.Contains(a.allowedDids, accountDid) {
 		a.logger.Printf("ATProto Login Error: DID %s for handle %s is not in the allowed list", accountDid, handle)
-		http.Error(w, "Unauthorized", http.StatusForbidden)
+		redirectLoginError(w, r, "not_allowed", handle)
 		return
 	}
 
 	redirectURL, err := a.clientApp.StartAuthFlow(ctx, accountDid)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error initiating login: %v", err), http.StatusInternalServerError)
+		a.logger.Printf("Error initiating login: %v", err)
+		redirectLoginError(w, r, "login_failed", handle)
 		return
 	}
 	authUrl, err := url.Parse(redirectURL)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error initiating login: %v", err), http.StatusInternalServerError)
+		a.logger.Printf("Error initiating login: %v", err)
+		redirectLoginError(w, r, "login_failed", handle)
 		return
 	}
 
 	a.logger.Printf("ATProto Login: Redirecting user %s to %s", handle, authUrl.String())
 	http.Redirect(w, r, authUrl.String(), http.StatusFound)
+}
+
+// Redirect with a fixed error code so OAuth details never enter the page URL.
+func redirectLoginError(w http.ResponseWriter, r *http.Request, code, handle string) {
+	query := url.Values{"login_error": {code}, "handle": {handle}}
+	http.Redirect(w, r, "/?"+query.Encode(), http.StatusSeeOther)
 }
 
 func (a *AuthService) HandleLogout(w http.ResponseWriter, r *http.Request) {
@@ -169,13 +184,41 @@ func (a *AuthService) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+// cacheProfile refreshes the user's cached handle and avatar.
+func (a *AuthService) cacheProfile(ctx context.Context, did, sessionID string) {
+	ctx, cancel := context.WithTimeout(ctx, profileFetchTimeout)
+	defer cancel()
+
+	profile, err := bsky.FetchProfile(ctx, nil, did)
+	if err != nil {
+		a.logger.Printf("Failed to fetch profile for DID %s: %v", did, err)
+		return
+	}
+
+	// Use fm.teal.actor.profile if the user's got one; fall back to Bluesky
+	displayName, avatar := profile.DisplayName, profile.Avatar
+	tealProfile, err := a.TealProfile(ctx, did, sessionID)
+	if err != nil {
+		a.logger.Printf("Failed to read teal.fm profile for DID %s: %v", did, err)
+	}
+	if tealProfile.DisplayName != "" {
+		displayName = tealProfile.DisplayName
+	}
+	if tealProfile.AvatarURL != "" {
+		avatar = tealProfile.AvatarURL
+	}
+
+	if err := a.DB.SaveATProtoProfile(did, profile.Handle, displayName, avatar); err != nil {
+		a.logger.Printf("Failed to save profile for DID %s: %v", did, err)
+	}
+}
+
 func (a *AuthService) HandleCallback(w http.ResponseWriter, r *http.Request) (int64, error) {
 	ctx := r.Context()
 
 	sessData, err := a.clientApp.ProcessCallback(ctx, r.URL.Query())
 	if err != nil {
 		errMsg := fmt.Errorf("processing OAuth callback: %w", err)
-		http.Error(w, errMsg.Error(), http.StatusBadRequest)
 		return 0, errMsg
 	}
 
@@ -188,7 +231,6 @@ func (a *AuthService) HandleCallback(w http.ResponseWriter, r *http.Request) (in
 	user, err := a.DB.FindOrCreateUserByDID(sessData.AccountDID.String())
 	if err != nil {
 		a.logger.Printf("ATProto Callback Error: Failed to find or create user for DID %s: %v", sessData.AccountDID.String(), err)
-		http.Error(w, "Failed to process user information.", http.StatusInternalServerError)
 		return 0, fmt.Errorf("failed to find or create user")
 	}
 
@@ -201,6 +243,8 @@ func (a *AuthService) HandleCallback(w http.ResponseWriter, r *http.Request) (in
 	if err != nil {
 		a.logger.Printf("Failed to set latest atproto session id for user %d: %v", user.ID, err)
 	}
+
+	a.cacheProfile(ctx, sessData.AccountDID.String(), sessData.SessionID)
 
 	a.logger.Printf("ATProto Callback Success: User %d (DID: %v) authenticated.", user.ID, user.ATProtoDID)
 	return user.ID, nil

@@ -1,14 +1,34 @@
+{{ define "title" }}Link Last.fm · piper{{ end }}
+
 {{ define "content" }}
-    {{ template "components/navBar" .NavBar }}
+{{ template "components/navBar" .NavBar }}
 
-    <div class="max-w-[600px] mx-auto my-5 p-5 border border-gray-300 rounded-lg">
-        <h2 class="text-xl font-semibold mb-2">Link Your Last.fm Account</h2>
-        <p class="mb-3">Enter your Last.fm username to start tracking your scrobbles.</p>
-        <form class="space-y-2" method="post" action="/link-lastfm">
-            <label class="block" for="lastfm_username">Last.fm Username:</label>
-            <input class="block w-[95%] p-2 border border-gray-300 rounded" type="text" id="lastfm_username" name="lastfm_username" value="{{.CurrentUsername}}" required>
-            <input class="bg-[#d51007] text-white px-4 py-2.5 rounded cursor-pointer hover:opacity-90" type="submit" value="Save Username">
-        </form>
-    </div>
+<div class="max-w-sm mx-auto py-8">
+  <h1 class="text-2xl font-medium tracking-tight mb-1">Link Last.fm</h1>
+  <p class="text-neutral-500 dark:text-neutral-400 mb-6">
+    Enter your Last.fm username to start tracking your scrobbles.
+  </p>
 
+  <form class="space-y-3" method="post" action="/link-lastfm">
+    <label
+      class="block text-sm font-medium text-neutral-600 dark:text-neutral-300"
+      for="lastfm_username">Last.fm username</label>
+    <input
+      class="block w-full px-3 py-2 rounded-lg border border-neutral-400/30 bg-white/60 dark:bg-neutral-900/60 backdrop-blur-sm placeholder:text-neutral-400 dark:placeholder:text-neutral-600 focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+      type="text"
+      id="lastfm_username"
+      name="lastfm_username"
+      value="{{ .CurrentUsername }}"
+      autocapitalize="none"
+      autocorrect="off"
+      spellcheck="false"
+      required
+    />
+    <button
+      class="block w-full px-4 py-2 rounded-lg bg-accent text-neutral-950 font-medium cursor-pointer hover:opacity-90"
+      type="submit">
+      Save username
+    </button>
+  </form>
+</div>
 {{ end }}

@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/spf13/viper"
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/db/apikey"
 	"github.com/teal-fm/piper/models"
@@ -17,6 +16,8 @@ import (
 	"github.com/teal-fm/piper/pages"
 	"github.com/teal-fm/piper/service/applemusic"
 	atprotoservice "github.com/teal-fm/piper/service/atproto"
+	"github.com/teal-fm/piper/service/bsky"
+	"github.com/teal-fm/piper/service/lastfm"
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"github.com/teal-fm/piper/service/playingnow"
 	"github.com/teal-fm/piper/service/spotify"
@@ -24,41 +25,104 @@ import (
 )
 
 type HomeParams struct {
-	NavBar pages.NavBar
+	LoginError  string
+	LoginHandle string
+	NavBar      pages.NavBar
+	BuildTime   time.Time
+	Agent       string
 }
 
-func home(database *db.DB, pg *pages.Pages) http.HandlerFunc {
+func home(database *db.DB, pg *pages.Pages, lastfmService *lastfm.Service, atprotoService *atprotoauth.AuthService, buildTime time.Time) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "text/html")
 
-		userID, authenticated := session.GetUserID(r.Context())
-		isLoggedIn := authenticated
-		lastfmUsername := ""
+		userID, isLoggedIn := session.GetUserID(r.Context())
 
+		var user *models.User
 		if isLoggedIn {
-			user, err := database.GetUserByID(userID)
-			fmt.Printf("User: %+v\n", user)
-			if err == nil && user != nil && user.LastFMUsername != nil {
-				lastfmUsername = *user.LastFMUsername
-			} else if err != nil {
+			var err error
+			user, err = database.GetUserByID(userID)
+			if err != nil {
 				log.Printf("Error fetching user %d details for home page: %v", userID, err)
 			}
+			user = backfillProfile(r.Context(), database, atprotoService, user)
+			user = backfillLastFMAvatar(r.Context(), database, lastfmService, user)
 		}
+
 		params := HomeParams{
-			NavBar: pages.NavBar{
-				IsLoggedIn:        isLoggedIn,
-				LastFMUsername:    lastfmUsername,
-				SpotifyEnabled:    viper.GetBool("enable_spotify"),
-				LastFMEnabled:     viper.GetBool("enable_lastfm"),
-				AppleMusicEnabled: viper.GetBool("enable_applemusic"),
-			},
+			NavBar:      pages.NewNavBar(user, isLoggedIn),
+			BuildTime:   buildTime,
+			Agent:       models.SubmissionAgent,
+			LoginError:  pages.LoginErrorMessage(r.URL.Query().Get("login_error")),
+			LoginHandle: r.URL.Query().Get("handle"),
 		}
 		err := pg.Execute("home", w, params)
 		if err != nil {
 			log.Printf("Error executing template: %v", err)
 		}
 	}
+}
+
+// backfillProfile caches the handle and avatar for users who logged in before
+// piper started storing them. Best-effort: the nav bar falls back to a placeholder.
+func backfillProfile(ctx context.Context, database *db.DB, atprotoService *atprotoauth.AuthService, user *models.User) *models.User {
+	if user == nil || user.ATProtoDID == nil || user.ProfileFetchedAt != nil {
+		return user
+	}
+
+	profile, err := bsky.FetchProfile(ctx, nil, *user.ATProtoDID)
+	if err != nil {
+		log.Printf("Error fetching profile for DID %s: %v", *user.ATProtoDID, err)
+		return user
+	}
+
+	// If a user has a fm.teal.actor.profile record, use that one instead of Bluesky
+	displayName, avatar := profile.DisplayName, profile.Avatar
+	if user.MostRecentAtProtoSessionID != nil {
+		tealProfile, err := atprotoService.TealProfile(ctx, *user.ATProtoDID, *user.MostRecentAtProtoSessionID)
+		if err != nil {
+			log.Printf("Error reading teal.fm profile for DID %s: %v", *user.ATProtoDID, err)
+		}
+		if tealProfile.DisplayName != "" {
+			displayName = tealProfile.DisplayName
+		}
+		if tealProfile.AvatarURL != "" {
+			avatar = tealProfile.AvatarURL
+		}
+	}
+
+	if err := database.SaveATProtoProfile(*user.ATProtoDID, profile.Handle, displayName, avatar); err != nil {
+		log.Printf("Error saving profile for DID %s: %v", *user.ATProtoDID, err)
+		return user
+	}
+
+	user.Handle = &profile.Handle
+	user.DisplayName = &displayName
+	user.AvatarURL = &avatar
+	return user
+}
+
+// backfillLastFMAvatar caches the linked Last.fm account's picture. Best-effort;
+// accounts with no picture cache an empty string so we stop asking.
+func backfillLastFMAvatar(ctx context.Context, database *db.DB, lastfmService *lastfm.Service, user *models.User) *models.User {
+	if user == nil || lastfmService == nil || user.LastFMUsername == nil || user.LastFMAvatarURL != nil {
+		return user
+	}
+
+	avatarURL, err := lastfmService.FetchAvatarURL(ctx, *user.LastFMUsername)
+	if err != nil {
+		log.Printf("Error fetching Last.fm avatar for %s: %v", *user.LastFMUsername, err)
+		return user
+	}
+
+	if err := database.SaveLastFMAvatarURL(user.ID, avatarURL); err != nil {
+		log.Printf("Error saving Last.fm avatar for %s: %v", *user.LastFMUsername, err)
+		return user
+	}
+
+	user.LastFMAvatarURL = &avatarURL
+	return user
 }
 
 func handleLinkLastfmForm(database *db.DB, pg *pages.Pages) http.HandlerFunc {
@@ -103,13 +167,7 @@ func handleLinkLastfmForm(database *db.DB, pg *pages.Pages) http.HandlerFunc {
 			NavBar          pages.NavBar
 			CurrentUsername string
 		}{
-			NavBar: pages.NavBar{
-				IsLoggedIn:        authenticated,
-				LastFMUsername:    currentUsername,
-				SpotifyEnabled:    viper.GetBool("enable_spotify"),
-				LastFMEnabled:     viper.GetBool("enable_lastfm"),
-				AppleMusicEnabled: viper.GetBool("enable_applemusic"),
-			},
+			NavBar:          pages.NewNavBar(currentUser, authenticated).WithBreadcrumb("Last.fm"),
 			CurrentUsername: currentUsername,
 		}
 		err = pg.Execute("lastFMForm", w, pageParams)
@@ -147,30 +205,112 @@ func handleLinkLastfmSubmit(database *db.DB) http.HandlerFunc {
 	}
 }
 
-func handleAppleMusicLink(pg *pages.Pages, am *applemusic.Service) http.HandlerFunc {
+// handleUnlinkSpotify logs the user out of Spotify. The application is still
+// authorised on the Spotify end!
+func handleUnlinkSpotify(database *db.DB, spotifyService *spotify.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		userID, _ := session.GetUserID(r.Context()) // Auth middleware ensures this exists
+
+		if err := database.ClearSpotifySession(userID); err != nil {
+			log.Printf("Error unlinking Spotify for user %d: %v", userID, err)
+			http.Error(w, "Failed to unlink Spotify", http.StatusInternalServerError)
+			return
+		}
+
+		if spotifyService != nil {
+			spotifyService.UnloadUser(userID)
+		}
+
+		log.Printf("Successfully unlinked Spotify for user ID %d", userID)
+
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	}
+}
+
+func handleAppleMusicLink(database *db.DB, pg *pages.Pages, am *applemusic.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
+
+		// The service is nil when Apple Music is enabled but its credentials are missing.
+		if am == nil {
+			http.Error(w, "Apple Music is not configured on this server", http.StatusServiceUnavailable)
+			return
+		}
+
 		devToken, _, errTok := am.GenerateDeveloperToken()
 		if errTok != nil {
 			log.Printf("Error generating Apple Music developer token: %v", errTok)
 			http.Error(w, "Failed to prepare Apple Music", http.StatusInternalServerError)
 			return
 		}
+
+		userID, authenticated := session.GetUserID(r.Context())
+		user, err := database.GetUserByID(userID)
+		if err != nil {
+			log.Printf("Error fetching user %d for Apple Music link page: %v", userID, err)
+		}
+
 		data := struct {
 			NavBar   pages.NavBar
 			DevToken string
 		}{
 			DevToken: devToken,
-			NavBar: pages.NavBar{
-				SpotifyEnabled:    viper.GetBool("enable_spotify"),
-				LastFMEnabled:     viper.GetBool("enable_lastfm"),
-				AppleMusicEnabled: viper.GetBool("enable_applemusic"),
-			},
+			NavBar:   pages.NewNavBar(user, authenticated).WithBreadcrumb("Apple Music"),
 		}
-		err := pg.Execute("applemusic_link", w, data)
+		err = pg.Execute("applemusic_link", w, data)
 		if err != nil {
 			log.Printf("Error executing template: %v", err)
 		}
+	}
+}
+
+// handleUnlinkLastfm unlinks the Last.fm account from the home page.
+func handleUnlinkLastfm(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		userID, _ := session.GetUserID(r.Context()) // Auth middleware ensures this exists
+
+		if err := database.ClearLastFMUsername(userID); err != nil {
+			log.Printf("Error unlinking Last.fm for user %d: %v", userID, err)
+			http.Error(w, "Failed to unlink Last.fm", http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("Successfully unlinked Last.fm for user ID %d", userID)
+
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	}
+}
+
+// handleUnlinkAppleMusic drops piper's copy of the MusicKit user token. The
+// browser stays authorised with Apple.
+func handleUnlinkAppleMusic(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		userID, _ := session.GetUserID(r.Context()) // Auth middleware ensures this exists
+
+		if err := database.ClearAppleMusicUserToken(userID); err != nil {
+			log.Printf("Error unlinking Apple Music for user %d: %v", userID, err)
+			http.Error(w, "Failed to unlink Apple Music", http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("Successfully unlinked Apple Music for user ID %d", userID)
+
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 	}
 }
 
@@ -352,8 +492,7 @@ func apiUnlinkLastfmHandler(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID, _ := session.GetUserID(r.Context())
 
-		// TODO: add a clear username for user id fn
-		err := database.AddLastFMUsername(userID, "")
+		err := database.ClearLastFMUsername(userID)
 		if err != nil {
 			log.Printf("apiUnlinkLastfmHandler: Error unlinking Last.fm username for user %d: %v", userID, err)
 			jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": "Failed to unlink Last.fm username"})
@@ -422,7 +561,7 @@ func apiAppleMusicUnlink(database *db.DB) http.HandlerFunc {
 	}
 }
 
-// apiSubmitListensHandler handles ListenBrainz-compatible submissions
+// apiSubmitListensHandler handles ListenBrainz-compatible submissions.
 func apiSubmitListensHandler(database *db.DB, atprotoService *atprotoauth.AuthService, playingNowService *playingnow.Service, mbService *musicbrainz.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID, authenticated := session.GetUserID(r.Context())
@@ -512,7 +651,7 @@ func apiSubmitListensHandler(database *db.DB, atprotoService *atprotoauth.AuthSe
 			}
 
 			// Skip listens we already stored so client retries stay idempotent
-			exists, err := database.HasTrackListen(userID, track.Name, track.Timestamp)
+			exists, err := database.HasTrackListen(userID, db.SourceListenBrainz, track.Name, track.Timestamp)
 			if err != nil {
 				log.Printf("apiSubmitListensHandler: Error checking for existing listen for user %d: %v", userID, err)
 			} else if exists {
@@ -521,7 +660,7 @@ func apiSubmitListensHandler(database *db.DB, atprotoService *atprotoauth.AuthSe
 			}
 
 			// Store the track
-			trackID, err := database.SaveTrack(userID, &track)
+			trackID, err := database.SaveTrack(userID, db.SourceListenBrainz, &track)
 			if err != nil {
 				log.Printf("apiSubmitListensHandler: Error saving track for user %d: %v", userID, err)
 				errors = append(errors, fmt.Sprintf("payload[%d]: failed to save track", i))
@@ -536,7 +675,7 @@ func apiSubmitListensHandler(database *db.DB, atprotoService *atprotoauth.AuthSe
 		// lookups are rate limited to 1/s, so doing them before responding
 		// can outlast the proxy timeout and trap clients in a retry loop
 		if len(savedListens) > 0 {
-			go hydrateAndSubmitListens(database, atprotoService, mbService, user, userID, savedListens)
+			go hydrateAndSubmitListens(database, atprotoService, mbService, userID, savedListens)
 		}
 
 		// Prepare response
@@ -569,7 +708,7 @@ type savedListen struct {
 // hydrateAndSubmitListens hydrates saved listens with MusicBrainz data and
 // submits them to the PDS. It runs detached from the request that saved them,
 // on its own context, since both steps can far outlast the client connection.
-func hydrateAndSubmitListens(database *db.DB, atprotoService *atprotoauth.AuthService, mbService *musicbrainz.Service, user *models.User, userID int64, listens []savedListen) {
+func hydrateAndSubmitListens(database *db.DB, atprotoService *atprotoauth.AuthService, mbService *musicbrainz.Service, userID int64, listens []savedListen) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
@@ -582,16 +721,14 @@ func hydrateAndSubmitListens(database *db.DB, atprotoService *atprotoauth.AuthSe
 				log.Printf("apiSubmitListensHandler: Could not hydrate track with MusicBrainz for user %d: %v (continuing with original data)", userID, err)
 			} else if hydratedTrack != nil {
 				track = *hydratedTrack
-				if err := database.UpdateTrack(saved.trackID, &track); err != nil {
+				if err := database.UpdateTrack(saved.trackID, db.SourceListenBrainz, &track); err != nil {
 					log.Printf("apiSubmitListensHandler: Error updating hydrated track for user %d: %v", userID, err)
 				}
 			}
 		}
 
-		if user.ATProtoDID != nil && atprotoService != nil {
-			if err := atprotoservice.SubmitPlayToPDS(ctx, *user.ATProtoDID, *user.MostRecentAtProtoSessionID, &track, atprotoService); err != nil {
-				log.Printf("apiSubmitListensHandler: Error submitting play to PDS for user %d: %v", userID, err)
-			}
+		if err := atprotoservice.PublishStoredPlay(ctx, database, userID, saved.trackID, atprotoService); err != nil {
+			log.Printf("apiSubmitListensHandler: Error submitting play to PDS for user %d: %v", userID, err)
 		}
 	}
 }
