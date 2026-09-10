@@ -178,3 +178,28 @@ Sensitive environment variables (Spotify, ATProto, Last.fm credentials) should b
 ```
 
 See [module.nix](./module.nix) for additional configuration options.
+
+## Failed play submissions
+
+Open **Failed plays** in Piper's navigation to inspect saved plays that have not
+been confirmed published. Each entry includes its source, play time, submission
+status, attempt count, last attempt time, and last error. Retry an individual play
+or the current page of up to 20 plays. Batch retries stop on the first failure.
+For `invalid_grant`, log out and sign in again before retrying.
+
+Eligible plays and their pending submissions are saved in one transaction.
+Publishing success is tracked separately from `hasStamped`, which still means
+that a play met its source's eligibility rules. A retry uses the current OAuth
+session and the original saved record key and payload, including the play time.
+An interrupted submission can be retried after its two-minute claim expires.
+Retries are user-initiated; there is no automatic retry scheduler.
+
+Server logs include `play_submission` events with user ID, play ID, record key,
+attempt number, outcome, and a safe error summary. OAuth response bodies and
+credentials are not saved in submission errors. HTTP status and actionable
+errors such as `invalid_grant` are retained.
+
+Historical tracks saved before submission tracking was introduced have unknown
+publishing outcomes. They are not automatically queued or labelled as failures.
+Recovering an older gap requires comparing the saved tracks with PDS records
+before backfilling, to avoid duplicating successful submissions.

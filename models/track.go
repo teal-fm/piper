@@ -18,7 +18,8 @@ type Track struct {
 	ProgressMs     int64     `json:"progressMs"`
 	ServiceBaseUrl string    `json:"serviceBaseUrl"`
 	ISRC           string    `json:"isrc"`
-	HasStamped     bool      `json:"hasStamped"`
+	// HasStamped indicates a play met its source eligibility rules, not PDS success.
+	HasStamped bool `json:"hasStamped"`
 }
 
 type Artist struct {

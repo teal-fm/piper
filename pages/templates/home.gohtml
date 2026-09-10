@@ -26,6 +26,9 @@
       Apple Music, Last.fm, and ListenBrainz, saving your listening history.
   </p>
 
+  {{ if .LoginError }}
+  <p id="login-error" role="alert" class="text-sm text-red-700 dark:text-red-300 border border-red-500/30 rounded-lg p-3 mb-4">{{ .LoginError }}</p>
+  {{ end }}
   <form class="space-y-3" action="/login/atproto">
     <label
       class="block text-sm font-medium text-neutral-600 dark:text-neutral-300"
@@ -35,6 +38,8 @@
       type="text"
       id="handle"
       name="handle"
+      value="{{ .LoginHandle }}"
+      {{ if .LoginError }}aria-invalid="true" aria-describedby="login-error"{{ end }}
       placeholder="alice.bsky.social"
       autocapitalize="none"
       autocorrect="off"

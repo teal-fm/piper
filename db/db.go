@@ -1,7 +1,9 @@
 package db
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bluesky-social/indigo/atproto/syntax"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/teal-fm/piper/models"
 )
@@ -34,6 +37,9 @@ func New(dbPath string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// SQLite has one writer; one connection also keeps :memory: databases consistent.
+	db.SetMaxOpenConns(1)
 
 	// Test the connection
 	if err = db.Ping(); err != nil {
@@ -201,6 +207,9 @@ func (db *DB) Initialize() error {
 		return err
 	}
 
+	if err := db.initializeSubmissions(); err != nil {
+		return err
+	}
 	return db.backfillTrackSources()
 }
 
@@ -506,15 +515,36 @@ func (db *DB) SaveTrack(userID int64, source TrackSource, track *models.Track) (
 	}
 
 	var trackID int64
-
-	err := db.QueryRow(`
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	err = tx.QueryRow(`
 	INSERT INTO tracks (user_id, name, recording_mbid, artist, album, release_mbid, url, timestamp, duration_ms, progress_ms, service_base_url, isrc, has_stamped, source)
 	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	RETURNING id`,
 		userID, track.Name, track.RecordingMBID, artistString, track.Album, track.ReleaseMBID, track.URL, track.Timestamp,
 		track.DurationMs, track.ProgressMs, track.ServiceBaseUrl, track.ISRC, track.HasStamped, source).Scan(&trackID)
 
-	return trackID, err
+	if err != nil {
+		return 0, err
+	}
+	if track.HasStamped {
+		var clockBytes [2]byte
+		if _, err := rand.Read(clockBytes[:]); err != nil {
+			return 0, err
+		}
+		rkey := syntax.NewTIDNow(uint(binary.BigEndian.Uint16(clockBytes[:]) & 1023)).String()
+		if _, err := tx.Exec(`INSERT INTO play_submissions(track_id,rkey) VALUES (?,?)`, trackID, rkey); err != nil {
+			return 0, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	track.PlayID = trackID
+	return trackID, nil
 }
 
 // HasTrackListen reports whether a listen with the same name and timestamp

@@ -59,6 +59,10 @@ func (p *Service) PublishPlayingNow(ctx context.Context, userID int64, track *mo
 		p.logger.Printf("User %d has no ATProto DID, skipping playing now", userID)
 		return nil
 	}
+	if user.MostRecentAtProtoSessionID == nil || *user.MostRecentAtProtoSessionID == "" {
+		p.logger.Printf("User %d has no ATProto session, skipping playing now", userID)
+		return nil
+	}
 
 	did := *user.ATProtoDID
 
@@ -155,6 +159,10 @@ func (p *Service) ClearPlayingNow(ctx context.Context, userID int64) error {
 
 	if user.ATProtoDID == nil {
 		p.logger.Printf("User %d has no ATProto DID, skipping clear playing now", userID)
+		return nil
+	}
+	if user.MostRecentAtProtoSessionID == nil || *user.MostRecentAtProtoSessionID == "" {
+		p.logger.Printf("User %d has no ATProto session, skipping clear playing now", userID)
 		return nil
 	}
 
