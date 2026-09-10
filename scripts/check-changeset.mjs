@@ -9,7 +9,8 @@ const added = diff('--name-only', '--diff-filter=A').filter(path => path !== '.c
 const current = JSON.parse(readFileSync('package.json', 'utf8')).version;
 const previous = JSON.parse(execFileSync('git', ['show', `${base}:package.json`], { encoding: 'utf8' })).version;
 if (added.length) {
-  if (current !== previous) {
+  // Introducing the version field (adopting Changesets) is not a hand bump.
+  if (previous !== undefined && current !== previous) {
     throw new Error('Do not bump versions by hand when adding a changeset.');
   }
   console.log('Changeset found. Use npm run changeset -- --empty for changes without a release.');

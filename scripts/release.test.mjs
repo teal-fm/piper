@@ -90,3 +90,26 @@ test('PR validation accepts added changesets and consumed release changesets, bu
     rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test('PR validation allows introducing the version field while adopting Changesets', () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'piper-changeset-'));
+  const script = resolve('scripts/check-changeset.mjs');
+  const git = (...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  try {
+    git('init');
+    git('config', 'user.email', 'test@example.com');
+    git('config', 'user.name', 'Release test');
+    mkdirSync(join(cwd, '.changeset'));
+    writeFileSync(join(cwd, 'package.json'), JSON.stringify({ dependencies: {} }));
+    git('add', '.');
+    git('commit', '-m', 'base');
+    const base = git('rev-parse', 'HEAD');
+    writeFileSync(join(cwd, '.changeset/onboard.md'), '---\n"piper": patch\n---\n\nAdopt Changesets.\n');
+    writeFileSync(join(cwd, 'package.json'), JSON.stringify({ version: '0.0.14', dependencies: {} }));
+    git('add', '.');
+    git('commit', '-m', 'adopt changesets');
+    execFileSync(process.execPath, [script], { cwd, env: { ...process.env, BASE_SHA: base }, stdio: 'pipe' });
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
