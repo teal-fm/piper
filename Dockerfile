@@ -16,8 +16,13 @@ COPY --from=node_builder /app/pages/static/main.css ./pages/static/main.css
 RUN CGO_ENABLED=1 go build -ldflags='-w -s -extldflags "-static"' -o main ./cmd
 
 FROM alpine:3.21
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata \
+    && addgroup -S piper \
+    && adduser -S -G piper piper \
+    && mkdir -p /db \
+    && chown piper:piper /db
 WORKDIR /db
 WORKDIR /app
-COPY --from=builder /app/main /app/main
+COPY --from=builder --chown=piper:piper /app/main /app/main
+USER piper
 ENTRYPOINT ["/app/main"]

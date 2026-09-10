@@ -70,6 +70,12 @@ test('PR validation accepts added changesets and consumed release changesets, bu
     git('commit', '-m', 'empty changeset');
     run();
     git('reset', '--hard', base);
+    writeFileSync(join(cwd, '.changeset/extra.md'), '---\n---\n');
+    writeFileSync(join(cwd, 'package.json'), JSON.stringify({ version: '0.0.15' }));
+    git('add', '.');
+    git('commit', '-m', 'manual bump with changeset');
+    assert.throws(run);
+    git('reset', '--hard', base);
     rmSync(join(cwd, '.changeset/pending.md'));
     writeFileSync(join(cwd, 'package.json'), JSON.stringify({ version: '0.0.15' }));
     writeFileSync(join(cwd, 'CHANGELOG.md'), '## 0.0.15\n\n- Fix retries.\n');
