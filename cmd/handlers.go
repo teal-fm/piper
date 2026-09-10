@@ -25,9 +25,11 @@ import (
 )
 
 type HomeParams struct {
-	NavBar    pages.NavBar
-	BuildTime time.Time
-	Agent     string
+	LoginError  string
+	LoginHandle string
+	NavBar      pages.NavBar
+	BuildTime   time.Time
+	Agent       string
 }
 
 func home(database *db.DB, pg *pages.Pages, lastfmService *lastfm.Service, atprotoService *atprotoauth.AuthService, buildTime time.Time) http.HandlerFunc {
@@ -49,9 +51,11 @@ func home(database *db.DB, pg *pages.Pages, lastfmService *lastfm.Service, atpro
 		}
 
 		params := HomeParams{
-			NavBar:    pages.NewNavBar(user, isLoggedIn),
-			BuildTime: buildTime,
-			Agent:     models.SubmissionAgent,
+			NavBar:      pages.NewNavBar(user, isLoggedIn),
+			BuildTime:   buildTime,
+			Agent:       models.SubmissionAgent,
+			LoginError:  pages.LoginErrorMessage(r.URL.Query().Get("login_error")),
+			LoginHandle: r.URL.Query().Get("handle"),
 		}
 		err := pg.Execute("home", w, params)
 		if err != nil {
@@ -671,7 +675,7 @@ func apiSubmitListensHandler(database *db.DB, atprotoService *atprotoauth.AuthSe
 		// lookups are rate limited to 1/s, so doing them before responding
 		// can outlast the proxy timeout and trap clients in a retry loop
 		if len(savedListens) > 0 {
-			go hydrateAndSubmitListens(database, atprotoService, mbService, user, userID, savedListens)
+			go hydrateAndSubmitListens(database, atprotoService, mbService, userID, savedListens)
 		}
 
 		// Prepare response
@@ -704,7 +708,7 @@ type savedListen struct {
 // hydrateAndSubmitListens hydrates saved listens with MusicBrainz data and
 // submits them to the PDS. It runs detached from the request that saved them,
 // on its own context, since both steps can far outlast the client connection.
-func hydrateAndSubmitListens(database *db.DB, atprotoService *atprotoauth.AuthService, mbService *musicbrainz.Service, user *models.User, userID int64, listens []savedListen) {
+func hydrateAndSubmitListens(database *db.DB, atprotoService *atprotoauth.AuthService, mbService *musicbrainz.Service, userID int64, listens []savedListen) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
@@ -723,10 +727,8 @@ func hydrateAndSubmitListens(database *db.DB, atprotoService *atprotoauth.AuthSe
 			}
 		}
 
-		if user.ATProtoDID != nil && user.MostRecentAtProtoSessionID != nil && *user.MostRecentAtProtoSessionID != "" && atprotoService != nil {
-			if err := atprotoservice.SubmitPlayToPDS(ctx, *user.ATProtoDID, *user.MostRecentAtProtoSessionID, &track, atprotoService); err != nil {
-				log.Printf("apiSubmitListensHandler: Error submitting play to PDS for user %d: %v", userID, err)
-			}
+		if err := atprotoservice.PublishStoredPlay(ctx, database, userID, saved.trackID, atprotoService); err != nil {
+			log.Printf("apiSubmitListensHandler: Error submitting play to PDS for user %d: %v", userID, err)
 		}
 	}
 }

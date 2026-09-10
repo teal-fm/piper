@@ -13,9 +13,11 @@ func ptr(s string) *string { return &s }
 
 // homeParams mirrors cmd.HomeParams, which this package can't import.
 type homeParams struct {
-	NavBar    NavBar
-	BuildTime time.Time
-	Agent     string
+	LoginError  string
+	LoginHandle string
+	NavBar      NavBar
+	BuildTime   time.Time
+	Agent       string
 }
 
 func TestNewNavBar(t *testing.T) {

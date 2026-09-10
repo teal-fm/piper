@@ -188,3 +188,23 @@ func TestStaticURLWithoutAnEmbeddedFile(t *testing.T) {
 		t.Errorf("staticURL() = %q, want %q", got, want)
 	}
 }
+
+func TestLoginErrorRendersBesidePreservedHandle(t *testing.T) {
+	var out strings.Builder
+	err := NewPages().Execute("home", &out, homeParams{LoginError: LoginErrorMessage("invalid_handle"), LoginHandle: `asdf./asdf"><script>alert(1)</script>`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := out.String()
+	for _, want := range []string{`role="alert"`, `aria-describedby="login-error"`, `Enter a valid ATProto handle`, `value="asdf./asdf`} {
+		if !strings.Contains(html, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if strings.Contains(html, `<script>alert(1)</script>`) {
+		t.Fatal("handle was not escaped")
+	}
+	if LoginErrorMessage("untrusted error text") != "" {
+		t.Fatal("unknown error text displayed")
+	}
+}

@@ -88,6 +88,10 @@ func (m *ServiceManager) HandleCallback(serviceName string) http.HandlerFunc {
 
 		if err != nil {
 			m.logger.Printf("Error handling callback for service '%s': %v", serviceName, err)
+			if serviceName == "atproto" {
+				http.Redirect(w, r, "/?login_error=callback_failed", http.StatusSeeOther)
+				return
+			}
 			http.Error(w, fmt.Sprintf("Error handling callback for service '%s'", serviceName), http.StatusInternalServerError)
 			return
 		}

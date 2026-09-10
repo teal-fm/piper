@@ -91,17 +91,6 @@ func NewSpotifyService(database *db.DB, atprotoAuthService *atprotoauth.AuthServ
 	}
 }
 
-func (s *Service) SubmitTrackToPDS(did string, mostRecentAtProtoSessionID string, track *models.Track, ctx context.Context) error {
-	//Had a empty feed.play get submitted not sure why. Tracking here
-	if track.Name == "" {
-		s.logger.Println("Track name is empty. Skipping submission. Please record the logs before and send to the teal.fm Discord")
-		return nil
-	}
-
-	// Use shared atproto service for submission
-	return atprotoservice.SubmitPlayToPDS(ctx, did, mostRecentAtProtoSessionID, track, s.atprotoAuthService)
-}
-
 func (s *Service) SetAccessToken(token string, refreshToken string, userId int64) (int64, error) {
 	userID, err := s.identifyAndStoreUser(token, refreshToken, userId)
 	if err != nil {
@@ -828,32 +817,8 @@ func (s *Service) stampTrack(ctx context.Context, userID int64, track *models.Tr
 		return
 	}
 
-	// Submit play record to ATProto PDS
-
-	// Fetch the user
-	dbUser, err := s.DB.GetUserByID(userID)
-	if err != nil {
-		s.logger.Printf("User %d: Error fetching user for PDS: %v", userID, err)
-		return
-	}
-	if dbUser == nil {
-		s.logger.Printf("User %d: User not found in DB. Skipping PDS submission.", userID)
-		return
-	}
-	if dbUser.ATProtoDID == nil || *dbUser.ATProtoDID == "" {
-		// No DID configured, skip PDS submission silently
-		return
-	}
-	if dbUser.MostRecentAtProtoSessionID == nil || *dbUser.MostRecentAtProtoSessionID == "" {
-		return
-	}
-
-	// Perform submission to PDS
-	s.logger.Printf("User %d: Submitting track '%s' to PDS (DID: %s)", userID, trackToSubmit.Name, *dbUser.ATProtoDID)
-	if err := s.SubmitTrackToPDS(*dbUser.ATProtoDID, *dbUser.MostRecentAtProtoSessionID, trackToSubmit, ctx); err != nil {
+	if err := atprotoservice.PublishStoredPlay(ctx, s.DB, userID, trackToSubmit.PlayID, s.atprotoAuthService); err != nil {
 		s.logger.Printf("User %d: Error submitting to PDS: %v", userID, err)
-	} else {
-		s.logger.Printf("User %d: Successfully submitted track '%s' to PDS", userID, trackToSubmit.Name)
 	}
 }
 
