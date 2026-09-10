@@ -41,7 +41,7 @@ func jsonError(w http.ResponseWriter, message string, statusCode int) {
 	jsonResponse(w, statusCode, map[string]string{"error": message})
 }
 
-func (s *Service) HandleAPIKeyManagement(database *db.DB, pg *pages.Pages) http.HandlerFunc {
+func (s *Service) HandleAPIKeyManagement(database *db.DB, pg *pages.Pages, rootURL string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		userID, ok := session.GetUserID(r.Context())
@@ -203,10 +203,12 @@ func (s *Service) HandleAPIKeyManagement(database *db.DB, pg *pages.Pages) http.
 		data := struct {
 			Keys     []*dbapikey.ApiKey // Assuming GetUserApiKeys returns this type
 			NewKeyID string             // Changed from NewKey for clarity as it's an ID
+			RootURL  string
 			NavBar   pages.NavBar
 		}{
 			Keys:     keys,
 			NewKeyID: newKeyValueToShow,
+			RootURL:  rootURL,
 			NavBar:   pages.NewNavBar(user, ok).WithBreadcrumb("API keys"),
 		}
 
