@@ -610,8 +610,8 @@ func (s *Service) ProcessUser(ctx context.Context, user *models.User) error {
 	}
 
 	// Submit to PDS
-	if user.ATProtoDID != nil && user.MostRecentAtProtoSessionID != nil && s.atprotoService != nil {
-		if err := atprotoservice.SubmitPlayToPDS(ctx, *user.ATProtoDID, *user.MostRecentAtProtoSessionID, track, s.atprotoService); err != nil {
+	if track.HasStamped {
+		if err := atprotoservice.PublishStoredPlay(ctx, s.DB, user.ID, track.PlayID, s.atprotoService); err != nil {
 			s.logger.Printf("failed submit to PDS for user %d: %v", user.ID, err)
 		}
 	}
