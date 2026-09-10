@@ -27,7 +27,7 @@ func (app *application) routes() http.Handler {
 	// Authenticated Web Routes
 	mux.HandleFunc("/current-track", session.WithAuth(app.spotifyService.HandleCurrentTrack, app.sessionManager))
 	mux.HandleFunc("/history", session.WithAuth(app.spotifyService.HandleTrackHistory, app.sessionManager))
-	mux.HandleFunc("/api-keys", session.WithAuth(app.apiKeyService.HandleAPIKeyManagement(app.database, app.pages), app.sessionManager))
+	mux.HandleFunc("/api-keys", session.WithAuth(app.apiKeyService.HandleAPIKeyManagement(app.database, app.pages, viper.GetString("server.root_url")), app.sessionManager))
 	mux.HandleFunc("/unlink-spotify", session.WithAuth(handleUnlinkSpotify(app.database, app.spotifyService), app.sessionManager))
 	mux.HandleFunc("/login/spotify", session.WithAuth(app.oauthManager.HandleLogin("spotify"), app.sessionManager))
 	mux.HandleFunc("/callback/spotify", session.WithAuth(app.oauthManager.HandleCallback("spotify"), app.sessionManager))

@@ -203,3 +203,10 @@ Historical tracks saved before submission tracking was introduced have unknown
 publishing outcomes. They are not automatically queued or labelled as failures.
 Recovering an older gap requires comparing the saved tracks with PDS records
 before backfilling, to avoid duplicating successful submissions.
+
+## Releases
+
+See [the release guide](docs/releases.md) for adding changesets, merging release
+PRs, and installing versioned Docker images. GitHub releases include a changelog
+and installation commands for that exact version. `latest` tracks stable
+releases; `main` tracks development builds.

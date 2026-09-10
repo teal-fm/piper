@@ -15,6 +15,7 @@ func TestPagesRenderIndependently(t *testing.T) {
 	type apiKeysParams struct {
 		Keys     []struct{}
 		NewKeyID string
+		RootURL  string
 		NavBar   NavBar
 	}
 	type lastFMParams struct {
