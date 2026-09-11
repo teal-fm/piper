@@ -310,11 +310,12 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 		if exists {
 			continue
 		}
-		if _, err := s.db.SaveTrack(user.ID, db.SourceListenBrainz, &track); err != nil {
+		trackID, err := s.db.SaveTrack(user.ID, db.SourceListenBrainz, &track)
+		if err != nil {
 			return fmt.Errorf("saving %s by %s: %w", track.Name, track.Artist[0].Name, err)
 		}
 		if user.ATProtoDID != nil && user.MostRecentAtProtoSessionID != nil && s.atprotoService != nil {
-			if err := atprotoservice.SubmitPlayToPDS(ctx, *user.ATProtoDID, *user.MostRecentAtProtoSessionID, &track, s.atprotoService); err != nil {
+			if err := atprotoservice.PublishStoredPlay(ctx, s.db, user.ID, trackID, s.atprotoService); err != nil {
 				s.logger.Printf("Could not submit %s by %s for user %d: %v", track.Name, track.Artist[0].Name, user.ID, err)
 			}
 		}
