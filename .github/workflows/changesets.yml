@@ -10,6 +10,9 @@ permissions:
 jobs:
   check:
     name: Check changeset
+    # The release PR is opened by github-actions[bot] and consumes changesets
+    # rather than adding one, so it must not require a changeset entry.
+    if: github.event.pull_request.user.login != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
