@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source "../templates";
 
 @theme {
   --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",

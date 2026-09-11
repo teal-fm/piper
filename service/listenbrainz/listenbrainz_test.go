@@ -3,6 +3,7 @@ package listenbrainz
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -166,12 +167,15 @@ func TestSyncListensUsesResolvedMetadataAndDeduplicates(t *testing.T) {
 func TestSyncListensIncludesLatestSecond(t *testing.T) {
 	database := testDatabase(t)
 	user := linkedUser(t, database, "same-second", "secret")
-	timestamp := time.Unix(100, 0).UTC()
-	if _, err := database.SaveTrack(user.ID, db.SourceListenBrainz, &models.Track{
-		Name: "Already stored", Artist: []models.Artist{{Name: "Artist"}}, Timestamp: timestamp,
-	}); err != nil {
+	listenedAt := int64(100)
+	storedListen := models.ListenBrainzPayload{ListenedAt: &listenedAt, TrackMetadata: models.ListenBrainzTrackMetadata{
+		ArtistName: "Artist", TrackName: "Already stored",
+	}}
+	storedTrack := syncedTrack(&storedListen)
+	if _, err := database.SaveListenBrainzTrack(user.ID, listenSourceIdentity(&storedListen), &storedTrack); err != nil {
 		t.Fatal(err)
 	}
+	timestamp := time.Unix(listenedAt, 0).UTC()
 	if err := database.SaveListenBrainzSyncTimestamp(user.ID, timestamp); err != nil {
 		t.Fatal(err)
 	}
@@ -202,6 +206,53 @@ func TestSyncListensIncludesLatestSecond(t *testing.T) {
 	}
 	if len(tracks) != 3 {
 		t.Fatalf("stored %d tracks, want 3", len(tracks))
+	}
+}
+
+func TestSyncListensDeduplicatesWhenHydrationChanges(t *testing.T) {
+	database := testDatabase(t)
+	user := linkedUser(t, database, "retry", "secret")
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"payload":{"listens":[{"listened_at":200,"track_metadata":{"artist_name":"Source Artist","track_name":"Song","release_name":"Source Album"}}]}}`))
+	}))
+	defer server.Close()
+
+	service := testService(database, server, nil)
+	attempts := 0
+	service.hydrateTrack = func(track models.Track) (*models.Track, error) {
+		attempts++
+		if attempts == 1 {
+			return nil, errors.New("temporary MusicBrainz failure")
+		}
+		recording := "recording-id"
+		track.Artist = []models.Artist{{Name: "Hydrated Artist"}}
+		track.Album = "Hydrated Album"
+		track.RecordingMBID = &recording
+		track.DurationMs = 180000
+		track.ISRC = "USABC1234567"
+		return &track, nil
+	}
+
+	if err := service.syncListens(context.Background(), user); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.syncListens(context.Background(), user); err != nil {
+		t.Fatal(err)
+	}
+	tracks, err := database.GetRecentTracks(user.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tracks) != 1 {
+		t.Fatalf("stored %d copies of one source listen", len(tracks))
+	}
+	submissions, err := database.ListUnpublishedPlays(user.ID, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(submissions) != 1 {
+		t.Fatalf("queued %d submissions for one source listen", len(submissions))
 	}
 }
 

@@ -2,6 +2,7 @@ package listenbrainz
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -42,6 +43,7 @@ type Service struct {
 	apiURL             string
 	userAgent          string
 	musicBrainzService *musicbrainz.Service
+	hydrateTrack       func(models.Track) (*models.Track, error)
 	atprotoService     *atprotoauth.AuthService
 	playingNowService  playingNowPublisher
 
@@ -75,7 +77,7 @@ func NewService(database *db.DB, apiURL, userAgent string, musicBrainzService *m
 		userAgent = models.SubmissionAgent + " (https://teal.fm)"
 	}
 
-	return &Service{
+	service := &Service{
 		db: database,
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
@@ -94,6 +96,12 @@ func NewService(database *db.DB, apiURL, userAgent string, musicBrainzService *m
 		lastSeenNowPlaying: make(map[int64]string),
 		logger:             log.New(os.Stdout, "listenbrainz: ", log.LstdFlags|log.Lmsgprefix),
 	}
+	if musicBrainzService != nil {
+		service.hydrateTrack = func(track models.Track) (*models.Track, error) {
+			return musicbrainz.HydrateTrack(musicBrainzService, track)
+		}
+	}
+	return service
 }
 
 // ValidateToken verifies a ListenBrainz token and returns its MusicBrainz ID.
@@ -286,6 +294,7 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 		}
 
 		track := syncedTrack(listen)
+		sourceIdentity := listenSourceIdentity(listen)
 		if lastKnown != nil && track.Timestamp.Before(*lastKnown) {
 			continue
 		}
@@ -293,8 +302,8 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 			newest = track.Timestamp
 		}
 
-		if track.RecordingMBID == nil && s.musicBrainzService != nil {
-			hydrated, err := musicbrainz.HydrateTrack(s.musicBrainzService, track)
+		if track.RecordingMBID == nil && s.hydrateTrack != nil {
+			hydrated, err := s.hydrateTrack(track)
 			if err != nil {
 				s.logger.Printf("Could not hydrate %s by %s: %v", track.Name, track.Artist[0].Name, err)
 			} else if hydrated != nil {
@@ -303,14 +312,14 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 		}
 
 		s.enrichTrack(ctx, &track)
-		exists, err := s.db.HasListenBrainzTrack(user.ID, &track)
+		exists, err := s.db.HasListenBrainzTrack(user.ID, sourceIdentity)
 		if err != nil {
 			return err
 		}
 		if exists {
 			continue
 		}
-		trackID, err := s.db.SaveTrack(user.ID, db.SourceListenBrainz, &track)
+		trackID, err := s.db.SaveListenBrainzTrack(user.ID, sourceIdentity, &track)
 		if err != nil {
 			return fmt.Errorf("saving %s by %s: %w", track.Name, track.Artist[0].Name, err)
 		}
@@ -327,6 +336,30 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 		advanceUserCursor(user, newest)
 	}
 	return nil
+}
+
+func listenSourceIdentity(listen *models.ListenBrainzPayload) string {
+	timestamp := int64(0)
+	if listen.ListenedAt != nil {
+		timestamp = *listen.ListenedAt
+	}
+	release := ""
+	if listen.TrackMetadata.ReleaseName != nil {
+		release = *listen.TrackMetadata.ReleaseName
+	}
+	recording := ""
+	if info := listen.TrackMetadata.AdditionalInfo; info != nil {
+		if info.RecordingMSID != nil {
+			recording = *info.RecordingMSID
+		} else if info.RecordingMBID != nil {
+			recording = *info.RecordingMBID
+		}
+	}
+	if recording == "" && listen.TrackMetadata.MBIDMapping != nil {
+		recording = listen.TrackMetadata.MBIDMapping.RecordingMBID
+	}
+	identity := fmt.Sprintf("%d\x00%s\x00%s\x00%s\x00%s", timestamp, listen.TrackMetadata.ArtistName, listen.TrackMetadata.TrackName, release, recording)
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(identity)))
 }
 
 // Synced metadata can identify streaming catalog entries without proving where

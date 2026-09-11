@@ -50,6 +50,7 @@ type ListenBrainzAdditionalInfo struct {
 	MusicService     *string `json:"music_service,omitempty"`
 	MusicServiceName *string `json:"music_service_name,omitempty"`
 	OriginURL        *string `json:"origin_url,omitempty"`
+	RecordingMSID    *string `json:"recording_msid,omitempty"`
 	LastFMTrackURL   *string `json:"lastfm_track_url,omitempty"`
 	YoutubeID        *string `json:"youtube_id,omitempty"`
 }

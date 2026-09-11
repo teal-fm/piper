@@ -2,7 +2,6 @@ package db
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -10,15 +9,18 @@ import (
 	"github.com/teal-fm/piper/models"
 )
 
-// HasListenBrainzTrack distinguishes recordings sharing a title and timestamp.
-func (db *DB) HasListenBrainzTrack(userID int64, track *models.Track) (bool, error) {
-	artists, err := json.Marshal(track.Artist)
-	if err != nil {
-		return false, err
-	}
+// HasListenBrainzTrack checks the immutable identity captured from the source payload.
+func (db *DB) HasListenBrainzTrack(userID int64, sourceIdentity string) (bool, error) {
 	var exists bool
-	err = db.QueryRow(`SELECT EXISTS(SELECT 1 FROM tracks WHERE user_id = ? AND source = ? AND name = ? AND timestamp = ? AND artist = ? AND album = ? AND recording_mbid IS ? AND release_mbid IS ?)`, userID, SourceListenBrainz, track.Name, track.Timestamp, string(artists), track.Album, track.RecordingMBID, track.ReleaseMBID).Scan(&exists)
+	err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM tracks WHERE user_id = ? AND source = ? AND source_identity = ?)`, userID, SourceListenBrainz, sourceIdentity).Scan(&exists)
 	return exists, err
+}
+
+func (db *DB) SaveListenBrainzTrack(userID int64, sourceIdentity string, track *models.Track) (int64, error) {
+	if sourceIdentity == "" {
+		return 0, errors.New("ListenBrainz source identity is required")
+	}
+	return db.saveTrack(userID, SourceListenBrainz, track, &sourceIdentity)
 }
 
 func (db *DB) LinkListenBrainz(userID int64, username, token string) error {

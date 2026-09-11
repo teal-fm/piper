@@ -117,6 +117,7 @@ func (db *DB) Initialize() error {
 		service_base_url TEXT,
 		isrc TEXT,
 		has_stamped BOOLEAN,
+		source_identity TEXT,
 		FOREIGN KEY (user_id) REFERENCES users(id)
 	)`)
 	if err != nil {
@@ -204,6 +205,13 @@ func (db *DB) Initialize() error {
 		return err
 	}
 	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_tracks_user_source_timestamp ON tracks(user_id, source, timestamp DESC)`); err != nil {
+		return err
+	}
+	_, err = db.Exec(`ALTER TABLE tracks ADD COLUMN source_identity TEXT`)
+	if err != nil && err.Error() != "duplicate column name: source_identity" {
+		return err
+	}
+	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_source_identity ON tracks(user_id, source, source_identity) WHERE source_identity IS NOT NULL`); err != nil {
 		return err
 	}
 
@@ -500,6 +508,10 @@ func (db *DB) GetAllAppleMusicLinkedUsers() ([]*models.User, error) {
 }
 
 func (db *DB) SaveTrack(userID int64, source TrackSource, track *models.Track) (int64, error) {
+	return db.saveTrack(userID, source, track, nil)
+}
+
+func (db *DB) saveTrack(userID int64, source TrackSource, track *models.Track, sourceIdentity *string) (int64, error) {
 	if !source.IsValid() {
 		return 0, fmt.Errorf("invalid source %q", source)
 	}
@@ -521,11 +533,11 @@ func (db *DB) SaveTrack(userID int64, source TrackSource, track *models.Track) (
 	}
 	defer tx.Rollback()
 	err = tx.QueryRow(`
-	INSERT INTO tracks (user_id, name, recording_mbid, artist, album, release_mbid, url, timestamp, duration_ms, progress_ms, service_base_url, isrc, has_stamped, source)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO tracks (user_id, name, recording_mbid, artist, album, release_mbid, url, timestamp, duration_ms, progress_ms, service_base_url, isrc, has_stamped, source, source_identity)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	RETURNING id`,
 		userID, track.Name, track.RecordingMBID, artistString, track.Album, track.ReleaseMBID, track.URL, track.Timestamp,
-		track.DurationMs, track.ProgressMs, track.ServiceBaseUrl, track.ISRC, track.HasStamped, source).Scan(&trackID)
+		track.DurationMs, track.ProgressMs, track.ServiceBaseUrl, track.ISRC, track.HasStamped, source, sourceIdentity).Scan(&trackID)
 
 	if err != nil {
 		return 0, err
