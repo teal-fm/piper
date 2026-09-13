@@ -15,6 +15,7 @@ test('release notes contain only the requested changelog and pin installation to
   assert.match(notes, /PIPER_IMAGE=ghcr.io\/teal-fm\/piper:0.0.16 docker compose/);
   assert.match(notes, /piper\/v0.0.16\/compose.release.yml/);
   assert.match(notes, /git clone --branch v0.0.16 --depth 1/);
+  assert.match(notes, /go build -ldflags="-X github.com\/teal-fm\/piper\/models.buildChannel=release"/);
 });
 test('the final changelog entry works without a following heading', () => {
   const notes = releaseNotes('0.0.15', changelog, 'teal-fm/piper');
@@ -33,7 +34,7 @@ test('version synchronization detects drift, updates the Go agent, and is idempo
   try {
     mkdirSync(join(cwd, 'models'));
     writeFileSync(join(cwd, 'package.json'), JSON.stringify({ version: '0.1.0' }));
-    writeFileSync(join(cwd, 'models/constants.go'), 'package models\n\nconst SubmissionAgent = "piper/v0.0.14"\n');
+    writeFileSync(join(cwd, 'models/constants.go'), 'package models\n\nconst releaseSubmissionAgent = "piper/v0.0.14"\n');
     const run = (...args) => execFileSync(process.execPath, [script, ...args], { cwd, stdio: 'pipe' });
     assert.throws(() => run('--check'));
     run();

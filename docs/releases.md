@@ -86,6 +86,25 @@ Apple Music users must add a bind mount for their private key and set
 Back up the database before upgrades. Downgrading the image does not reverse
 schema migrations.
 
+## Submission agent
+
+Git checkout builds embed Go's VCS revision and report `piper/main (abcdef0)`.
+The `:main` and `:sha-…` images receive the commit from CI and use the same
+seven-character format. This also applies to local feature branch builds.
+Versioned release images report `piper/vX.Y.Z`.
+
+For local Docker builds, pass the revision because `.git` is excluded from the
+build context:
+
+```sh
+PIPER_BUILD_REVISION=$(git rev-parse HEAD) docker compose up --build
+```
+
+Without a revision, local Docker builds report `piper/main`. Source builds without
+VCS metadata fall back to the release version. To explicitly build a release from
+a Git checkout, use `go build -ldflags="-X github.com/teal-fm/piper/models.buildChannel=release" -o piper ./cmd`.
+The generated release instructions include this flag.
+
 ## Repository setup
 
 In GitHub Settings, Actions, General, enable **Allow GitHub Actions to create and
@@ -119,3 +138,37 @@ If Docker succeeded but GitHub release creation failed, rerun the failed workflo
 at the same commit before merging more changes. This may rebuild and push the
 same image tags. For a bad published release, add a new patch changeset and ship
 a new version. The action does not overwrite published release notes.
+
+## Pull request images
+
+Every opened, reopened, or updated PR builds its head commit for Linux AMD64 and
+ARM64, including PRs from forks and PRs targeting branches other than main.
+After a successful build, a separate workflow publishes
+`ghcr.io/teal-fm/piper-pr:pr-<number>` and creates or updates a comment from
+`github-actions[bot]` with the commit, pull command, and Compose instructions.
+The tag follows the latest successful build. Failed builds leave the previous
+image and comment in place. Closed PRs and superseded commits are skipped.
+
+The build has read-only repository permissions and uploads an OCI archive.
+The publisher runs from the default branch, copies the archive without running
+the image or checking out PR code, and has package and comment write permissions.
+Preview images use a separate `piper-pr` package from release images. This follows
+GitHub's [workflow_run artifact pattern](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run)
+and Docker's [OCI archive exporter](https://docs.docker.com/build/exporters/oci-docker/).
+The Dockerfile cross-compiles CGO binaries with
+[`tonistiigi/xx`](https://github.com/tonistiigi/xx), so the ARM64 Go compiler runs
+at native speed instead of under QEMU. PR builds also reuse BuildKit's GitHub
+Actions cache across updates.
+
+Both workflows must be merged into the default branch before automatic publishing
+works. Fork contributions may require a maintainer to approve the build under the
+repository's Actions settings. GitHub does not trigger PR workflows for PRs or
+updates created using `GITHUB_TOKEN`; those require a GitHub App token or a
+maintainer to close and reopen the PR. Set the `piper-pr` GHCR package to public after its
+first publication so the bot's pull command works without registry login. The
+package must grant this repository Actions access. Build artifacts expire after
+two days; published images remain available until removed from GHCR.
+
+## Tangled pipelines
+
+Native Spindle Go builds, Go tests, and changeset checks are documented in [Tangled checks](tangled.md).
