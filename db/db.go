@@ -63,6 +63,9 @@ func (db *DB) Initialize() error {
 		refresh_token TEXT,                 -- Spotify refresh token
 		token_expiry TIMESTAMP,             -- Spotify token expiry
 		lastfm_username TEXT,               -- Last.fm username
+		listenbrainz_username TEXT,          -- ListenBrainz / MusicBrainz username
+		listenbrainz_token TEXT,             -- ListenBrainz user token
+		listenbrainz_synced_at TIMESTAMP,     -- Latest ListenBrainz account sync cursor
 		applemusic_user_token TEXT,         -- Apple Music MusicKit user token
 		created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Use default
 		updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP  -- Use default
@@ -84,12 +87,18 @@ func (db *DB) Initialize() error {
 		"avatar_url TEXT",
 		"profile_fetched_at TIMESTAMP",
 		"lastfm_avatar_url TEXT",
+		"listenbrainz_username TEXT",
+		"listenbrainz_token TEXT",
+		"listenbrainz_synced_at TIMESTAMP",
 	} {
 		name := strings.Fields(column)[0]
 		_, err = db.Exec(`ALTER TABLE users ADD COLUMN ` + column)
 		if err != nil && err.Error() != "duplicate column name: "+name {
 			return err
 		}
+	}
+	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_listenbrainz_username ON users(listenbrainz_username COLLATE NOCASE) WHERE listenbrainz_username IS NOT NULL`); err != nil {
+		return err
 	}
 
 	_, err = db.Exec(`
@@ -108,6 +117,7 @@ func (db *DB) Initialize() error {
 		service_base_url TEXT,
 		isrc TEXT,
 		has_stamped BOOLEAN,
+		source_identity TEXT,
 		FOREIGN KEY (user_id) REFERENCES users(id)
 	)`)
 	if err != nil {
@@ -195,6 +205,13 @@ func (db *DB) Initialize() error {
 		return err
 	}
 	if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_tracks_user_source_timestamp ON tracks(user_id, source, timestamp DESC)`); err != nil {
+		return err
+	}
+	_, err = db.Exec(`ALTER TABLE tracks ADD COLUMN source_identity TEXT`)
+	if err != nil && err.Error() != "duplicate column name: source_identity" {
+		return err
+	}
+	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_source_identity ON tracks(user_id, source, source_identity) WHERE source_identity IS NOT NULL`); err != nil {
 		return err
 	}
 
@@ -355,6 +372,9 @@ func (db *DB) GetUserByID(ID int64) (*models.User, error) {
            token_expiry,
            lastfm_username,
            lastfm_avatar_url,
+		   listenbrainz_username,
+		   listenbrainz_token,
+		   listenbrainz_synced_at,
            applemusic_user_token,
            handle,
            display_name,
@@ -365,7 +385,9 @@ func (db *DB) GetUserByID(ID int64) (*models.User, error) {
     FROM users WHERE id = ?`, ID).Scan(
 		&user.ID, &user.Username, &user.Email, &user.ATProtoDID, &user.MostRecentAtProtoSessionID, &user.SpotifyID,
 		&user.AccessToken, &user.RefreshToken, &user.TokenExpiry,
-		&user.LastFMUsername, &user.LastFMAvatarURL, &user.AppleMusicUserToken,
+		&user.LastFMUsername, &user.LastFMAvatarURL,
+		&user.ListenBrainzUsername, &user.ListenBrainzToken, &user.ListenBrainzSyncedAt,
+		&user.AppleMusicUserToken,
 		&user.Handle, &user.DisplayName, &user.AvatarURL, &user.ProfileFetchedAt,
 		&user.CreatedAt, &user.UpdatedAt)
 
@@ -486,6 +508,10 @@ func (db *DB) GetAllAppleMusicLinkedUsers() ([]*models.User, error) {
 }
 
 func (db *DB) SaveTrack(userID int64, source TrackSource, track *models.Track) (int64, error) {
+	return db.saveTrack(userID, source, track, nil)
+}
+
+func (db *DB) saveTrack(userID int64, source TrackSource, track *models.Track, sourceIdentity *string) (int64, error) {
 	if !source.IsValid() {
 		return 0, fmt.Errorf("invalid source %q", source)
 	}
@@ -507,11 +533,11 @@ func (db *DB) SaveTrack(userID int64, source TrackSource, track *models.Track) (
 	}
 	defer tx.Rollback()
 	err = tx.QueryRow(`
-	INSERT INTO tracks (user_id, name, recording_mbid, artist, album, release_mbid, url, timestamp, duration_ms, progress_ms, service_base_url, isrc, has_stamped, source)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO tracks (user_id, name, recording_mbid, artist, album, release_mbid, url, timestamp, duration_ms, progress_ms, service_base_url, isrc, has_stamped, source, source_identity)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	RETURNING id`,
 		userID, track.Name, track.RecordingMBID, artistString, track.Album, track.ReleaseMBID, track.URL, track.Timestamp,
-		track.DurationMs, track.ProgressMs, track.ServiceBaseUrl, track.ISRC, track.HasStamped, source).Scan(&trackID)
+		track.DurationMs, track.ProgressMs, track.ServiceBaseUrl, track.ISRC, track.HasStamped, source, sourceIdentity).Scan(&trackID)
 
 	if err != nil {
 		return 0, err

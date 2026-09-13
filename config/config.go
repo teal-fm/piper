@@ -27,7 +27,10 @@ func Load() {
 	// Feature toggles for music services (default to true for backwards compatibility)
 	viper.SetDefault("enable_spotify", true)
 	viper.SetDefault("enable_lastfm", true)
+	viper.SetDefault("enable_listenbrainz", true)
 	viper.SetDefault("enable_applemusic", true)
+	viper.SetDefault("listenbrainz.api_url", "https://api.listenbrainz.org")
+	viper.SetDefault("listenbrainz.interval_seconds", 30)
 
 	// Apple Music defaults
 	viper.SetDefault("applemusic.team_id", "")

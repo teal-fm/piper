@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/teal-fm/piper/db"
@@ -18,6 +19,7 @@ import (
 	atprotoservice "github.com/teal-fm/piper/service/atproto"
 	"github.com/teal-fm/piper/service/bsky"
 	"github.com/teal-fm/piper/service/lastfm"
+	"github.com/teal-fm/piper/service/listenbrainz"
 	"github.com/teal-fm/piper/service/musicbrainz"
 	"github.com/teal-fm/piper/service/playingnow"
 	"github.com/teal-fm/piper/service/spotify"
@@ -422,11 +424,12 @@ func apiMeHandler(database *db.DB) http.HandlerFunc {
 		spotifyConnected := user.SpotifyID != nil
 
 		response := map[string]any{
-			"authenticated":     true,
-			"user_id":           user.ID,
-			"did":               user.ATProtoDID,
-			"lastfm_username":   lastfmUsername,
-			"spotify_connected": spotifyConnected,
+			"authenticated":         true,
+			"user_id":               user.ID,
+			"did":                   user.ATProtoDID,
+			"lastfm_username":       lastfmUsername,
+			"spotify_connected":     spotifyConnected,
+			"listenbrainz_username": user.ListenBrainzUsername,
 		}
 		// do not send Apple token value; just whether present
 		response["applemusic_linked"] = user.AppleMusicUserToken != nil && *user.AppleMusicUserToken != ""
@@ -436,6 +439,156 @@ func apiMeHandler(database *db.DB) http.HandlerFunc {
 
 		jsonResponse(w, http.StatusOK, response)
 	}
+}
+
+type listenBrainzLinkParams struct {
+	NavBar          pages.NavBar
+	CurrentUsername string
+	Error           string
+}
+
+func handleLinkListenBrainz(database *db.DB, pg *pages.Pages, service *listenbrainz.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if service == nil {
+			http.Error(w, "ListenBrainz is not configured on this server", http.StatusServiceUnavailable)
+			return
+		}
+		if r.Method != http.MethodGet && r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		userID, authenticated := session.GetUserID(r.Context())
+		user, err := database.GetUserByID(userID)
+		if err != nil || user == nil {
+			http.Error(w, "Failed to retrieve user information", http.StatusInternalServerError)
+			return
+		}
+
+		params := listenBrainzLinkParams{
+			NavBar: pages.NewNavBar(user, authenticated).WithBreadcrumb("ListenBrainz"),
+		}
+		if user.ListenBrainzUsername != nil {
+			params.CurrentUsername = *user.ListenBrainzUsername
+		}
+
+		if r.Method == http.MethodPost {
+			if err := r.ParseForm(); err != nil {
+				params.Error = "Could not read the form."
+			} else {
+				token := strings.TrimSpace(r.FormValue("listenbrainz_token"))
+				username, err := linkListenBrainz(r.Context(), database, service, userID, token)
+				if err != nil {
+					log.Printf("Could not link ListenBrainz for user %d: %v", userID, err)
+					params.Error = "That ListenBrainz token could not be verified."
+				} else {
+					log.Printf("Linked ListenBrainz user %q to Piper user %d", username, userID)
+					http.Redirect(w, r, "/", http.StatusSeeOther)
+					return
+				}
+			}
+		}
+
+		w.Header().Set("Content-Type", "text/html")
+		if err := pg.Execute("listenbrainz_link", w, params); err != nil {
+			log.Printf("Error executing ListenBrainz template: %v", err)
+		}
+	}
+}
+
+func handleUnlinkListenBrainz(database *db.DB, service *listenbrainz.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		userID, _ := session.GetUserID(r.Context())
+		if err := database.ClearListenBrainz(userID); err != nil {
+			http.Error(w, "Failed to unlink ListenBrainz", http.StatusInternalServerError)
+			return
+		}
+		if service != nil {
+			service.UnloadUser(userID)
+		}
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+	}
+}
+
+func apiGetListenBrainzHandler(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			jsonResponse(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
+			return
+		}
+		userID, _ := session.GetUserID(r.Context())
+		user, err := database.GetUserByID(userID)
+		if err != nil {
+			jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": "Failed to retrieve user information"})
+			return
+		}
+		if user == nil {
+			jsonResponse(w, http.StatusNotFound, map[string]string{"error": "User not found"})
+			return
+		}
+		jsonResponse(w, http.StatusOK, map[string]*string{"listenbrainz_username": user.ListenBrainzUsername})
+	}
+}
+
+func apiLinkListenBrainzHandler(database *db.DB, service *listenbrainz.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			jsonResponse(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
+			return
+		}
+		if service == nil {
+			jsonResponse(w, http.StatusServiceUnavailable, map[string]string{"error": "ListenBrainz is not configured on this server"})
+			return
+		}
+		var body struct {
+			Token string `json:"token"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+			return
+		}
+		userID, _ := session.GetUserID(r.Context())
+		username, err := linkListenBrainz(r.Context(), database, service, userID, body.Token)
+		if err != nil {
+			log.Printf("Could not link ListenBrainz for user %d: %v", userID, err)
+			jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "ListenBrainz token could not be verified"})
+			return
+		}
+		jsonResponse(w, http.StatusOK, map[string]string{"listenbrainz_username": username})
+	}
+}
+
+func apiUnlinkListenBrainzHandler(database *db.DB, service *listenbrainz.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			jsonResponse(w, http.StatusMethodNotAllowed, map[string]string{"error": "Method not allowed"})
+			return
+		}
+		userID, _ := session.GetUserID(r.Context())
+		if err := database.ClearListenBrainz(userID); err != nil {
+			jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": "Failed to unlink ListenBrainz"})
+			return
+		}
+		if service != nil {
+			service.UnloadUser(userID)
+		}
+		jsonResponse(w, http.StatusOK, map[string]string{"status": "ok"})
+	}
+}
+
+func linkListenBrainz(ctx context.Context, database *db.DB, service *listenbrainz.Service, userID int64, token string) (string, error) {
+	username, err := service.ValidateToken(ctx, token)
+	if err != nil {
+		return "", err
+	}
+	if err := database.LinkListenBrainz(userID, username, strings.TrimSpace(token)); err != nil {
+		return "", err
+	}
+	return username, nil
 }
 
 func apiGetLastfmUserHandler(database *db.DB) http.HandlerFunc {
@@ -632,6 +785,11 @@ func apiSubmitListensHandler(database *db.DB, atprotoService *atprotoauth.AuthSe
 				errors = append(errors, fmt.Sprintf("payload[%d]: track_name is required", i))
 				continue
 			}
+
+			// mbid_mapping is output-only in the ListenBrainz API. Ignore it on
+			// Piper's compatible submission endpoint so clients cannot present
+			// their own identifiers as server-resolved metadata.
+			listen.TrackMetadata.MBIDMapping = nil
 
 			// Convert to internal Track format
 			track := listen.ConvertToTrack()

@@ -192,32 +192,36 @@ func (p *Pages) Execute(name string, w io.Writer, params any) error {
 // Shared view/template params
 
 type NavBar struct {
-	IsLoggedIn        bool
-	Breadcrumb        string
-	Handle            string
-	DisplayName       string
-	AvatarURL         string
-	SpotifyUsername   string
-	LastFMUsername    string
-	LastFMAvatarURL   string
-	SpotifyEnabled    bool
-	LastFMEnabled     bool
-	AppleMusicEnabled bool
+	IsLoggedIn           bool
+	Breadcrumb           string
+	Handle               string
+	DisplayName          string
+	AvatarURL            string
+	SpotifyUsername      string
+	LastFMUsername       string
+	LastFMAvatarURL      string
+	ListenBrainzUsername string
+	SpotifyEnabled       bool
+	LastFMEnabled        bool
+	ListenBrainzEnabled  bool
+	AppleMusicEnabled    bool
 	// *Connected report whether this user has linked the service, as opposed to
 	// *Enabled, which reports whether the server offers it at all.
-	SpotifyConnected    bool
-	LastFMConnected     bool
-	AppleMusicConnected bool
+	SpotifyConnected      bool
+	LastFMConnected       bool
+	ListenBrainzConnected bool
+	AppleMusicConnected   bool
 }
 
 // NewNavBar builds the shared nav params from the current user, which may be
 // nil when logged out or when the lookup failed.
 func NewNavBar(user *models.User, isLoggedIn bool) NavBar {
 	nav := NavBar{
-		IsLoggedIn:        isLoggedIn,
-		SpotifyEnabled:    viper.GetBool("enable_spotify"),
-		LastFMEnabled:     viper.GetBool("enable_lastfm"),
-		AppleMusicEnabled: viper.GetBool("enable_applemusic"),
+		IsLoggedIn:          isLoggedIn,
+		SpotifyEnabled:      viper.GetBool("enable_spotify"),
+		LastFMEnabled:       viper.GetBool("enable_lastfm"),
+		ListenBrainzEnabled: viper.GetBool("enable_listenbrainz"),
+		AppleMusicEnabled:   viper.GetBool("enable_applemusic"),
 	}
 
 	if user == nil {
@@ -242,9 +246,13 @@ func NewNavBar(user *models.User, isLoggedIn bool) NavBar {
 	if user.LastFMAvatarURL != nil {
 		nav.LastFMAvatarURL = *user.LastFMAvatarURL
 	}
+	if user.ListenBrainzUsername != nil {
+		nav.ListenBrainzUsername = *user.ListenBrainzUsername
+	}
 
 	nav.SpotifyConnected = user.SpotifyID != nil
 	nav.LastFMConnected = nav.LastFMUsername != ""
+	nav.ListenBrainzConnected = nav.ListenBrainzUsername != ""
 	nav.AppleMusicConnected = user.AppleMusicUserToken != nil
 
 	return nav
@@ -298,6 +306,15 @@ func (n NavBar) Services() []ServiceCard {
 			Connected: n.AppleMusicConnected,
 			LinkURL:   "/link-applemusic",
 			UnlinkURL: "/unlink-applemusic",
+		},
+		{
+			Name:      "ListenBrainz",
+			Icon:      "listenbrainz",
+			Enabled:   n.ListenBrainzEnabled,
+			Connected: n.ListenBrainzConnected,
+			Account:   n.ListenBrainzUsername,
+			LinkURL:   "/link-listenbrainz",
+			UnlinkURL: "/unlink-listenbrainz",
 		},
 	}
 }

@@ -19,6 +19,12 @@ type User struct {
 	// An empty (but non-nil) value means the account has no avatar.
 	LastFMAvatarURL *string
 
+	// ListenBrainz information. The token is used to prove account ownership
+	// and authenticate API requests. It must never be returned to clients.
+	ListenBrainzUsername *string
+	ListenBrainzToken    *string
+	ListenBrainzSyncedAt *time.Time
+
 	// Apple Music
 	AppleMusicUserToken *string
 
