@@ -155,6 +155,10 @@ the image or checking out PR code, and has package and comment write permissions
 Preview images use a separate `piper-pr` package from release images. This follows
 GitHub's [workflow_run artifact pattern](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run)
 and Docker's [OCI archive exporter](https://docs.docker.com/build/exporters/oci-docker/).
+The Dockerfile cross-compiles CGO binaries with
+[`tonistiigi/xx`](https://github.com/tonistiigi/xx), so the ARM64 Go compiler runs
+at native speed instead of under QEMU. PR builds also reuse BuildKit's GitHub
+Actions cache across updates.
 
 Both workflows must be merged into the default branch before automatic publishing
 works. Fork contributions may require a maintainer to approve the build under the
