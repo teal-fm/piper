@@ -1,0 +1,41 @@
+name: Build PR image
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-image-build-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            PIPER_BUILD_CHANNEL=main
+            PIPER_BUILD_REVISION=${{ github.event.pull_request.head.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
+          outputs: type=oci,dest=${{ runner.temp }}/pr-image.tar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pr-image
+          path: ${{ runner.temp }}/pr-image.tar
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 2
