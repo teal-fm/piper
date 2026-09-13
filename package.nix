@@ -5,7 +5,7 @@ buildGoModule {
 
   src = source;
 
-  vendorHash = "sha256-poQutY1V8X6BdmPMXdQuPWIWE/j3xNoEp4PKSimj2bA=";
+  vendorHash = "sha256-0CAKzBBARoHSqDv34Xx3Yek6r33Exhrhvn+FzGlby14=";
 
   nativeBuildInputs = [ tailwindcss_4 ];
 
@@ -13,12 +13,14 @@ buildGoModule {
 
   subPackages = [ "cmd" ];
 
-  ldflags = [ "-s" "-w" ];
+  ldflags = [
+    "-s"
+    "-w"
+    "-X main.buildTime=2026-09-02T13:18:08-05:00"
+  ];
 
-  postBuild = ''
-    cp -r ./pages/templates $out/
-    cp -r ./pages/static $out/
-    tailwindcss -i $out/static/base.css -o $out/static/main.css -m
+  preBuild = ''
+    tailwindcss -i ./pages/static/base.css -o ./pages/static/main.css -m
   '';
 
   postInstall = ''
