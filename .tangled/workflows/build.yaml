@@ -1,15 +1,16 @@
 when:
   - event: [push]
     branch: [main]
+  - event: [pull_request]
+    branch: ['**']
 
-engine: microvm
-image: nixos
-dependencies: [git, skopeo]
-virtualisation:
-  docker: true
-environment:
-  PIPER_TANGLED_IMAGE: ghcr.io/teal-fm/piper-tangled
+engine: nixery
+dependencies:
+  nixpkgs:
+    - go
+    - gcc
+    - git
 
 steps:
-  - name: Build and publish main image
-    command: bash scripts/tangled-image.sh main
+  - name: Build Go packages
+    command: go build ./...

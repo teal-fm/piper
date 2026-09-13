@@ -1,4 +1,4 @@
 ---
 ---
 
-Add native Tangled Spindle validation and Docker publishing workflows.
+Add Tangled Spindle Go builds, Go tests, and changeset checks.

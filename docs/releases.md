@@ -167,4 +167,4 @@ two days; published images remain available until removed from GHCR.
 
 ## Tangled pipelines
 
-Native Spindle checks and image publishing are documented in [Tangled workflows](tangled.md), including registry setup and differences from GitHub automation.
+Native Spindle Go builds, Go tests, and changeset checks are documented in [Tangled checks](tangled.md).
