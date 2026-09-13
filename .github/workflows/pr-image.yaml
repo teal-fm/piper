@@ -31,6 +31,8 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.event.pull_request.head.sha }}
+          cache-from: type=gha,scope=pr-image
+          cache-to: type=gha,mode=max,scope=pr-image
           outputs: type=oci,dest=${{ runner.temp }}/pr-image.tar
       - uses: actions/upload-artifact@v4
         with:
