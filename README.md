@@ -41,6 +41,7 @@ You now have to bring your own private key to run piper. Can do this via goat `g
 
 - `ENABLE_SPOTIFY` - Enables Spotify integration and validates envs
 - `ENABLE_LASTFM` - Enables Last.fm integration and validates envs
+- `ENABLE_LISTENBRAINZ` - Enables ListenBrainz account linking and listen syncing
 - `ENABLE_APPLEMUSIC` - Enables Apple Music integration and validates envs
 
 - `SPOTIFY_CLIENT_ID` - Client Id from setup in [Spotify developer dashboard](https://developer.spotify.com/documentation/web-api/tutorials/getting-started)
@@ -56,9 +57,20 @@ You now have to bring your own private key to run piper. Can do this via goat `g
 
 - `LASTFM_API_KEY` - Your lastfm api key. Can find out how to setup [here](https://www.last.fm/api)
 
+- `LISTENBRAINZ_API_URL` - ListenBrainz API base URL. Defaults to `https://api.listenbrainz.org`
+- `LISTENBRAINZ_INTERVAL_SECONDS` - Seconds between ListenBrainz checks. Defaults to `30`
+
 - `TRACKER_INTERVAL` - How long between checks to see if the registered users are listening to new music
 - `DB_PATH` - Path for the sqlite db. If you are using the docker compose probably want `/db/piper.db` to persist data
 - `ALLOWED_DIDS` - Restricts the ATProto accounts that can sign-in to the instance to a specific list of DIDs. Supply full DIDs as a space-separated list (e.g., `ALLOWED_DIDS=did:plc:abcdefg did:web:example.com`).
+
+##### listenbrainz
+
+Open the ListenBrainz card under "Your services" and paste the user token from your
+[ListenBrainz settings](https://listenbrainz.org/settings/). Piper validates the token,
+links the MusicBrainz username it belongs to, imports the latest 25 listens, and then
+polls for completed listens and playing-now updates. ListenBrainz-resolved MusicBrainz
+IDs and streaming links are used when they are available.
 
 ##### apple music
 
@@ -166,3 +178,35 @@ Sensitive environment variables (Spotify, ATProto, Last.fm credentials) should b
 ```
 
 See [module.nix](./module.nix) for additional configuration options.
+
+## Failed play submissions
+
+Open **Failed plays** in Piper's navigation to inspect saved plays that have not
+been confirmed published. Each entry includes its source, play time, submission
+status, attempt count, last attempt time, and last error. Retry an individual play
+or the current page of up to 20 plays. Batch retries stop on the first failure.
+For `invalid_grant`, log out and sign in again before retrying.
+
+Eligible plays and their pending submissions are saved in one transaction.
+Publishing success is tracked separately from `hasStamped`, which still means
+that a play met its source's eligibility rules. A retry uses the current OAuth
+session and the original saved record key and payload, including the play time.
+An interrupted submission can be retried after its two-minute claim expires.
+Retries are user-initiated; there is no automatic retry scheduler.
+
+Server logs include `play_submission` events with user ID, play ID, record key,
+attempt number, outcome, and a safe error summary. OAuth response bodies and
+credentials are not saved in submission errors. HTTP status and actionable
+errors such as `invalid_grant` are retained.
+
+Historical tracks saved before submission tracking was introduced have unknown
+publishing outcomes. They are not automatically queued or labelled as failures.
+Recovering an older gap requires comparing the saved tracks with PDS records
+before backfilling, to avoid duplicating successful submissions.
+
+## Releases
+
+See [the release guide](docs/releases.md) for adding changesets, merging release
+PRs, and installing versioned Docker images. GitHub releases include a changelog
+and installation commands for that exact version. `latest` tracks stable
+releases; `main` tracks development builds.

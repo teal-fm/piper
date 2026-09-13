@@ -1,6 +1,19 @@
 {
+  "name": "piper",
+  "version": "0.0.14",
+  "private": true,
+  "scripts": {
+    "changeset": "changeset",
+    "version": "changeset version && node scripts/version.mjs && npm install --package-lock-only --ignore-scripts",
+    "check:version": "node scripts/version.mjs --check",
+    "build:css": "tailwindcss -i ./pages/static/base.css -o ./pages/static/main.css -m",
+    "test:release": "node --test scripts/*.test.mjs"
+  },
   "dependencies": {
     "@tailwindcss/cli": "^4.1.18",
     "tailwindcss": "^4.1.18"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.31.1"
   }
 }

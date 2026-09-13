@@ -15,6 +15,7 @@ func TestPagesRenderIndependently(t *testing.T) {
 	type apiKeysParams struct {
 		Keys     []struct{}
 		NewKeyID string
+		RootURL  string
 		NavBar   NavBar
 	}
 	type lastFMParams struct {
@@ -24,6 +25,11 @@ func TestPagesRenderIndependently(t *testing.T) {
 	type appleMusicParams struct {
 		NavBar   NavBar
 		DevToken string
+	}
+	type listenBrainzParams struct {
+		NavBar          NavBar
+		CurrentUsername string
+		Error           string
 	}
 
 	nav := NavBar{IsLoggedIn: true, Handle: "charles.harries.me"}
@@ -64,6 +70,13 @@ func TestPagesRenderIndependently(t *testing.T) {
 			params:     appleMusicParams{NavBar: crumb("Apple Music"), DevToken: "dev-token"},
 			title:      "Link Apple Music · piper",
 			absent:     []string{"Your services", "API keys allow"},
+		},
+		{
+			name:       "listenbrainz_link",
+			breadcrumb: "ListenBrainz",
+			params:     listenBrainzParams{NavBar: crumb("ListenBrainz"), CurrentUsername: "charles"},
+			title:      "Link ListenBrainz · piper",
+			absent:     []string{"musickit.js", "Your services", "API keys allow"},
 		},
 	}
 
@@ -186,5 +199,25 @@ func TestFingerprintedStylesheetServes(t *testing.T) {
 func TestStaticURLWithoutAnEmbeddedFile(t *testing.T) {
 	if got, want := staticURL("nothing.css"), "/static/nothing.css"; got != want {
 		t.Errorf("staticURL() = %q, want %q", got, want)
+	}
+}
+
+func TestLoginErrorRendersBesidePreservedHandle(t *testing.T) {
+	var out strings.Builder
+	err := NewPages().Execute("home", &out, homeParams{LoginError: LoginErrorMessage("invalid_handle"), LoginHandle: `asdf./asdf"><script>alert(1)</script>`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := out.String()
+	for _, want := range []string{`role="alert"`, `aria-describedby="login-error"`, `Enter a valid ATProto handle`, `value="asdf./asdf`} {
+		if !strings.Contains(html, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if strings.Contains(html, `<script>alert(1)</script>`) {
+		t.Fatal("handle was not escaped")
+	}
+	if LoginErrorMessage("untrusted error text") != "" {
+		t.Fatal("unknown error text displayed")
 	}
 }

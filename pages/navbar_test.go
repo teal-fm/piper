@@ -13,9 +13,11 @@ func ptr(s string) *string { return &s }
 
 // homeParams mirrors cmd.HomeParams, which this package can't import.
 type homeParams struct {
-	NavBar    NavBar
-	BuildTime time.Time
-	Agent     string
+	LoginError  string
+	LoginHandle string
+	NavBar      NavBar
+	BuildTime   time.Time
+	Agent       string
 }
 
 func TestNewNavBar(t *testing.T) {
@@ -28,10 +30,11 @@ func TestNewNavBar(t *testing.T) {
 
 	t.Run("user with a profile", func(t *testing.T) {
 		nav := NewNavBar(&models.User{
-			Handle:         ptr("charles.harries.me"),
-			DisplayName:    ptr("Charles"),
-			AvatarURL:      ptr("https://cdn.bsky.app/img/avatar/plain/did:plc:x/bafy@jpeg"),
-			LastFMUsername: ptr("charles"),
+			Handle:               ptr("charles.harries.me"),
+			DisplayName:          ptr("Charles"),
+			AvatarURL:            ptr("https://cdn.bsky.app/img/avatar/plain/did:plc:x/bafy@jpeg"),
+			LastFMUsername:       ptr("charles"),
+			ListenBrainzUsername: ptr("charles-mb"),
 		}, true)
 
 		if !nav.IsLoggedIn {
@@ -45,6 +48,9 @@ func TestNewNavBar(t *testing.T) {
 		}
 		if nav.LastFMUsername != "charles" {
 			t.Errorf("LastFMUsername = %q", nav.LastFMUsername)
+		}
+		if nav.ListenBrainzUsername != "charles-mb" || !nav.ListenBrainzConnected {
+			t.Errorf("ListenBrainz account was not connected: %+v", nav)
 		}
 	})
 
@@ -98,23 +104,26 @@ func TestNewNavBar(t *testing.T) {
 
 func TestServices(t *testing.T) {
 	nav := NavBar{
-		IsLoggedIn:        true,
-		SpotifyEnabled:    true,
-		SpotifyConnected:  true,
-		SpotifyUsername:   "charles",
-		LastFMEnabled:     true,
-		LastFMUsername:    "charles-lfm",
-		LastFMConnected:   true,
-		LastFMAvatarURL:   "https://lastfm-img.freetls.fastly.net/i/u/174s/x.png",
-		AppleMusicEnabled: false,
+		IsLoggedIn:            true,
+		SpotifyEnabled:        true,
+		SpotifyConnected:      true,
+		SpotifyUsername:       "charles",
+		LastFMEnabled:         true,
+		LastFMUsername:        "charles-lfm",
+		LastFMConnected:       true,
+		LastFMAvatarURL:       "https://lastfm-img.freetls.fastly.net/i/u/174s/x.png",
+		AppleMusicEnabled:     false,
+		ListenBrainzEnabled:   true,
+		ListenBrainzConnected: true,
+		ListenBrainzUsername:  "charles-mb",
 	}
 
 	services := nav.Services()
-	if len(services) != 3 {
-		t.Fatalf("Services() returned %d cards, want 3", len(services))
+	if len(services) != 4 {
+		t.Fatalf("Services() returned %d cards, want 4", len(services))
 	}
 
-	spotify, lastfm, applemusic := services[0], services[1], services[2]
+	spotify, lastfm, applemusic, listenbrainz := services[0], services[1], services[2], services[3]
 
 	if spotify.Name != "Spotify" || spotify.Account != "charles" || spotify.UnlinkURL != "/unlink-spotify" {
 		t.Errorf("Spotify card = %+v", spotify)
@@ -137,6 +146,9 @@ func TestServices(t *testing.T) {
 	}
 	if applemusic.Enabled {
 		t.Error("Apple Music Enabled = true, want false")
+	}
+	if listenbrainz.Name != "ListenBrainz" || listenbrainz.Account != "charles-mb" || listenbrainz.UnlinkURL != "/unlink-listenbrainz" {
+		t.Errorf("ListenBrainz card = %+v", listenbrainz)
 	}
 }
 
@@ -163,12 +175,12 @@ func TestHomeServiceCards(t *testing.T) {
 	// An unknown icon slug silently renders nothing, so check the paths land.
 	t.Run("every card renders its brand icon", func(t *testing.T) {
 		out := render(t, NavBar{
-			IsLoggedIn: true, SpotifyEnabled: true, LastFMEnabled: true, AppleMusicEnabled: true,
+			IsLoggedIn: true, SpotifyEnabled: true, LastFMEnabled: true, AppleMusicEnabled: true, ListenBrainzEnabled: true,
 		})
-		if got := strings.Count(out, "<svg"); got != 3 {
-			t.Errorf("rendered %d icons, want 3", got)
+		if got := strings.Count(out, "<svg"); got != 4 {
+			t.Errorf("rendered %d icons, want 4", got)
 		}
-		if strings.Count(out, `viewBox="0 0 24 24"`) != 3 {
+		if strings.Count(out, `viewBox="0 0 24 24"`) != 4 {
 			t.Error("expected every icon to keep its viewBox")
 		}
 		// Decorative: the service name sits right beside the mark.
@@ -235,16 +247,19 @@ func TestHomeServiceCards(t *testing.T) {
 
 	t.Run("every linked service offers an unlink", func(t *testing.T) {
 		out := render(t, NavBar{
-			IsLoggedIn:          true,
-			SpotifyEnabled:      true,
-			SpotifyConnected:    true,
-			LastFMEnabled:       true,
-			LastFMConnected:     true,
-			LastFMUsername:      "charles",
-			AppleMusicEnabled:   true,
-			AppleMusicConnected: true,
+			IsLoggedIn:            true,
+			SpotifyEnabled:        true,
+			SpotifyConnected:      true,
+			LastFMEnabled:         true,
+			LastFMConnected:       true,
+			LastFMUsername:        "charles",
+			AppleMusicEnabled:     true,
+			AppleMusicConnected:   true,
+			ListenBrainzEnabled:   true,
+			ListenBrainzConnected: true,
+			ListenBrainzUsername:  "charles-mb",
 		})
-		for _, route := range []string{"/unlink-spotify", "/unlink-lastfm", "/unlink-applemusic"} {
+		for _, route := range []string{"/unlink-spotify", "/unlink-lastfm", "/unlink-applemusic", "/unlink-listenbrainz"} {
 			if !strings.Contains(out, `method="post" action="`+route+`"`) {
 				t.Errorf("missing unlink form for %s", route)
 			}
@@ -273,18 +288,18 @@ func TestHomeServiceCards(t *testing.T) {
 	// A service the server can't offer must not hand out a link that 404s or 503s.
 	t.Run("service disabled on the server is greyed out and inert", func(t *testing.T) {
 		out := render(t, NavBar{IsLoggedIn: true})
-		if strings.Count(out, disabled) != 3 {
-			t.Errorf("expected 3 greyed-out cards, got %d", strings.Count(out, disabled))
+		if strings.Count(out, disabled) != 4 {
+			t.Errorf("expected 4 greyed-out cards, got %d", strings.Count(out, disabled))
 		}
 		if strings.Contains(out, connected) {
 			t.Error("did not expect an accent card when every service is disabled")
 		}
-		for _, route := range []string{"/login/spotify", "/link-lastfm", "/link-applemusic"} {
+		for _, route := range []string{"/login/spotify", "/link-lastfm", "/link-applemusic", "/link-listenbrainz"} {
 			if strings.Contains(out, route) {
 				t.Errorf("did not expect a link to %s for a disabled service", route)
 			}
 		}
-		if strings.Count(out, "Unavailable on this server") != 3 {
+		if strings.Count(out, "Unavailable on this server") != 4 {
 			t.Error("expected every disabled card to say so")
 		}
 	})

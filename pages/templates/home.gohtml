@@ -11,7 +11,7 @@
   Connect a service and piper records what you listen to.
 </p>
 
-<div class="grid gap-4 sm:grid-cols-3">
+<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
   {{ range .NavBar.Services }}
   {{ template "components/serviceCard" . }}
   {{ end }}
@@ -23,9 +23,12 @@
   <h1 class="text-3xl font-medium tracking-tight mb-2">piper</h1>
   <p class="text-neutral-500 dark:text-neutral-400 mb-8">
     <strong>Piper</strong> is a multi-user application that records what you're listening to on Spotify,
-      Apple Music, and Last.fm, saving your listening history.
+      Apple Music, Last.fm, and ListenBrainz, saving your listening history.
   </p>
 
+  {{ if .LoginError }}
+  <p id="login-error" role="alert" class="text-sm text-red-700 dark:text-red-300 border border-red-500/30 rounded-lg p-3 mb-4">{{ .LoginError }}</p>
+  {{ end }}
   <form class="space-y-3" action="/login/atproto">
     <label
       class="block text-sm font-medium text-neutral-600 dark:text-neutral-300"
@@ -35,6 +38,8 @@
       type="text"
       id="handle"
       name="handle"
+      value="{{ .LoginHandle }}"
+      {{ if .LoginError }}aria-invalid="true" aria-describedby="login-error"{{ end }}
       placeholder="alice.bsky.social"
       autocapitalize="none"
       autocorrect="off"
