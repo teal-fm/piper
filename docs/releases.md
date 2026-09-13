@@ -86,6 +86,25 @@ Apple Music users must add a bind mount for their private key and set
 Back up the database before upgrades. Downgrading the image does not reverse
 schema migrations.
 
+## Submission agent
+
+Git checkout builds embed Go's VCS revision and report `piper/main (abcdef0)`.
+The `:main` and `:sha-…` images receive the commit from CI and use the same
+seven-character format. This also applies to local feature branch builds.
+Versioned release images report `piper/vX.Y.Z`.
+
+For local Docker builds, pass the revision because `.git` is excluded from the
+build context:
+
+```sh
+PIPER_BUILD_REVISION=$(git rev-parse HEAD) docker compose up --build
+```
+
+Without a revision, local Docker builds report `piper/main`. Source builds without
+VCS metadata fall back to the release version. To explicitly build a release from
+a Git checkout, use `go build -ldflags="-X github.com/teal-fm/piper/models.buildChannel=release" -o piper ./cmd`.
+The generated release instructions include this flag.
+
 ## Repository setup
 
 In GitHub Settings, Actions, General, enable **Allow GitHub Actions to create and

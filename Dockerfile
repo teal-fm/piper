@@ -13,7 +13,9 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=node_builder /app/pages/static/main.css ./pages/static/main.css
-RUN CGO_ENABLED=1 go build -ldflags='-w -s -extldflags "-static"' -o main ./cmd
+ARG PIPER_BUILD_CHANNEL=main
+ARG PIPER_BUILD_REVISION
+RUN CGO_ENABLED=1 go build -ldflags="-w -s -extldflags '-static' -X github.com/teal-fm/piper/models.buildChannel=${PIPER_BUILD_CHANNEL} -X github.com/teal-fm/piper/models.buildRevision=${PIPER_BUILD_REVISION}" -o main ./cmd
 
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata \

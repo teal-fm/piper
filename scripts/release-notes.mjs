@@ -49,7 +49,7 @@ git clone --branch ${tag} --depth 1 https://github.com/${repository}.git piper-$
 cd piper-${version}
 npm ci
 npm run build:css
-CGO_ENABLED=1 go build -o piper ./cmd
+CGO_ENABLED=1 go build -ldflags="-X github.com/teal-fm/piper/models.buildChannel=release" -o piper ./cmd
 \`\`\`
 
 Configure \`.env\` as described in the setup guide, then run \`./piper\`.

@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        PIPER_BUILD_REVISION: ${PIPER_BUILD_REVISION:-}
     ports:
       - "8080:8080"
     env_file:
