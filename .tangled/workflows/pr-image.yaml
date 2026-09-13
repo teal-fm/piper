@@ -1,0 +1,15 @@
+when:
+  - event: [pull_request]
+    branch: ['**']
+
+engine: microvm
+image: nixos
+dependencies: [git, skopeo]
+virtualisation:
+  docker: true
+environment:
+  PIPER_TANGLED_IMAGE: ghcr.io/teal-fm/piper-tangled
+
+steps:
+  - name: Build PR image and publish when credentials are available
+    command: bash scripts/tangled-image.sh pr

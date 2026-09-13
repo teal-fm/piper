@@ -1,0 +1,32 @@
+when:
+  - event: [push]
+    branch: [main]
+  - event: [pull_request]
+    branch: ['**']
+
+engine: microvm
+image: nixos
+dependencies: [go, gcc, gnumake, git, nodejs_24]
+
+steps:
+  - name: Install dependencies and generate assets
+    command: |
+      set -euo pipefail
+      go mod download
+      npm ci
+      make lexicon
+      npm run build:css
+  - name: Run Go race tests and release tooling tests
+    command: |
+      set -euo pipefail
+      go test -race ./...
+      npm run check:version
+      npm run test:release
+  - name: Check Go formatting
+    command: |
+      set -euo pipefail
+      unformatted=$(gofmt -l .)
+      if [ -n "$unformatted" ]; then
+        printf '%s\n' "$unformatted"
+        exit 1
+      fi

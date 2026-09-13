@@ -1,0 +1,35 @@
+# Version preparation remains in GitHub's Changesets action. Push the resulting
+# release tag to Tangled to validate and publish the matching Tangled image.
+when:
+  - event: [push]
+    tag: ['v*']
+
+engine: microvm
+image: nixos
+dependencies: [go, gcc, git, nodejs_24, skopeo]
+virtualisation:
+  docker: true
+environment:
+  PIPER_TANGLED_IMAGE: ghcr.io/teal-fm/piper-tangled
+
+steps:
+  - name: Validate release version and changelog
+    command: |
+      set -euo pipefail
+      npm ci
+      npm run check:version
+      node --input-type=module <<'JS'
+      import { readFileSync } from 'node:fs';
+      import { releaseNotes } from './scripts/release-notes.mjs';
+      const { version } = JSON.parse(readFileSync('package.json', 'utf8'));
+      if (process.env.TANGLED_REF_NAME !== `v${version}`) throw new Error('Tag differs from package.json');
+      releaseNotes(version, readFileSync('CHANGELOG.md', 'utf8'), 'teal-fm/piper');
+      JS
+  - name: Test release
+    command: |
+      set -euo pipefail
+      npm run test:release
+      npm run build:css
+      go test -race ./...
+  - name: Publish versioned release image
+    command: bash scripts/tangled-image.sh release

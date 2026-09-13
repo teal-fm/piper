@@ -164,3 +164,7 @@ maintainer to close and reopen the PR. Set the `piper-pr` GHCR package to public
 first publication so the bot's pull command works without registry login. The
 package must grant this repository Actions access. Build artifacts expire after
 two days; published images remain available until removed from GHCR.
+
+## Tangled pipelines
+
+Native Spindle checks and image publishing are documented in [Tangled workflows](tangled.md), including registry setup and differences from GitHub automation.

@@ -1,0 +1,15 @@
+when:
+  - event: [push]
+    branch: [main]
+
+engine: microvm
+image: nixos
+dependencies: [git, skopeo]
+virtualisation:
+  docker: true
+environment:
+  PIPER_TANGLED_IMAGE: ghcr.io/teal-fm/piper-tangled
+
+steps:
+  - name: Build and publish main image
+    command: bash scripts/tangled-image.sh main
