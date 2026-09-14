@@ -121,7 +121,7 @@ We also provide a docker compose file to use to run piper locally. There are a f
 `SERVER_HOST`- `0.0.0.0`
 `DB_PATH` = `/db/piper.db` to persist your piper db through container restarts
 
-Make sure you have docker and docker compose installed, then you can run piper with `docker compose up`
+Make sure you have docker and docker compose installed, then you can run piper with `PIPER_BUILD_REVISION=$(git rev-parse HEAD) docker compose up --build` to include the commit in its submission agent
 
 #### nix
 

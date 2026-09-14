@@ -1,0 +1,24 @@
+when:
+  - event: [pull_request]
+    branch: ['**']
+
+engine: nixery
+dependencies:
+  nixpkgs:
+    - git
+    - nodejs_24
+environment:
+  PIPER_UPSTREAM: https://tangled.org/teal.fm/piper
+
+steps:
+  - name: Validate changes against the PR target
+    command: |
+      set -euo pipefail
+      git check-ref-format "refs/heads/$TANGLED_PR_TARGET_BRANCH"
+      if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
+        git fetch --unshallow origin
+      fi
+      git fetch --no-tags "$PIPER_UPSTREAM" "+refs/heads/$TANGLED_PR_TARGET_BRANCH:refs/remotes/piper-target/base"
+      export BASE_SHA
+      BASE_SHA=$(git merge-base HEAD refs/remotes/piper-target/base)
+      node scripts/check-changeset.mjs

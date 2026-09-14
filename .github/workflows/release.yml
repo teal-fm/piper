@@ -131,6 +131,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          build-args: |
+            PIPER_BUILD_CHANNEL=release
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |

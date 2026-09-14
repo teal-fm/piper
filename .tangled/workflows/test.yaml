@@ -1,0 +1,16 @@
+when:
+  - event: [push]
+    branch: [main]
+  - event: [pull_request]
+    branch: ['**']
+
+engine: nixery
+dependencies:
+  nixpkgs:
+    - go
+    - gcc
+    - git
+
+steps:
+  - name: Run Go tests
+    command: go test -race ./...

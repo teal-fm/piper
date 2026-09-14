@@ -1,0 +1,131 @@
+name: Publish PR image
+
+on:
+  workflow_run:
+    workflows: [Build PR image]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: pr-image-publish-${{ github.event.workflow_run.head_repository.id }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.repository == 'teal-fm/piper' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+      pull-requests: write
+    steps:
+      # This workflow runs from the default branch. Never check out or execute
+      # PR code here: the build artifact is only copied to the preview registry.
+      - name: Find current PR
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const run = context.payload.workflow_run;
+            if (run.path !== '.github/workflows/pr-image.yaml') {
+              throw new Error('Unexpected source workflow');
+            }
+            const pulls = await github.paginate(github.rest.pulls.list, {
+              ...context.repo, state: 'open', per_page: 100,
+            });
+            // Query the API instead of trusting a PR number from the artifact.
+            // workflow_run.pull_requests can be empty for fork contributions.
+            const matches = pulls.filter(pr =>
+              pr.head.sha === run.head_sha &&
+              pr.head.repo?.id === run.head_repository.id &&
+              pr.head.ref === run.head_branch
+            );
+            if (!matches.length) {
+              core.info('PR is closed or this build has been superseded.');
+              return;
+            }
+            core.setOutput('numbers', JSON.stringify(matches.map(pr => pr.number)));
+            core.setOutput('sha', run.head_sha);
+            core.setOutput('image', `ghcr.io/${process.env.GITHUB_REPOSITORY.toLowerCase()}-pr`);
+      - uses: actions/download-artifact@v4
+        if: steps.pr.outputs.numbers != ''
+        with:
+          name: pr-image
+          path: ${{ runner.temp }}/pr-image
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install image copier
+        if: steps.pr.outputs.numbers != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y skopeo
+      - name: Publish image and update PR comment
+        if: steps.pr.outputs.numbers != ''
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBERS: ${{ steps.pr.outputs.numbers }}
+          IMAGE: ${{ steps.pr.outputs.image }}
+          HEAD_SHA: ${{ steps.pr.outputs.sha }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          script: |
+            const { execFileSync } = require('node:child_process');
+            const { join } = require('node:path');
+            const image = process.env.IMAGE;
+            const sha = process.env.HEAD_SHA;
+            const authfile = join(process.env.RUNNER_TEMP, 'registry-auth.json');
+            execFileSync('skopeo', [
+              'login', '--authfile', authfile, '--username', process.env.GITHUB_ACTOR,
+              '--password-stdin', 'ghcr.io',
+            ], { input: process.env.REGISTRY_TOKEN, stdio: ['pipe', 'inherit', 'inherit'] });
+            const marker = '<!-- piper-pr-image -->';
+            try {
+              for (const number of JSON.parse(process.env.PR_NUMBERS)) {
+                const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: number });
+                if (pr.state !== 'open' || pr.head.sha !== sha) continue;
+                const tag = `${image}:pr-${number}`;
+                execFileSync('skopeo', [
+                  'copy', '--all', '--authfile', authfile,
+                  `oci-archive:${join(process.env.RUNNER_TEMP, 'pr-image', 'pr-image.tar')}`,
+                  `docker://${tag}`,
+                ], { stdio: 'inherit' });
+                const { data: current } = await github.rest.pulls.get({ ...context.repo, pull_number: number });
+                if (current.state !== 'open' || current.head.sha !== sha) continue;
+                const body = [
+                  marker,
+                  `Docker image for commit ${sha} is ready for Linux AMD64 and ARM64.`,
+                  '',
+                  'Download the image:',
+                  '```sh',
+                  `docker pull ${tag}`,
+                  '```',
+                  '',
+                  'With your configured `compose.release.yml` and `.env`, start or update it:',
+                  '```sh',
+                  `PIPER_IMAGE=${tag} docker compose -f compose.release.yml up -d --pull always`,
+                  '```',
+                  '',
+                  'This tag updates after each successful build of this PR. Pull again to get the new image. A failed build leaves the previous image available.',
+                  '',
+                  `[Build logs](${context.payload.workflow_run.html_url})`,
+                ].join('\n');
+                const comments = await github.paginate(github.rest.issues.listComments, {
+                  ...context.repo, issue_number: number, per_page: 100,
+                });
+                const existing = comments.find(comment =>
+                  comment.user?.login === 'github-actions[bot]' && comment.body?.startsWith(marker)
+                );
+                if (existing) {
+                  await github.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
+                } else {
+                  await github.rest.issues.createComment({ ...context.repo, issue_number: number, body });
+                }
+              }
+            } finally {
+              require('node:fs').rmSync(authfile, { force: true });
+            }
