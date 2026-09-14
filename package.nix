@@ -16,7 +16,6 @@ buildGoModule {
   ldflags = [
     "-s"
     "-w"
-    "-X main.buildTime=2026-09-02T13:18:08-05:00"
   ];
 
   preBuild = ''
