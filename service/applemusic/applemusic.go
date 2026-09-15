@@ -549,74 +549,90 @@ func (s *Service) ProcessUser(ctx context.Context, user *models.User) error {
 		return nil
 	}
 
-	// Fetch only the most recent track
-	currentAppleTrack, err := s.GetCurrentAppleMusicTrack(ctx, user)
+	items, err := s.FetchRecentPlayedTracks(ctx, *user.AppleMusicUserToken, 30)
 	if err != nil {
-		s.logger.Printf("failed to get current Apple Music track for user %d: %v", user.ID, err)
 		return err
 	}
-
-	if currentAppleTrack == nil {
-		s.logger.Printf("no current Apple Music track for user %d", user.ID)
-		// Clear playing now status if no track is playing
+	if len(items) == 0 {
 		if s.playingNowService != nil {
-			if err := s.playingNowService.ClearPlayingNow(ctx, user.ID); err != nil {
-				s.logger.Printf("Error clearing playing now for user %d: %v", user.ID, err)
+			return s.playingNowService.ClearPlayingNow(ctx, user.ID)
+		}
+		return nil
+	}
+	ids := []string{}
+	for _, item := range items {
+		if validHistoryTrack(item) {
+			ids = append(ids, appleResourceID(item))
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	seen, initialized, err := s.DB.AppleMusicHistory(user.ID, ids)
+	if err != nil {
+		return err
+	}
+	if initialized {
+		s.logger.Printf("user %d: established Apple Music history baseline (%d resources)", user.ID, len(ids))
+		return nil
+	}
+	// Apple supplies recent resources, not timestamped play events. Retain a
+	// bounded window across polls instead of trusting changes in response order.
+	for i := len(items) - 1; i >= 0; i-- {
+		item := items[i]
+		id := appleResourceID(item)
+		if !validHistoryTrack(item) {
+			s.logger.Printf("user %d resource %q: skipped invalid metadata", user.ID, id)
+			continue
+		}
+		if seen[id] {
+			s.logger.Printf("user %d resource %q: skipped known history", user.ID, id)
+			continue
+		}
+		if err := s.populateCatalogURL(ctx, *user.AppleMusicUserToken, &item); err != nil {
+			s.logger.Printf("user %d resource %q: failed resolving catalog URL: %v", user.ID, id, err)
+		}
+		track := s.toTrack(item)
+		saved, err := s.DB.SaveAppleMusicTrack(user.ID, id, track)
+		if err != nil {
+			return err
+		}
+		seen[id] = true
+		if !saved {
+			s.logger.Printf("user %d resource %q: skipped concurrently saved history", user.ID, id)
+			continue
+		}
+		s.logger.Printf("user %d resource %q: accepted unseen history", user.ID, id)
+		// Only the newest resource can represent playing now.
+		if i == 0 && s.playingNowService != nil {
+			if err := s.playingNowService.PublishPlayingNow(ctx, user.ID, track); err != nil {
+				s.logger.Printf("Error publishing playing now for user %d: %v", user.ID, err)
 			}
 		}
-		return nil
-	}
-
-	lastTrack, err := s.DB.GetLatestTrackForService(user.ID, db.SourceAppleMusic)
-	if err != nil {
-		s.logger.Printf("failed to get last apple music track for user %d: %v", user.ID, err)
-	}
-
-	// Pre-compute the hash for uploaded tracks so comparisons against stored
-	// latest tracks will work
-	currentURL := currentAppleTrack.Attributes.URL
-	if currentURL == "" {
-		currentURL = generateUploadHash(currentAppleTrack)
-	}
-
-	// Check if this is a new track (by URL / upload hash)
-	if lastTrack != nil && lastTrack.URL == currentURL {
-		s.logger.Printf("track unchanged for user %d: %s by %s", user.ID, currentAppleTrack.Attributes.Name, currentAppleTrack.Attributes.ArtistName)
-		return nil
-	}
-
-	// Convert to internal track format
-	track := s.toTrack(*currentAppleTrack)
-	if track == nil || strings.TrimSpace(track.Name) == "" || len(track.Artist) == 0 {
-		s.logger.Printf("invalid track data for user %d", user.ID)
-		return nil
-	}
-
-	// Hydration is handled in toTrack() using MusicBrainz search; no ISRC-only hydration here
-
-	// Save the new track
-	if _, err := s.DB.SaveTrack(user.ID, db.SourceAppleMusic, track); err != nil {
-		s.logger.Printf("failed saving apple track for user %d: %v", user.ID, err)
-		return err
-	}
-
-	s.logger.Printf("saved new track for user %d: %s by %s", user.ID, track.Name, track.Artist[0].Name)
-
-	// Publish playing now status
-	if s.playingNowService != nil {
-		if err := s.playingNowService.PublishPlayingNow(ctx, user.ID, track); err != nil {
-			s.logger.Printf("Error publishing playing now for user %d: %v", user.ID, err)
+		if track.HasStamped {
+			if err := atprotoservice.PublishStoredPlay(ctx, s.DB, user.ID, track.PlayID, s.atprotoService); err != nil {
+				s.logger.Printf("failed submit to PDS for user %d: %v", user.ID, err)
+			}
 		}
 	}
-
-	// Submit to PDS
-	if track.HasStamped {
-		if err := atprotoservice.PublishStoredPlay(ctx, s.DB, user.ID, track.PlayID, s.atprotoService); err != nil {
-			s.logger.Printf("failed submit to PDS for user %d: %v", user.ID, err)
-		}
-	}
-
 	return nil
+}
+
+func validHistoryTrack(t AppleRecentTrack) bool {
+	return strings.TrimSpace(t.Attributes.Name) != "" && strings.TrimSpace(t.Attributes.ArtistName) != ""
+}
+
+func appleResourceID(t AppleRecentTrack) string {
+	if t.ID != "" {
+		return "id:" + t.ID
+	}
+	if t.Attributes.PlayParams != nil && t.Attributes.PlayParams.ID != "" {
+		return "id:" + t.Attributes.PlayParams.ID
+	}
+	if t.Attributes.URL != "" {
+		return "url:" + t.Attributes.URL
+	}
+	return generateUploadHash(&t)
 }
 
 // StartListeningTracker periodically fetches recent plays for Apple Music linked users

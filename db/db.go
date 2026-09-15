@@ -215,6 +215,10 @@ func (db *DB) Initialize() error {
 		return err
 	}
 
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS applemusic_history (user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, resource_ids TEXT NOT NULL)`); err != nil {
+		return err
+	}
+
 	if err := db.initializeSubmissions(); err != nil {
 		return err
 	}
@@ -512,6 +516,24 @@ func (db *DB) SaveTrack(userID int64, source TrackSource, track *models.Track) (
 }
 
 func (db *DB) saveTrack(userID int64, source TrackSource, track *models.Track, sourceIdentity *string) (int64, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	trackID, err := saveTrackTx(tx, userID, source, track, sourceIdentity)
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	track.PlayID = trackID
+	return trackID, nil
+}
+
+// saveTrackTx keeps the track and its pending PDS submission in one transaction.
+func saveTrackTx(tx *sql.Tx, userID int64, source TrackSource, track *models.Track, sourceIdentity *string) (int64, error) {
 	if !source.IsValid() {
 		return 0, fmt.Errorf("invalid source %q", source)
 	}
@@ -527,12 +549,7 @@ func (db *DB) saveTrack(userID int64, source TrackSource, track *models.Track, s
 	}
 
 	var trackID int64
-	tx, err := db.Begin()
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback()
-	err = tx.QueryRow(`
+	err := tx.QueryRow(`
 	INSERT INTO tracks (user_id, name, recording_mbid, artist, album, release_mbid, url, timestamp, duration_ms, progress_ms, service_base_url, isrc, has_stamped, source, source_identity)
 	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	RETURNING id`,
@@ -552,10 +569,7 @@ func (db *DB) saveTrack(userID int64, source TrackSource, track *models.Track, s
 			return 0, err
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return 0, err
-	}
-	track.PlayID = trackID
+
 	return trackID, nil
 }
 
