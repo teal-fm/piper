@@ -111,7 +111,7 @@ func newTestService(t *testing.T, testDB *db.DB, transport http.RoundTripper) *S
 // uploadedTrackJSON builds an Apple Music API response for an uploaded track (no URL).
 func uploadedTrackJSON(name, artist, album string) string {
 	track := map[string]any{
-		"id": "1",
+		"id": generateUploadHash(makeTestTrack(name, album, artist)),
 		"attributes": map[string]string{
 			"name":       name,
 			"artistName": artist,
@@ -178,8 +178,12 @@ func TestProcessUserSkipsDuplicateUploadedTrack(t *testing.T) {
 }
 
 func TestProcessUserSavesDifferentUploadedTrack(t *testing.T) {
-	env := newProcessUserTestEnv(t, uploadedTrackJSON("New Upload", "New Artist", "New Album"))
+	env := newProcessUserTestEnv(t, uploadedTrackJSON("Old Upload", "Old Artist", "Old Album"))
 	env.seedUploadedTrack(t, "Old Upload", "Old Artist", "Old Album")
+	if err := env.svc.ProcessUser(context.Background(), env.user); err != nil {
+		t.Fatal(err)
+	}
+	env.svc.httpClient.Transport = &trackResponseTransport{response: uploadedTrackJSON("New Upload", "New Artist", "New Album")}
 
 	if err := env.svc.ProcessUser(context.Background(), env.user); err != nil {
 		t.Fatalf("ProcessUser returned error: %v", err)
@@ -338,5 +342,128 @@ func TestGenerateUploadHash(t *testing.T) {
 				t.Errorf("generateUploadHash() is not deterministic: first=%v, second=%v", got, got2)
 			}
 		})
+	}
+}
+
+func TestProcessUserHistoryWindow(t *testing.T) {
+	database := newTestDB(t)
+	user := createTestUser(t, database)
+	transport := &trackResponseTransport{}
+	poll := func(ids ...string) {
+		t.Helper()
+		items := []AppleRecentTrack{}
+		for _, id := range ids {
+			item := makeTestTrack(id, "Album", "Artist")
+			item.ID = id
+			items = append(items, *item)
+		}
+		body, _ := json.Marshal(recentPlayedResponse{Data: items})
+		transport.response = string(body)
+		// Recreate the service each poll to exercise persisted state.
+		if err := newTestService(t, database, transport).ProcessUser(context.Background(), user); err != nil {
+			t.Fatal(err)
+		}
+	}
+	poll("A", "old") // First response is a baseline, not new listening activity.
+	poll("B", "A", "old")
+	poll("A") // A stale, truncated response must not replace the window.
+	if _, err := database.SaveTrack(user.ID, db.SourceSpotify, &models.Track{Name: "Spotify", Timestamp: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	poll("D", "C", "B", "A")
+	poll("B", "D", "A", "C")
+	rows, err := database.Query(`SELECT name FROM tracks WHERE source = 'applemusic' ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+		names = append(names, name)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(names, ","); got != "B,C,D" {
+		t.Fatalf("saved tracks = %s, want B,C,D", got)
+	}
+}
+
+func TestProcessUserStableIdentityAndEmptyHistory(t *testing.T) {
+	database := newTestDB(t)
+	user := createTestUser(t, database)
+	transport := &trackResponseTransport{response: `{"data":[]}`}
+	svc := newTestService(t, database, transport)
+	poll := func(body string) {
+		t.Helper()
+		transport.response = body
+		if err := svc.ProcessUser(context.Background(), user); err != nil {
+			t.Fatal(err)
+		}
+	}
+	poll(`{"data":[]}`)
+	poll(`{"data":[{"id":"bad"}]}`)
+	poll(`{"data":[{"id":"A","attributes":{"name":"A","artistName":"Artist","url":"old-url"}}]}`)
+	poll(`{"data":[{"id":"A","attributes":{"name":"Renamed","artistName":"Artist","url":"new-url"}}]}`)
+	poll(`{"data":[]}`)
+	// A library upload identified only by playParams.id remains stable after metadata changes.
+	poll(`{"data":[{"attributes":{"name":"Upload","artistName":"Artist","playParams":{"id":"i.B"}}}]}`)
+	poll(`{"data":[{"attributes":{"name":"Renamed upload","artistName":"Artist","playParams":{"id":"i.B"}}}]}`)
+	tracks, err := database.GetRecentTracks(user.ID, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tracks) != 1 || tracks[0].Name != "Upload" {
+		t.Fatalf("tracks = %+v, want one Upload", tracks)
+	}
+}
+
+func TestProcessUserRequestsFullHistoryPage(t *testing.T) {
+	database := newTestDB(t)
+	svc := newTestService(t, database, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if got := req.URL.Query().Get("limit"); got != "30" {
+			t.Errorf("limit = %s, want 30", got)
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"data":[]}`)), Header: make(http.Header)}, nil
+	}))
+	if err := svc.ProcessUser(context.Background(), createTestUser(t, database)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestProcessUserFailedResponseDoesNotResetHistory(t *testing.T) {
+	database := newTestDB(t)
+	user := createTestUser(t, database)
+	transport := &trackResponseTransport{response: uploadedTrackJSON("A", "Artist", "Album")}
+	svc := newTestService(t, database, transport)
+	if err := svc.ProcessUser(context.Background(), user); err != nil {
+		t.Fatal(err)
+	}
+	for _, body := range []string{`broken json`, `{"data":null}`} {
+		transport.response = body
+		err := svc.ProcessUser(context.Background(), user)
+		if body == "broken json" && err == nil {
+			t.Fatal("expected decoding error")
+		}
+		if body != "broken json" && err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc.httpClient.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) { return nil, fmt.Errorf("test network failure") })
+	if err := svc.ProcessUser(context.Background(), user); err == nil {
+		t.Fatal("expected network error")
+	}
+	svc.httpClient.Transport = transport
+	transport.response = uploadedTrackJSON("A", "Artist", "Album")
+	if err := svc.ProcessUser(context.Background(), user); err != nil {
+		t.Fatal(err)
+	}
+	tracks, err := database.GetRecentTracks(user.ID, 100)
+	if err != nil || len(tracks) != 0 {
+		t.Fatalf("tracks after retry = %v, %v", tracks, err)
 	}
 }
