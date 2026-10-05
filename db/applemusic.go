@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"slices"
@@ -15,12 +16,22 @@ const appleMusicHistorySize = 90
 
 // AppleMusicHistory establishes the first nonempty response as a baseline.
 // The bool reports whether this call initialized the user's history.
-func (db *DB) AppleMusicHistory(userID int64, ids []string) (map[string]bool, bool, error) {
+func (db *DB) AppleMusicHistory(ctx context.Context, userID int64, ids []string) (map[string]bool, bool, error) {
 	if len(ids) == 0 {
 		return nil, false, errors.New("Apple Music baseline must not be empty")
 	}
 	// Responses are newest first; the stored window is oldest first.
-	ids = slices.Clone(ids)
+	// Retain the newest occurrence so duplicate resources do not consume space
+	// or change eviction order within the distinct-resource window.
+	unique := make([]string, 0, len(ids))
+	seen := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		if !seen[id] {
+			unique = append(unique, id)
+			seen[id] = true
+		}
+	}
+	ids = unique
 	slices.Reverse(ids)
 	if len(ids) > appleMusicHistorySize {
 		ids = ids[len(ids)-appleMusicHistorySize:]
@@ -29,7 +40,7 @@ func (db *DB) AppleMusicHistory(userID int64, ids []string) (map[string]bool, bo
 	if err != nil {
 		return nil, false, err
 	}
-	result, err := db.Exec(`INSERT INTO applemusic_history(user_id,resource_ids) VALUES (?,?) ON CONFLICT(user_id) DO NOTHING`, userID, string(encoded))
+	result, err := db.ExecContext(ctx, `INSERT INTO applemusic_history(user_id,resource_ids) VALUES (?,?) ON CONFLICT(user_id) DO NOTHING`, userID, string(encoded))
 	if err != nil {
 		return nil, false, err
 	}
@@ -38,13 +49,13 @@ func (db *DB) AppleMusicHistory(userID int64, ids []string) (map[string]bool, bo
 		return nil, false, err
 	}
 	var raw string
-	if err := db.QueryRow(`SELECT resource_ids FROM applemusic_history WHERE user_id = ?`, userID).Scan(&raw); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT resource_ids FROM applemusic_history WHERE user_id = ?`, userID).Scan(&raw); err != nil {
 		return nil, false, err
 	}
 	if err := json.Unmarshal([]byte(raw), &ids); err != nil {
 		return nil, false, err
 	}
-	seen := make(map[string]bool, len(ids))
+	seen = make(map[string]bool, len(ids))
 	for _, id := range ids {
 		seen[id] = true
 	}
@@ -53,17 +64,17 @@ func (db *DB) AppleMusicHistory(userID int64, ids []string) (map[string]bool, bo
 
 // SaveAppleMusicTrack atomically advances history and creates the track plus its
 // pending submission. A failed save leaves the resource eligible for retry.
-func (db *DB) SaveAppleMusicTrack(userID int64, resourceID string, track *models.Track) (bool, error) {
+func (db *DB) SaveAppleMusicTrack(ctx context.Context, userID int64, resourceID string, track *models.Track) (bool, error) {
 	if resourceID == "" {
 		return false, errors.New("Apple Music resource ID is required")
 	}
-	tx, err := db.Begin()
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
 	}
 	defer tx.Rollback()
 	var raw string
-	if err := tx.QueryRow(`SELECT resource_ids FROM applemusic_history WHERE user_id = ?`, userID).Scan(&raw); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT resource_ids FROM applemusic_history WHERE user_id = ?`, userID).Scan(&raw); err != nil {
 		return false, err
 	}
 	var ids []string
@@ -81,10 +92,10 @@ func (db *DB) SaveAppleMusicTrack(userID int64, resourceID string, track *models
 	if err != nil {
 		return false, err
 	}
-	if _, err := tx.Exec(`UPDATE applemusic_history SET resource_ids = ? WHERE user_id = ?`, string(encoded), userID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE applemusic_history SET resource_ids = ? WHERE user_id = ?`, string(encoded), userID); err != nil {
 		return false, err
 	}
-	trackID, err := saveTrackTx(tx, userID, SourceAppleMusic, track, nil)
+	trackID, err := saveTrackTx(ctx, tx, userID, SourceAppleMusic, track, nil)
 	if err != nil {
 		return false, err
 	}

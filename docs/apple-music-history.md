@@ -5,7 +5,7 @@ Piper polls the first 30 resources from Apple's
 and processes unseen tracks in reverse response order, oldest first. It does not
 follow older pages or reconstruct listening activity beyond that page.
 
-Each user has a persistent window of 90 Apple Music resource IDs. Repeated,
+Each user has a persistent window of 90 distinct Apple Music resource IDs. Repeated,
 reordered, empty, or truncated responses do not replace that window. Only new
 accepted resources evict its oldest entries. The window has no time-based expiry,
 so leaving playback idle overnight cannot by itself create another listen.
@@ -14,7 +14,9 @@ Spotify and other providers do not affect this state.
 Identity uses the resource's `id`, then `attributes.playParams.id` if needed.
 For responses without either ID, Piper falls back to the URL or an uploaded
 track's metadata hash. Changes to metadata or resolved catalog URLs do not change
-identity when Apple supplies an ID.
+identity when Apple supplies an ID. Metadata fallbacks hash a structured tuple of
+name, album, and artist, so field boundaries cannot conflate different tracks.
+If a page repeats an ID, only its newest occurrence is processed.
 
 The first valid, nonempty response establishes a baseline without creating plays.
 This also applies to existing users on the first poll after upgrading. Subsequent
@@ -25,7 +27,14 @@ automatically during database initialization.
 History updates, track rows, and pending ATProto submissions commit together. A
 failed database write leaves the resource available for retry. Each accepted
 track gets its own pending submission; only the newest returned track can update
-playing-now status.
+playing-now status. Incomplete MusicBrainz artist credits leave the original Apple
+metadata intact. Poll cancellation interrupts database waits and leaves unsaved
+resources eligible for the next poll.
+
+Library-song URL resolution fetches the user's storefront once and batches the
+unseen catalog IDs in one request using Apple's
+[multiple-song endpoint](https://developer.apple.com/documentation/applemusicapi/get-multiple-catalog-songs-by-id).
+Missing catalog URLs do not block ingestion of other tracks.
 
 ## Limits
 

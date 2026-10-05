@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/binary"
@@ -521,7 +522,7 @@ func (db *DB) saveTrack(userID int64, source TrackSource, track *models.Track, s
 		return 0, err
 	}
 	defer tx.Rollback()
-	trackID, err := saveTrackTx(tx, userID, source, track, sourceIdentity)
+	trackID, err := saveTrackTx(context.Background(), tx, userID, source, track, sourceIdentity)
 	if err != nil {
 		return 0, err
 	}
@@ -533,7 +534,7 @@ func (db *DB) saveTrack(userID int64, source TrackSource, track *models.Track, s
 }
 
 // saveTrackTx keeps the track and its pending PDS submission in one transaction.
-func saveTrackTx(tx *sql.Tx, userID int64, source TrackSource, track *models.Track, sourceIdentity *string) (int64, error) {
+func saveTrackTx(ctx context.Context, tx *sql.Tx, userID int64, source TrackSource, track *models.Track, sourceIdentity *string) (int64, error) {
 	if !source.IsValid() {
 		return 0, fmt.Errorf("invalid source %q", source)
 	}
@@ -549,7 +550,7 @@ func saveTrackTx(tx *sql.Tx, userID int64, source TrackSource, track *models.Tra
 	}
 
 	var trackID int64
-	err := tx.QueryRow(`
+	err := tx.QueryRowContext(ctx, `
 	INSERT INTO tracks (user_id, name, recording_mbid, artist, album, release_mbid, url, timestamp, duration_ms, progress_ms, service_base_url, isrc, has_stamped, source, source_identity)
 	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	RETURNING id`,
@@ -565,7 +566,7 @@ func saveTrackTx(tx *sql.Tx, userID int64, source TrackSource, track *models.Tra
 			return 0, err
 		}
 		rkey := syntax.NewTIDNow(uint(binary.BigEndian.Uint16(clockBytes[:]) & 1023)).String()
-		if _, err := tx.Exec(`INSERT INTO play_submissions(track_id,rkey) VALUES (?,?)`, trackID, rkey); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO play_submissions(track_id,rkey) VALUES (?,?)`, trackID, rkey); err != nil {
 			return 0, err
 		}
 	}

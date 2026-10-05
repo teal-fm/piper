@@ -425,35 +425,18 @@ func (s *Service) toTrack(t AppleRecentTrack) *models.Track {
 	return track
 }
 
-// GetCurrentAppleMusicTrack fetches the most recent Apple Music track for a user
-func (s *Service) GetCurrentAppleMusicTrack(ctx context.Context, user *models.User) (*AppleRecentTrack, error) {
-	if user.AppleMusicUserToken == nil || *user.AppleMusicUserToken == "" {
-		return nil, nil
+// populateCatalogURLs resolves a page's library-song URLs in one catalog request.
+func (s *Service) populateCatalogURLs(ctx context.Context, userToken string, tracks []*AppleRecentTrack) error {
+	var ids []string
+	seen := make(map[string]bool)
+	for _, track := range tracks {
+		id := track.Attributes.PlayParams.CatalogID
+		if !seen[id] {
+			ids = append(ids, id)
+			seen[id] = true
+		}
 	}
-
-	// Only fetch the most recent track (limit=1)
-	items, err := s.FetchRecentPlayedTracks(ctx, *user.AppleMusicUserToken, 1)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(items) == 0 {
-		return nil, nil
-	}
-
-	// Library songs may omit attributes.url even when they correspond to a
-	// catalog song. Resolve the catalog URL before the track is persisted.
-	if err := s.populateCatalogURL(ctx, *user.AppleMusicUserToken, &items[0]); err != nil {
-		s.logger.Printf("failed to resolve Apple Music catalog URL for %q: %v", items[0].Attributes.Name, err)
-	}
-
-	return &items[0], nil
-}
-
-// populateCatalogURL fills in the share URL for a library song when Apple
-// provides the corresponding catalog ID in its play parameters.
-func (s *Service) populateCatalogURL(ctx context.Context, userToken string, track *AppleRecentTrack) error {
-	if track == nil || track.Attributes.URL != "" || track.Attributes.PlayParams == nil || track.Attributes.PlayParams.CatalogID == "" {
+	if len(ids) == 0 {
 		return nil
 	}
 
@@ -502,7 +485,7 @@ func (s *Service) populateCatalogURL(ctx context.Context, userToken string, trac
 		Path:   "/v1/catalog/" + url.PathEscape(storefront.Data[0].ID) + "/songs",
 	}
 	query := catalogEndpoint.Query()
-	query.Set("ids", track.Attributes.PlayParams.CatalogID)
+	query.Set("ids", strings.Join(ids, ","))
 	catalogEndpoint.RawQuery = query.Encode()
 
 	catalogReq, err := http.NewRequestWithContext(ctx, http.MethodGet, catalogEndpoint.String(), nil)
@@ -527,6 +510,7 @@ func (s *Service) populateCatalogURL(ctx context.Context, userToken string, trac
 
 	var catalog struct {
 		Data []struct {
+			ID         string `json:"id"`
 			Attributes struct {
 				URL string `json:"url"`
 			} `json:"attributes"`
@@ -535,11 +519,22 @@ func (s *Service) populateCatalogURL(ctx context.Context, userToken string, trac
 	if err := json.Unmarshal(catalogBody, &catalog); err != nil {
 		return fmt.Errorf("failed to decode catalog song response: %w", err)
 	}
-	if len(catalog.Data) == 0 || catalog.Data[0].Attributes.URL == "" {
-		return errors.New("Apple Music catalog response contained no song URL")
+	urls := make(map[string]string, len(catalog.Data))
+	for _, song := range catalog.Data {
+		urls[song.ID] = song.Attributes.URL
 	}
-
-	track.Attributes.URL = catalog.Data[0].Attributes.URL
+	var missing []string
+	for _, track := range tracks {
+		id := track.Attributes.PlayParams.CatalogID
+		if resolved := urls[id]; resolved != "" {
+			track.Attributes.URL = resolved
+		} else {
+			missing = append(missing, id)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("Apple Music catalog response omitted song URLs for %s", strings.Join(missing, ","))
+	}
 	return nil
 }
 
@@ -560,15 +555,22 @@ func (s *Service) ProcessUser(ctx context.Context, user *models.User) error {
 		return nil
 	}
 	ids := []string{}
-	for _, item := range items {
+	resourceIDs := make([]string, len(items))
+	newestIndex := make(map[string]int, len(items))
+	for i, item := range items {
+		id := appleResourceID(item)
+		resourceIDs[i] = id
 		if validHistoryTrack(item) {
-			ids = append(ids, appleResourceID(item))
+			if _, exists := newestIndex[id]; !exists {
+				newestIndex[id] = i
+				ids = append(ids, id)
+			}
 		}
 	}
 	if len(ids) == 0 {
 		return nil
 	}
-	seen, initialized, err := s.DB.AppleMusicHistory(user.ID, ids)
+	seen, initialized, err := s.DB.AppleMusicHistory(ctx, user.ID, ids)
 	if err != nil {
 		return err
 	}
@@ -576,24 +578,37 @@ func (s *Service) ProcessUser(ctx context.Context, user *models.User) error {
 		s.logger.Printf("user %d: established Apple Music history baseline (%d resources)", user.ID, len(ids))
 		return nil
 	}
+	var toResolve []*AppleRecentTrack
+	for _, id := range ids {
+		item := &items[newestIndex[id]]
+		if !seen[id] && item.Attributes.URL == "" && item.Attributes.PlayParams != nil && item.Attributes.PlayParams.CatalogID != "" {
+			toResolve = append(toResolve, item)
+		}
+	}
+	if err := s.populateCatalogURLs(ctx, *user.AppleMusicUserToken, toResolve); err != nil {
+		s.logger.Printf("user %d: failed resolving catalog URLs: %v", user.ID, err)
+	}
 	// Apple supplies recent resources, not timestamped play events. Retain a
 	// bounded window across polls instead of trusting changes in response order.
 	for i := len(items) - 1; i >= 0; i-- {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		item := items[i]
-		id := appleResourceID(item)
+		id := resourceIDs[i]
 		if !validHistoryTrack(item) {
 			s.logger.Printf("user %d resource %q: skipped invalid metadata", user.ID, id)
+			continue
+		}
+		if newestIndex[id] != i {
 			continue
 		}
 		if seen[id] {
 			s.logger.Printf("user %d resource %q: skipped known history", user.ID, id)
 			continue
 		}
-		if err := s.populateCatalogURL(ctx, *user.AppleMusicUserToken, &item); err != nil {
-			s.logger.Printf("user %d resource %q: failed resolving catalog URL: %v", user.ID, id, err)
-		}
 		track := s.toTrack(item)
-		saved, err := s.DB.SaveAppleMusicTrack(user.ID, id, track)
+		saved, err := s.DB.SaveAppleMusicTrack(ctx, user.ID, id, track)
 		if err != nil {
 			return err
 		}
@@ -632,7 +647,10 @@ func appleResourceID(t AppleRecentTrack) string {
 	if t.Attributes.URL != "" {
 		return "url:" + t.Attributes.URL
 	}
-	return generateUploadHash(&t)
+	// A fixed tuple preserves field boundaries. The legacy upload URL hash is
+	// intentionally unchanged because existing saved tracks use those URLs.
+	metadata, _ := json.Marshal([3]string{t.Attributes.Name, t.Attributes.AlbumName, t.Attributes.ArtistName})
+	return fmt.Sprintf("metadata:%x", sha256.Sum256(metadata))
 }
 
 // StartListeningTracker periodically fetches recent plays for Apple Music linked users

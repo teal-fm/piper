@@ -1,6 +1,8 @@
 package db
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -23,7 +25,7 @@ func TestAppleMusicHistoryPersistsAndBoundsWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, initialized, err := database.AppleMusicHistory(userID, []string{"A"}); err != nil || !initialized {
+	if _, initialized, err := database.AppleMusicHistory(context.Background(), userID, []string{"A"}); err != nil || !initialized {
 		t.Fatalf("baseline = %v, %v", initialized, err)
 	}
 	// An unchanged response must not expire with elapsed time or database reopen.
@@ -38,22 +40,22 @@ func TestAppleMusicHistoryPersistsAndBoundsWindow(t *testing.T) {
 	if err := database.Initialize(); err != nil {
 		t.Fatal(err)
 	}
-	seen, initialized, err := database.AppleMusicHistory(userID, []string{"B"})
+	seen, initialized, err := database.AppleMusicHistory(context.Background(), userID, []string{"B"})
 	if err != nil || initialized || !seen["A"] || seen["B"] {
 		t.Fatalf("reopened history = %v, %v, %v", seen, initialized, err)
 	}
 	for i := 0; i < appleMusicHistorySize; i++ {
-		saved, err := database.SaveAppleMusicTrack(userID, fmt.Sprint(i), &models.Track{Name: "Track", Timestamp: time.Now()})
+		saved, err := database.SaveAppleMusicTrack(context.Background(), userID, fmt.Sprint(i), &models.Track{Name: "Track", Timestamp: time.Now()})
 		if err != nil || !saved {
 			t.Fatalf("save %d = %v, %v", i, saved, err)
 		}
 	}
-	seen, _, err = database.AppleMusicHistory(userID, []string{"ignored"})
+	seen, _, err = database.AppleMusicHistory(context.Background(), userID, []string{"ignored"})
 	if err != nil || len(seen) != appleMusicHistorySize || seen["A"] {
 		t.Fatalf("bounded history = %v, %v", seen, err)
 	}
 	// Once evicted, a resource can be accepted as a replay.
-	if saved, err := database.SaveAppleMusicTrack(userID, "A", &models.Track{Name: "A"}); err != nil || !saved {
+	if saved, err := database.SaveAppleMusicTrack(context.Background(), userID, "A", &models.Track{Name: "A"}); err != nil || !saved {
 		t.Fatalf("replay = %v, %v", saved, err)
 	}
 }
@@ -71,17 +73,17 @@ func TestAppleMusicSaveRollsBackAndDeduplicatesConcurrentPolls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := database.AppleMusicHistory(userID, []string{"A"}); err != nil {
+	if _, _, err := database.AppleMusicHistory(context.Background(), userID, []string{"A"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := database.Exec(`CREATE TRIGGER fail_submission BEFORE INSERT ON play_submissions BEGIN SELECT RAISE(ABORT, 'test failure'); END`); err != nil {
 		t.Fatal(err)
 	}
 	track := &models.Track{Name: "B", HasStamped: true, Timestamp: time.Now()}
-	if saved, err := database.SaveAppleMusicTrack(userID, "B", track); err == nil || saved {
+	if saved, err := database.SaveAppleMusicTrack(context.Background(), userID, "B", track); err == nil || saved {
 		t.Fatalf("failed save = %v, %v", saved, err)
 	}
-	seen, _, err := database.AppleMusicHistory(userID, []string{"B"})
+	seen, _, err := database.AppleMusicHistory(context.Background(), userID, []string{"B"})
 	if err != nil || seen["B"] {
 		t.Fatalf("failed save consumed B: %v, %v", seen, err)
 	}
@@ -98,7 +100,7 @@ func TestAppleMusicSaveRollsBackAndDeduplicatesConcurrentPolls(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			local := *track
-			if _, err := database.SaveAppleMusicTrack(userID, "B", &local); err != nil {
+			if _, err := database.SaveAppleMusicTrack(context.Background(), userID, "B", &local); err != nil {
 				t.Error(err)
 			}
 		}()
@@ -113,10 +115,75 @@ func TestAppleMusicSaveRollsBackAndDeduplicatesConcurrentPolls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := database.AppleMusicHistory(otherUser, []string{"A"}); err != nil {
+	if _, _, err := database.AppleMusicHistory(context.Background(), otherUser, []string{"A"}); err != nil {
 		t.Fatal(err)
 	}
-	if saved, err := database.SaveAppleMusicTrack(otherUser, "B", track); err != nil || !saved {
+	if saved, err := database.SaveAppleMusicTrack(context.Background(), otherUser, "B", track); err != nil || !saved {
 		t.Fatalf("other user save = %v, %v", saved, err)
+	}
+}
+
+func TestAppleMusicBaselineRetainsNinetyDistinctResources(t *testing.T) {
+	database := newTestDB(t)
+	userID := createTestUser(t, database)
+	if _, _, err := database.AppleMusicHistory(context.Background(), userID, []string{"A", "A", "B"}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < appleMusicHistorySize-2; i++ {
+		if _, err := database.SaveAppleMusicTrack(context.Background(), userID, fmt.Sprint(i), &models.Track{Name: "Track"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seen, _, err := database.AppleMusicHistory(context.Background(), userID, []string{"A"})
+	if err != nil || len(seen) != appleMusicHistorySize || !seen["A"] || !seen["B"] {
+		t.Fatalf("history = %v, %v; want 90 distinct IDs including A and B", seen, err)
+	}
+	if _, err := database.SaveAppleMusicTrack(context.Background(), userID, "new", &models.Track{Name: "New"}); err != nil {
+		t.Fatal(err)
+	}
+	seen, _, err = database.AppleMusicHistory(context.Background(), userID, []string{"A"})
+	if err != nil || !seen["A"] || seen["B"] {
+		t.Fatalf("history after eviction = %v, %v; want newest baseline A retained, B evicted", seen, err)
+	}
+}
+
+func TestAppleMusicCancellationWhileWaitingForDatabase(t *testing.T) {
+	for _, operation := range []string{"baseline", "save"} {
+		t.Run(operation, func(t *testing.T) {
+			database := newTestDB(t)
+			userID := createTestUser(t, database)
+			if operation == "save" {
+				if _, _, err := database.AppleMusicHistory(context.Background(), userID, []string{"A"}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// Reserve the only connection. Cancellation must interrupt the wait,
+			// rather than wait for unrelated database work to finish.
+			conn, err := database.Conn(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+			defer cancel()
+			result := make(chan error, 1)
+			go func() {
+				if operation == "baseline" {
+					_, _, err := database.AppleMusicHistory(ctx, userID, []string{"B"})
+					result <- err
+				} else {
+					_, err := database.SaveAppleMusicTrack(ctx, userID, "B", &models.Track{Name: "B"})
+					result <- err
+				}
+			}()
+			select {
+			case err := <-result:
+				if !errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("database error = %v; want context.DeadlineExceeded", err)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("cancellation did not interrupt the database wait")
+			}
+		})
 	}
 }
