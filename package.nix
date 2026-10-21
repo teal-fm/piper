@@ -1,5 +1,5 @@
-{ lib, buildGoModule, tailwindcss_4, source ? ./. }:
-buildGoModule {
+{ lib, buildGo127Module, tailwindcss_4, source ? ./. }:
+buildGo127Module {
   pname = "tealfm-piper";
   version = (builtins.fromJSON (builtins.readFile (source + "/package.json"))).version;
 
