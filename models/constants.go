@@ -2,7 +2,7 @@ package models
 
 import "runtime/debug"
 
-const releaseSubmissionAgent = "piper/v0.1.0"
+const releaseSubmissionAgent = "piper/v0.1.1"
 
 // Stamped by Docker builds, which do not include the Git checkout.
 // Release builds set buildChannel to "release" to use the version above.
