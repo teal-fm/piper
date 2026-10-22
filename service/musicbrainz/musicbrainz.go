@@ -461,6 +461,12 @@ func HydrateTrack(mb *Service, track models.Track) (*models.Track, error) {
 			MBID: &a.Artist.ID,
 		}
 	}
+	// Callers retain the source track on hydration errors. Do not replace its
+	// usable artist with incomplete metadata, including during playing-now's
+	// second hydration attempt.
+	if len(artists) == 0 || strings.TrimSpace(artists[0].Name) == "" {
+		return nil, errors.New("MusicBrainz recording has no usable artist credits")
+	}
 
 	resTrack := models.Track{
 		HasStamped:     track.HasStamped,

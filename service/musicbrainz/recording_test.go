@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/teal-fm/piper/models"
 )
 
 type recordingTransport func(*http.Request) (*http.Response, error)
@@ -33,5 +35,22 @@ func TestRecordingMetadataLookupAndCache(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("made %d calls, want cached result", calls)
+	}
+}
+
+func TestHydrateTrackRejectsUnusableArtistCredits(t *testing.T) {
+	for _, credits := range []string{`[]`, `[{"name":"   ","artist":{"id":"artist"}}]`} {
+		t.Run(credits, func(t *testing.T) {
+			s := NewMusicBrainzService(nil)
+			s.httpClient.Transport = recordingTransport(func(*http.Request) (*http.Response, error) {
+				body := `{"recordings":[{"id":"recording","title":"Song","artist-credit":` + credits + `}]}`
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+			})
+			source := models.Track{Name: "Song", Artist: []models.Artist{{Name: "Apple Artist"}}}
+			track, err := HydrateTrack(s, source)
+			if err == nil || track != nil {
+				t.Fatalf("hydration = %+v, %v; want an error so callers retain source metadata", track, err)
+			}
+		})
 	}
 }
