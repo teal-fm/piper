@@ -1,5 +1,11 @@
 # piper
 
+## 0.1.1
+
+### Patch Changes
+
+- 0261687: Raise the minimum Go version to 1.26.10 and update the Docker and Nix toolchains to include upstream security fixes.
+
 ## 0.1.0
 
 ### Minor Changes

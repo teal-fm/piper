@@ -29,7 +29,7 @@
         let pkgs = import nixpkgs { inherit system; };
         in {
           default =
-            pkgs.mkShell { buildInputs = with pkgs; [ go air nodejs sqlite ]; };
+            pkgs.mkShell { buildInputs = with pkgs; [ go_1_27 air nodejs sqlite ]; };
         });
 
       nixosModules.default = import ./module.nix { inherit self; };

@@ -11,7 +11,7 @@ RUN npm run build:css
 # makes ARM64 builds more than ten minutes slower on GitHub-hosted runners.
 FROM --platform=$BUILDPLATFORM tonistiigi/xx:1.8.0@sha256:add602d55daca18914838a78221f6bbe4284114b452c86a48f96d59aeb00f5c6 AS xx
 
-FROM --platform=$BUILDPLATFORM golang:1.24.3-alpine3.21 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.10-alpine3.24 AS builder
 COPY --from=xx / /
 RUN apk add --no-cache clang lld
 ARG TARGETPLATFORM

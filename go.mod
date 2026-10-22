@@ -1,6 +1,6 @@
 module github.com/teal-fm/piper
 
-go 1.24.0
+go 1.26.10
 
 require (
 	github.com/bluesky-social/indigo v0.0.0-20251003000214-3259b215110e
