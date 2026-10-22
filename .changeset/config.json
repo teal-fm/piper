@@ -1,6 +1,9 @@
 {
   "$schema": "https://unpkg.com/@changesets/config@2.3.1/schema.json",
-  "changelog": "@changesets/cli/changelog",
+  "changelog": [
+    "@changesets/changelog-github",
+    { "repo": "teal-fm/piper", "template": "\n\n- {summary} {ref}" }
+  ],
   "commit": false,
   "fixed": [],
   "linked": [],
