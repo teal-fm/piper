@@ -18,6 +18,12 @@ Select `piper`, choose a bump, and describe the user-visible change. Include any
 configuration changes or migration steps. Commit the generated `.changeset/*.md`
 file alongside your code.
 
+Changelog entries link to the PR associated with the changeset commit. Direct
+pushes with no associated PR link to the commit instead. The GitHub formatter
+uses the release workflow's existing `GITHUB_TOKEN`; local `npm run version`
+runs also need that environment variable. Its version is pinned because the
+custom changelog template is experimental.
+
 - `patch` fixes a bug or makes a compatible small change.
 - `minor` adds functionality. While Piper is below 1.0, use a minor bump for
   breaking changes too, and explain the migration in the changeset.
