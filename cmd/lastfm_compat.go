@@ -33,6 +33,10 @@ const (
 
 var lastfmIndexedParamPattern = regexp.MustCompile(`^(artist|track|album|albumArtist|mbid|duration|timestamp)\[(\d+)\]$`)
 
+// lastfmMaxFutureSkew tolerates small clock differences while keeping a bad
+// future timestamp from becoming the Last.fm watermark for later polling.
+const lastfmMaxFutureSkew = time.Hour
+
 type lastfmCompatHandler struct {
 	database          *db.DB
 	sessionManager    *session.Manager
@@ -208,6 +212,7 @@ func (h *lastfmCompatHandler) scrobble(w http.ResponseWriter, r *http.Request) {
 		response []lastfmScrobbleResult
 	)
 
+	now := time.Now()
 	for _, input := range inputs {
 		result := lastfmScrobbleResult{
 			Artist:         input.Artist,
@@ -227,6 +232,9 @@ func (h *lastfmCompatHandler) scrobble(w http.ResponseWriter, r *http.Request) {
 			result.IgnoredMessage = "Track was ignored"
 		case input.Timestamp <= 0:
 			result.IgnoredCode = 3
+			result.IgnoredMessage = "Timestamp was ignored"
+		case time.Unix(input.Timestamp, 0).After(now.Add(lastfmMaxFutureSkew)):
+			result.IgnoredCode = 4
 			result.IgnoredMessage = "Timestamp was ignored"
 		}
 

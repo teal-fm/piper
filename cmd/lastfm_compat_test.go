@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/session"
@@ -278,6 +280,9 @@ func TestLastfmCompatScrobbleIgnoresIncompleteScrobbles(t *testing.T) {
 		"track[0]":     {"No Date"},
 		"track[1]":     {"No Artist"},
 		"timestamp[1]": {"1704067200"},
+		"artist[2]":    {"Future Artist"},
+		"track[2]":     {"Future Track"},
+		"timestamp[2]": {strconv.FormatInt(time.Now().Add(2*time.Hour).Unix(), 10)},
 	})
 	recorder := httptest.NewRecorder()
 	handler(recorder, request)
@@ -295,14 +300,17 @@ func TestLastfmCompatScrobbleIgnoresIncompleteScrobbles(t *testing.T) {
 		} `json:"scrobbles"`
 	}
 	decodeJSONResponse(t, recorder, &response)
-	if response.Scrobbles.Attr.Accepted != 0 || response.Scrobbles.Attr.Ignored != 2 {
-		t.Fatalf("expected 0 accepted and 2 ignored, got %+v", response.Scrobbles.Attr)
+	if response.Scrobbles.Attr.Accepted != 0 || response.Scrobbles.Attr.Ignored != 3 {
+		t.Fatalf("expected 0 accepted and 3 ignored, got %+v", response.Scrobbles.Attr)
 	}
 	if response.Scrobbles.Scrobble[0].IgnoredMessage.Code != "3" {
 		t.Fatalf("expected missing timestamp to be ignored with code 3, got %q", response.Scrobbles.Scrobble[0].IgnoredMessage.Code)
 	}
 	if response.Scrobbles.Scrobble[1].IgnoredMessage.Code != "1" {
 		t.Fatalf("expected missing artist to be ignored with code 1, got %q", response.Scrobbles.Scrobble[1].IgnoredMessage.Code)
+	}
+	if response.Scrobbles.Scrobble[2].IgnoredMessage.Code != "4" {
+		t.Fatalf("expected future timestamp to be ignored with code 4, got %q", response.Scrobbles.Scrobble[2].IgnoredMessage.Code)
 	}
 }
 
