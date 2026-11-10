@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -33,9 +34,14 @@ const (
 
 var lastfmIndexedParamPattern = regexp.MustCompile(`^(artist|track|album|albumArtist|mbid|duration|timestamp)\[(\d+)\]$`)
 
+// lastfmMaxScrobblesPerRequest matches Last.fm's batch limit.
+const lastfmMaxScrobblesPerRequest = 50
+
 // lastfmMaxFutureSkew tolerates small clock differences while keeping a bad
 // future timestamp from becoming the Last.fm watermark for later polling.
 const lastfmMaxFutureSkew = time.Hour
+
+var errLastfmTooManyScrobbles = errors.New("too many scrobbles in a single request")
 
 type lastfmCompatHandler struct {
 	database          *db.DB
@@ -59,6 +65,7 @@ func apiLastfmCompatHandler(database *db.DB, sessionManager *session.Manager, at
 	return handler.handle
 }
 
+// handle dispatches a Last.fm API method.
 func (h *lastfmCompatHandler) handle(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodPost {
 		w.Header().Set("Allow", "GET, POST")
@@ -117,6 +124,7 @@ func (h *lastfmCompatHandler) lookupKey(r *http.Request, params ...string) (key 
 	return nil, "", ""
 }
 
+// requireKey resolves and validates the request's piper API key.
 func (h *lastfmCompatHandler) requireKey(w http.ResponseWriter, r *http.Request, params ...string) (*apikey.ApiKey, string, bool) {
 	key, value, param := h.lookupKey(r, params...)
 	if key != nil {
@@ -149,6 +157,7 @@ func (h *lastfmCompatHandler) getToken(w http.ResponseWriter, r *http.Request) {
 	writeLastfmXML(w, http.StatusOK, lastfmXMLTokenResponse{Status: "ok", Token: token})
 }
 
+// getSession returns a Last.fm session for a piper API key.
 func (h *lastfmCompatHandler) getSession(w http.ResponseWriter, r *http.Request) {
 	key, value, ok := h.requireKey(w, r, "token", "api_key")
 	if !ok {
@@ -193,13 +202,18 @@ func (h *lastfmCompatHandler) getSession(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// scrobble stores a batch of completed listens.
 func (h *lastfmCompatHandler) scrobble(w http.ResponseWriter, r *http.Request) {
 	user, _, ok := h.requireKey(w, r, "sk", "api_key")
 	if !ok {
 		return
 	}
 
-	inputs := parseLastfmScrobbles(r)
+	inputs, err := parseLastfmScrobbles(r)
+	if err != nil {
+		h.writeError(w, r, http.StatusBadRequest, lastfmErrInvalidParams, "Invalid parameters - No more than 50 scrobbles may be submitted at once")
+		return
+	}
 	if len(inputs) == 0 {
 		h.writeError(w, r, http.StatusBadRequest, lastfmErrInvalidParams, "Invalid parameters - Your request is missing a required parameter")
 		return
@@ -213,6 +227,7 @@ func (h *lastfmCompatHandler) scrobble(w http.ResponseWriter, r *http.Request) {
 	)
 
 	now := time.Now()
+	maxTimestamp := now.Add(lastfmMaxFutureSkew).Unix()
 	for _, input := range inputs {
 		result := lastfmScrobbleResult{
 			Artist:         input.Artist,
@@ -233,7 +248,7 @@ func (h *lastfmCompatHandler) scrobble(w http.ResponseWriter, r *http.Request) {
 		case input.Timestamp <= 0:
 			result.IgnoredCode = 3
 			result.IgnoredMessage = "Timestamp was ignored"
-		case time.Unix(input.Timestamp, 0).After(now.Add(lastfmMaxFutureSkew)):
+		case input.Timestamp > maxTimestamp:
 			result.IgnoredCode = 4
 			result.IgnoredMessage = "Timestamp was ignored"
 		}
@@ -272,6 +287,9 @@ func (h *lastfmCompatHandler) scrobble(w http.ResponseWriter, r *http.Request) {
 		trackID, err := h.database.SaveTrack(user.UserID, db.SourceLastfm, &track)
 		if err != nil {
 			log.Printf("lastfm compat: could not save scrobble for user %d: %v", user.UserID, err)
+			if len(saved) > 0 {
+				go hydrateAndSubmitTracks(h.database, h.atprotoService, h.mbService, user.UserID, db.SourceLastfm, saved)
+			}
 			h.writeError(w, r, http.StatusInternalServerError, lastfmErrOperationFail, "Operation failed - Something else went wrong")
 			return
 		}
@@ -301,6 +319,7 @@ func (h *lastfmCompatHandler) scrobble(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// updateNowPlaying publishes the user's current track.
 func (h *lastfmCompatHandler) updateNowPlaying(w http.ResponseWriter, r *http.Request) {
 	user, _, ok := h.requireKey(w, r, "sk", "api_key")
 	if !ok {
@@ -364,7 +383,9 @@ type lastfmScrobbleInput struct {
 	DurationSeconds int64
 }
 
-func parseLastfmScrobbles(r *http.Request) []lastfmScrobbleInput {
+// parseLastfmScrobbles extracts indexed scrobble parameters from a request.
+// The unindexed single-scrobble variant is accepted for older clients.
+func parseLastfmScrobbles(r *http.Request) ([]lastfmScrobbleInput, error) {
 	indices := make(map[int]struct{})
 	for name := range r.Form {
 		match := lastfmIndexedParamPattern.FindStringSubmatch(name)
@@ -381,9 +402,13 @@ func parseLastfmScrobbles(r *http.Request) []lastfmScrobbleInput {
 	if len(indices) == 0 {
 		// Some clients send the single-scrobble variant without indexes.
 		if r.FormValue("artist") == "" && r.FormValue("track") == "" && r.FormValue("timestamp") == "" {
-			return nil
+			return nil, nil
 		}
-		return []lastfmScrobbleInput{parseLastfmScrobble(r, "")}
+		return []lastfmScrobbleInput{parseLastfmScrobble(r, "")}, nil
+	}
+
+	if len(indices) > lastfmMaxScrobblesPerRequest {
+		return nil, errLastfmTooManyScrobbles
 	}
 
 	ordered := make([]int, 0, len(indices))
@@ -396,9 +421,10 @@ func parseLastfmScrobbles(r *http.Request) []lastfmScrobbleInput {
 	for _, index := range ordered {
 		inputs = append(inputs, parseLastfmScrobble(r, fmt.Sprintf("[%d]", index)))
 	}
-	return inputs
+	return inputs, nil
 }
 
+// parseLastfmScrobble reads one scrobble, with suffix such as "[0]".
 func parseLastfmScrobble(r *http.Request, suffix string) lastfmScrobbleInput {
 	input := lastfmScrobbleInput{
 		Artist:      strings.TrimSpace(r.FormValue("artist" + suffix)),
@@ -428,6 +454,7 @@ type lastfmScrobbleResult struct {
 
 const lastfmIgnoredAccepted = ""
 
+// wantsLastfmJSON reports whether the client requested JSON output.
 func wantsLastfmJSON(r *http.Request) bool {
 	return strings.EqualFold(strings.TrimSpace(r.FormValue("format")), "json")
 }
@@ -488,6 +515,7 @@ type lastfmJSONErrorResponse struct {
 	Message string `json:"message"`
 }
 
+// lastfmJSONScrobbleFromResult converts a stored result to Last.fm's JSON shape.
 func lastfmJSONScrobbleFromResult(result lastfmScrobbleResult) lastfmJSONScrobble {
 	scrobble := lastfmJSONScrobble{
 		Artist:         lastfmJSONText{Text: result.Artist, Corrected: "0"},
@@ -502,6 +530,7 @@ func lastfmJSONScrobbleFromResult(result lastfmScrobbleResult) lastfmJSONScrobbl
 	return scrobble
 }
 
+// lastfmJSONScrobbleValue returns one scrobble object or an array, matching Last.fm.
 func lastfmJSONScrobbleValue(results []lastfmScrobbleResult) any {
 	if len(results) == 1 {
 		return lastfmJSONScrobbleFromResult(results[0])
@@ -587,6 +616,7 @@ type lastfmXMLErrorResponse struct {
 	Error   lastfmXMLError `xml:"error"`
 }
 
+// lastfmXMLScrobbleFromResult converts a stored result to Last.fm's XML shape.
 func lastfmXMLScrobbleFromResult(result lastfmScrobbleResult) lastfmXMLScrobble {
 	return lastfmXMLScrobble{
 		Track:          lastfmXMLText{Corrected: "0", Text: result.Track},
@@ -598,6 +628,7 @@ func lastfmXMLScrobbleFromResult(result lastfmScrobbleResult) lastfmXMLScrobble 
 	}
 }
 
+// lastfmXMLScrobbleList converts stored results to XML scrobble elements.
 func lastfmXMLScrobbleList(results []lastfmScrobbleResult) []lastfmXMLScrobble {
 	scrobbles := make([]lastfmXMLScrobble, 0, len(results))
 	for _, result := range results {
@@ -606,6 +637,7 @@ func lastfmXMLScrobbleList(results []lastfmScrobbleResult) []lastfmXMLScrobble {
 	return scrobbles
 }
 
+// lastfmXMLNowPlayingFromResult converts a result to a now-playing element.
 func lastfmXMLNowPlayingFromResult(result lastfmScrobbleResult) lastfmXMLNowPlaying {
 	return lastfmXMLNowPlaying{
 		Track:          lastfmXMLText{Corrected: "0", Text: result.Track},
@@ -616,6 +648,7 @@ func lastfmXMLNowPlayingFromResult(result lastfmScrobbleResult) lastfmXMLNowPlay
 	}
 }
 
+// writeError writes a Last.fm error in the requested response format.
 func (h *lastfmCompatHandler) writeError(w http.ResponseWriter, r *http.Request, status, code int, message string) {
 	if wantsLastfmJSON(r) {
 		writeLastfmJSON(w, status, lastfmJSONErrorResponse{Error: code, Message: message})
@@ -627,6 +660,7 @@ func (h *lastfmCompatHandler) writeError(w http.ResponseWriter, r *http.Request,
 	})
 }
 
+// writeLastfmJSON writes a JSON response with the given status.
 func writeLastfmJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
@@ -635,6 +669,7 @@ func writeLastfmJSON(w http.ResponseWriter, status int, value any) {
 	}
 }
 
+// writeLastfmXML writes an XML response with the given status.
 func writeLastfmXML(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "text/xml; charset=utf-8")
 	w.WriteHeader(status)

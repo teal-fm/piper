@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -28,7 +30,7 @@ func lastfmCompatRequest(method string, values url.Values) *http.Request {
 	if method != "" {
 		values.Set("method", method)
 	}
-	request := httptest.NewRequest(http.MethodPost, "/2.0/", strings.NewReader(values.Encode()))
+	request := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/2.0/", strings.NewReader(values.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return request
 }
@@ -314,6 +316,37 @@ func TestLastfmCompatScrobbleIgnoresIncompleteScrobbles(t *testing.T) {
 	}
 }
 
+func TestLastfmCompatRejectsTooManyScrobbles(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	_, apiKey := createTestUser(t, database)
+	handler := lastfmCompatTestHandler(t, database)
+
+	values := url.Values{
+		"sk":     {apiKey},
+		"format": {"json"},
+	}
+	timestamp := strconv.FormatInt(time.Now().Add(-time.Minute).Unix(), 10)
+	for i := 0; i <= lastfmMaxScrobblesPerRequest; i++ {
+		values.Set(fmt.Sprintf("artist[%d]", i), "Artist")
+		values.Set(fmt.Sprintf("track[%d]", i), "Track")
+		values.Set(fmt.Sprintf("timestamp[%d]", i), timestamp)
+	}
+
+	recorder := httptest.NewRecorder()
+	handler(recorder, lastfmCompatRequest("track.scrobble", values))
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response lastfmJSONErrorResponse
+	decodeJSONResponse(t, recorder, &response)
+	if response.Error != lastfmErrInvalidParams {
+		t.Fatalf("expected error code %d, got %d", lastfmErrInvalidParams, response.Error)
+	}
+}
+
 func TestLastfmCompatRejectsInvalidCredentials(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()
@@ -361,7 +394,7 @@ func TestLastfmCompatRejectsInvalidCredentials(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			test.values.Set("method", "track.scrobble")
 			recorder := httptest.NewRecorder()
-			request := httptest.NewRequest(http.MethodPost, "/2.0/", strings.NewReader(test.values.Encode()))
+			request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/2.0/", strings.NewReader(test.values.Encode()))
 			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			handler(recorder, request)
 
