@@ -867,6 +867,12 @@ type savedListen struct {
 // submits them to the PDS. It runs detached from the request that saved them,
 // on its own context, since both steps can far outlast the client connection.
 func hydrateAndSubmitListens(database *db.DB, atprotoService *atprotoauth.AuthService, mbService *musicbrainz.Service, userID int64, listens []savedListen) {
+	hydrateAndSubmitTracks(database, atprotoService, mbService, userID, db.SourceListenBrainz, listens)
+}
+
+// hydrateAndSubmitTracks hydrates and publishes listens from any source that
+// stores tracks before they are sent to the PDS.
+func hydrateAndSubmitTracks(database *db.DB, atprotoService *atprotoauth.AuthService, mbService *musicbrainz.Service, userID int64, source db.TrackSource, listens []savedListen) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
@@ -876,17 +882,17 @@ func hydrateAndSubmitListens(database *db.DB, atprotoService *atprotoauth.AuthSe
 		if mbService != nil && track.RecordingMBID == nil {
 			hydratedTrack, err := musicbrainz.HydrateTrack(mbService, track)
 			if err != nil {
-				log.Printf("apiSubmitListensHandler: Could not hydrate track with MusicBrainz for user %d: %v (continuing with original data)", userID, err)
+				log.Printf("hydrateAndSubmitTracks: Could not hydrate track with MusicBrainz for user %d: %v (continuing with original data)", userID, err)
 			} else if hydratedTrack != nil {
 				track = *hydratedTrack
-				if err := database.UpdateTrack(saved.trackID, db.SourceListenBrainz, &track); err != nil {
-					log.Printf("apiSubmitListensHandler: Error updating hydrated track for user %d: %v", userID, err)
+				if err := database.UpdateTrack(saved.trackID, source, &track); err != nil {
+					log.Printf("hydrateAndSubmitTracks: Error updating hydrated track for user %d: %v", userID, err)
 				}
 			}
 		}
 
 		if err := atprotoservice.PublishStoredPlay(ctx, database, userID, saved.trackID, atprotoService); err != nil {
-			log.Printf("apiSubmitListensHandler: Error submitting play to PDS for user %d: %v", userID, err)
+			log.Printf("hydrateAndSubmitTracks: Error submitting play to PDS for user %d: %v", userID, err)
 		}
 	}
 }
