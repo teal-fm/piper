@@ -272,6 +272,7 @@ func (s *Service) loadPrivateKey() (*ecdsa.PrivateKey, error) {
 // AppleRecentTrack models a subset of Apple Music API track response
 type AppleRecentTrack struct {
 	ID         string `json:"id"`
+	Type       string `json:"type"`
 	Attributes struct {
 		Name             string  `json:"name"`
 		ArtistName       string  `json:"artistName"`
@@ -441,19 +442,32 @@ func (s *Service) GetCurrentAppleMusicTrack(ctx context.Context, user *models.Us
 		return nil, nil
 	}
 
-	// Library songs may omit attributes.url even when they correspond to a
-	// catalog song. Resolve the catalog URL before the track is persisted.
-	if err := s.populateCatalogURL(ctx, *user.AppleMusicUserToken, &items[0]); err != nil {
-		s.logger.Printf("failed to resolve Apple Music catalog URL for %q: %v", items[0].Attributes.Name, err)
+	// Recent plays can omit catalog metadata. Fill missing fields before persistence.
+	if err := s.populateCatalogMetadata(ctx, *user.AppleMusicUserToken, &items[0]); err != nil {
+		s.logger.Printf("failed to resolve Apple Music catalog metadata for %q: %v", items[0].Attributes.Name, err)
 	}
 
 	return &items[0], nil
 }
 
-// populateCatalogURL fills in the share URL for a library song when Apple
-// provides the corresponding catalog ID in its play parameters.
-func (s *Service) populateCatalogURL(ctx context.Context, userToken string, track *AppleRecentTrack) error {
-	if track == nil || track.Attributes.URL != "" || track.Attributes.PlayParams == nil || track.Attributes.PlayParams.CatalogID == "" {
+// populateCatalogMetadata fills missing share URL, ISRC, and duration from the
+// catalog, leaving uploaded songs and existing recent-play metadata unchanged.
+func (s *Service) populateCatalogMetadata(ctx context.Context, userToken string, track *AppleRecentTrack) error {
+	if track == nil {
+		return nil
+	}
+	attrs := &track.Attributes
+	if attrs.URL != "" && attrs.Isrc != nil && *attrs.Isrc != "" && attrs.DurationInMillis != nil && *attrs.DurationInMillis > 0 {
+		return nil
+	}
+	catalogID := ""
+	if attrs.PlayParams != nil {
+		catalogID = attrs.PlayParams.CatalogID
+	}
+	if catalogID == "" && track.Type == "songs" {
+		catalogID = track.ID
+	}
+	if catalogID == "" {
 		return nil
 	}
 
@@ -502,7 +516,7 @@ func (s *Service) populateCatalogURL(ctx context.Context, userToken string, trac
 		Path:   "/v1/catalog/" + url.PathEscape(storefront.Data[0].ID) + "/songs",
 	}
 	query := catalogEndpoint.Query()
-	query.Set("ids", track.Attributes.PlayParams.CatalogID)
+	query.Set("ids", catalogID)
 	catalogEndpoint.RawQuery = query.Encode()
 
 	catalogReq, err := http.NewRequestWithContext(ctx, http.MethodGet, catalogEndpoint.String(), nil)
@@ -525,21 +539,24 @@ func (s *Service) populateCatalogURL(ctx context.Context, userToken string, trac
 		return newAppleMusicAPIError(catalogResp.Status, catalogBody)
 	}
 
-	var catalog struct {
-		Data []struct {
-			Attributes struct {
-				URL string `json:"url"`
-			} `json:"attributes"`
-		} `json:"data"`
-	}
+	var catalog recentPlayedResponse
 	if err := json.Unmarshal(catalogBody, &catalog); err != nil {
 		return fmt.Errorf("failed to decode catalog song response: %w", err)
 	}
-	if len(catalog.Data) == 0 || catalog.Data[0].Attributes.URL == "" {
-		return errors.New("Apple Music catalog response contained no song URL")
+	if len(catalog.Data) == 0 {
+		return errors.New("Apple Music catalog response contained no song")
 	}
 
-	track.Attributes.URL = catalog.Data[0].Attributes.URL
+	catalogAttrs := catalog.Data[0].Attributes
+	if attrs.URL == "" {
+		attrs.URL = catalogAttrs.URL
+	}
+	if attrs.Isrc == nil || *attrs.Isrc == "" {
+		attrs.Isrc = catalogAttrs.Isrc
+	}
+	if attrs.DurationInMillis == nil || *attrs.DurationInMillis <= 0 {
+		attrs.DurationInMillis = catalogAttrs.DurationInMillis
+	}
 	return nil
 }
 
