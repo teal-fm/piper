@@ -41,6 +41,10 @@ const lastfmMaxScrobblesPerRequest = 50
 // future timestamp from becoming the Last.fm watermark for later polling.
 const lastfmMaxFutureSkew = time.Hour
 
+// lastfmMaxDurationSeconds caps client-supplied durations so converting them
+// to milliseconds cannot overflow.
+const lastfmMaxDurationSeconds = 24 * 60 * 60
+
 var errLastfmTooManyScrobbles = errors.New("too many scrobbles in a single request")
 
 type lastfmCompatHandler struct {
@@ -78,10 +82,19 @@ func (h *lastfmCompatHandler) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	switch r.FormValue("method") {
+	method := r.FormValue("method")
+	// Write methods must be POSTed, as on Last.fm, so session keys stay out of
+	// URLs, proxy logs, and access logs.
+	if strings.HasPrefix(method, "track.") && r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		h.writeError(w, r, http.StatusMethodNotAllowed, lastfmErrInvalidMethod, "Invalid method - This method must be called with POST")
+		return
+	}
+
+	switch method {
 	case "auth.getToken":
 		h.getToken(w, r)
-	case "auth.getSession":
+	case "auth.getSession", "auth.getMobileSession":
 		h.getSession(w, r)
 	case "track.scrobble":
 		h.scrobble(w, r)
@@ -157,7 +170,9 @@ func (h *lastfmCompatHandler) getToken(w http.ResponseWriter, r *http.Request) {
 	writeLastfmXML(w, http.StatusOK, lastfmXMLTokenResponse{Status: "ok", Token: token})
 }
 
-// getSession returns a Last.fm session for a piper API key.
+// getSession returns a Last.fm session for a piper API key. It also backs
+// auth.getMobileSession, which mobile clients use in place of the token
+// handshake.
 func (h *lastfmCompatHandler) getSession(w http.ResponseWriter, r *http.Request) {
 	key, value, ok := h.requireKey(w, r, "token", "api_key")
 	if !ok {
@@ -226,6 +241,10 @@ func (h *lastfmCompatHandler) scrobble(w http.ResponseWriter, r *http.Request) {
 		response []lastfmScrobbleResult
 	)
 
+	// Direct submissions get their own source so they cannot move the Last.fm
+	// poller's watermark and cause it to skip real Last.fm history.
+	source := db.SourceLastfmCompat
+
 	now := time.Now()
 	maxTimestamp := now.Add(lastfmMaxFutureSkew).Unix()
 	for _, input := range inputs {
@@ -266,7 +285,7 @@ func (h *lastfmCompatHandler) scrobble(w http.ResponseWriter, r *http.Request) {
 			Album:          input.Album,
 			Timestamp:      timestamp,
 			DurationMs:     input.DurationSeconds * 1000,
-			ServiceBaseUrl: "lastfm",
+			ServiceBaseUrl: "",
 			HasStamped:     true,
 		}
 		if input.MBID != "" {
@@ -274,7 +293,7 @@ func (h *lastfmCompatHandler) scrobble(w http.ResponseWriter, r *http.Request) {
 			track.RecordingMBID = &mbid
 		}
 
-		exists, err := h.database.HasTrackListen(user.UserID, db.SourceLastfm, track.Name, track.Timestamp)
+		exists, err := h.database.HasTrackListen(user.UserID, source, track.Name, track.Timestamp)
 		if err != nil {
 			log.Printf("lastfm compat: could not check existing scrobble for user %d: %v", user.UserID, err)
 		} else if exists {
@@ -284,11 +303,11 @@ func (h *lastfmCompatHandler) scrobble(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		trackID, err := h.database.SaveTrack(user.UserID, db.SourceLastfm, &track)
+		trackID, err := h.database.SaveTrack(user.UserID, source, &track)
 		if err != nil {
 			log.Printf("lastfm compat: could not save scrobble for user %d: %v", user.UserID, err)
 			if len(saved) > 0 {
-				go hydrateAndSubmitTracks(h.database, h.atprotoService, h.mbService, user.UserID, db.SourceLastfm, saved)
+				go hydrateAndSubmitTracks(h.database, h.atprotoService, h.mbService, user.UserID, source, saved)
 			}
 			h.writeError(w, r, http.StatusInternalServerError, lastfmErrOperationFail, "Operation failed - Something else went wrong")
 			return
@@ -300,7 +319,7 @@ func (h *lastfmCompatHandler) scrobble(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(saved) > 0 {
-		go hydrateAndSubmitTracks(h.database, h.atprotoService, h.mbService, user.UserID, db.SourceLastfm, saved)
+		go hydrateAndSubmitTracks(h.database, h.atprotoService, h.mbService, user.UserID, source, saved)
 	}
 
 	log.Printf("lastfm compat: accepted %d scrobble(s), ignored %d for user %d", accepted, ignored, user.UserID)
@@ -334,14 +353,15 @@ func (h *lastfmCompatHandler) updateNowPlaying(w http.ResponseWriter, r *http.Re
 	}
 
 	track := models.Track{
-		Name:           trackName,
-		Artist:         []models.Artist{{Name: artist}},
-		Album:          strings.TrimSpace(r.FormValue("album")),
-		Timestamp:      time.Now().UTC(),
-		ServiceBaseUrl: "lastfm",
-		HasStamped:     false,
+		Name:   trackName,
+		Artist: []models.Artist{{Name: artist}},
+		Album:  strings.TrimSpace(r.FormValue("album")),
+		// The originating service is unknown, so omit musicServiceUri rather
+		// than claiming the play came from Last.fm.
+		Timestamp:  time.Now().UTC(),
+		HasStamped: false,
 	}
-	if duration, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("duration")), 10, 64); err == nil && duration > 0 {
+	if duration, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("duration")), 10, 64); err == nil && duration > 0 && duration <= lastfmMaxDurationSeconds {
 		track.DurationMs = duration * 1000
 	}
 	if mbid := strings.TrimSpace(r.FormValue("mbid")); mbid != "" {
@@ -436,7 +456,7 @@ func parseLastfmScrobble(r *http.Request, suffix string) lastfmScrobbleInput {
 	if timestamp, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("timestamp"+suffix)), 10, 64); err == nil {
 		input.Timestamp = timestamp
 	}
-	if duration, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("duration"+suffix)), 10, 64); err == nil && duration > 0 {
+	if duration, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("duration"+suffix)), 10, 64); err == nil && duration > 0 && duration <= lastfmMaxDurationSeconds {
 		input.DurationSeconds = duration
 	}
 	return input

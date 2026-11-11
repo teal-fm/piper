@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/teal-fm/piper/db"
+	"github.com/teal-fm/piper/models"
+	"github.com/teal-fm/piper/service/playingnow"
 	"github.com/teal-fm/piper/session"
 )
 
@@ -498,5 +500,178 @@ func TestLastfmCompatUnknownMethod(t *testing.T) {
 	}
 	if response.Error.Code != lastfmErrInvalidMethod {
 		t.Fatalf("expected error code %d, got %d", lastfmErrInvalidMethod, response.Error.Code)
+	}
+}
+
+func TestLastfmCompatScrobbleDurationsAreBounded(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	userID, apiKey := createTestUser(t, database)
+	handler := lastfmCompatTestHandler(t, database)
+
+	request := lastfmCompatRequest("track.scrobble", url.Values{
+		"sk":           {apiKey},
+		"format":       {"json"},
+		"artist[0]":    {"Huge Duration"},
+		"track[0]":     {"Overflow"},
+		"timestamp[0]": {"1704067200"},
+		"duration[0]":  {"9223372036854776"},
+		"artist[1]":    {"Normal Duration"},
+		"track[1]":     {"Fine"},
+		"timestamp[1]": {"1704067300"},
+		"duration[1]":  {"320"},
+	})
+	recorder := httptest.NewRecorder()
+	handler(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	tracks, err := database.GetRecentTracks(userID, 10)
+	if err != nil {
+		t.Fatalf("failed to load saved tracks: %v", err)
+	}
+	durations := make(map[string]int64, len(tracks))
+	for _, track := range tracks {
+		durations[track.Name] = track.DurationMs
+	}
+	if durations["Overflow"] != 0 {
+		t.Fatalf("expected overflowing duration to be dropped, got %d", durations["Overflow"])
+	}
+	if durations["Fine"] != 320000 {
+		t.Fatalf("expected valid duration 320000ms, got %d", durations["Fine"])
+	}
+}
+
+func TestLastfmCompatDirectScrobblesDoNotMovePollerWatermark(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	userID, apiKey := createTestUser(t, database)
+	handler := lastfmCompatTestHandler(t, database)
+
+	polledAt := time.Unix(1704067200, 0).UTC()
+	if _, err := database.SaveTrack(userID, db.SourceLastfm, &models.Track{
+		Name:      "Polled Track",
+		Artist:    []models.Artist{{Name: "Polled Artist"}},
+		Timestamp: polledAt,
+	}); err != nil {
+		t.Fatalf("failed to save polled track: %v", err)
+	}
+
+	scrobbledAt := time.Unix(1704070000, 0).UTC()
+	recorder := httptest.NewRecorder()
+	handler(recorder, lastfmCompatRequest("track.scrobble", url.Values{
+		"sk":           {apiKey},
+		"format":       {"json"},
+		"artist[0]":    {"Direct Artist"},
+		"track[0]":     {"Direct Track"},
+		"timestamp[0]": {strconv.FormatInt(scrobbledAt.Unix(), 10)},
+	}))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+
+	pollerWatermark, err := database.GetLastKnownTimestamp(userID, db.SourceLastfm)
+	if err != nil {
+		t.Fatalf("failed to read poller watermark: %v", err)
+	}
+	if pollerWatermark == nil || !pollerWatermark.Equal(polledAt) {
+		t.Fatalf("poller watermark moved to %v, want %v", pollerWatermark, polledAt)
+	}
+
+	compatWatermark, err := database.GetLastKnownTimestamp(userID, db.SourceLastfmCompat)
+	if err != nil {
+		t.Fatalf("failed to read compat watermark: %v", err)
+	}
+	if compatWatermark == nil || !compatWatermark.Equal(scrobbledAt) {
+		t.Fatalf("compat watermark = %v, want %v", compatWatermark, scrobbledAt)
+	}
+}
+
+func TestLastfmCompatRejectsGETForWriteMethods(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	_, apiKey := createTestUser(t, database)
+	handler := lastfmCompatTestHandler(t, database)
+
+	values := url.Values{
+		"method":       {"track.scrobble"},
+		"sk":           {apiKey},
+		"artist[0]":    {"GET Artist"},
+		"track[0]":     {"GET Track"},
+		"timestamp[0]": {"1704067200"},
+	}
+	request := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/2.0/?"+values.Encode(), nil)
+	recorder := httptest.NewRecorder()
+	handler(recorder, request)
+
+	if recorder.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status 405, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response lastfmXMLErrorResponse
+	if err := xml.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if response.Error.Code != lastfmErrInvalidMethod {
+		t.Fatalf("expected error code %d, got %d", lastfmErrInvalidMethod, response.Error.Code)
+	}
+
+	// auth methods still work over GET.
+	tokenRequest := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/2.0/?method=auth.getToken&api_key="+url.QueryEscape(apiKey)+"&format=json", nil)
+	tokenRecorder := httptest.NewRecorder()
+	handler(tokenRecorder, tokenRequest)
+	if tokenRecorder.Code != http.StatusOK {
+		t.Fatalf("expected auth.getToken over GET to succeed, got %d: %s", tokenRecorder.Code, tokenRecorder.Body.String())
+	}
+}
+
+func TestLastfmCompatMobileSession(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	_, apiKey := createTestUser(t, database)
+	handler := lastfmCompatTestHandler(t, database)
+
+	recorder := httptest.NewRecorder()
+	handler(recorder, lastfmCompatRequest("auth.getMobileSession", url.Values{
+		"api_key":  {apiKey},
+		"username": {"listener"},
+		"password": {"ignored"},
+		"format":   {"json"},
+	}))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var response lastfmJSONSessionResponse
+	decodeJSONResponse(t, recorder, &response)
+	if response.Session.Key != apiKey {
+		t.Fatalf("expected session key %q, got %q", apiKey, response.Session.Key)
+	}
+}
+
+func TestLastfmCompatUpdateNowPlayingWithService(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	_, apiKey := createTestUser(t, database)
+	sessionManager := session.NewSessionManager(database)
+	handler := apiLastfmCompatHandler(database, sessionManager, nil, nil, playingnow.NewPlayingNowService(database, nil, nil))
+
+	recorder := httptest.NewRecorder()
+	handler(recorder, lastfmCompatRequest("track.updateNowPlaying", url.Values{
+		"sk":       {apiKey},
+		"artist":   {"Aphex Twin"},
+		"track":    {"Xtal"},
+		"duration": {"293"},
+		"format":   {"json"},
+	}))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", recorder.Code, recorder.Body.String())
 	}
 }

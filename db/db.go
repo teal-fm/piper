@@ -227,6 +227,7 @@ type TrackSource string
 const (
 	SourceAppleMusic   TrackSource = "applemusic"
 	SourceLastfm       TrackSource = "lastfm"
+	SourceLastfmCompat TrackSource = "lastfm-compat"
 	SourceSpotify      TrackSource = "spotify"
 	SourceListenBrainz TrackSource = "listenbrainz"
 
@@ -235,7 +236,7 @@ const (
 
 func (s TrackSource) IsValid() bool {
 	switch s {
-	case SourceAppleMusic, SourceLastfm, SourceSpotify, SourceListenBrainz:
+	case SourceAppleMusic, SourceLastfm, SourceLastfmCompat, SourceSpotify, SourceListenBrainz:
 		return true
 	default:
 		return false

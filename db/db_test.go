@@ -92,6 +92,7 @@ func TestSaveTrack(t *testing.T) {
 	}{
 		{"apple", SourceAppleMusic, "music.apple.com"},
 		{"lastfm", SourceLastfm, "last.fm"},
+		{"lastfm compat", SourceLastfmCompat, "last.fm"},
 		{"listenbrainz spoof apple", SourceListenBrainz, "music.apple.com"},
 	}
 	for _, tc := range cases {
