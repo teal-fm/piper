@@ -65,6 +65,11 @@ func (app *application) routes() http.Handler {
 	mux.HandleFunc("/1/submit-listens", session.WithAPIAuth(apiSubmitListensHandler(app.database, app.atprotoService, app.playingNowService, app.mbService), app.sessionManager))
 	mux.HandleFunc("/1/validate-token", apiMbTokenValidateHandler(app.sessionManager))
 
+	// Last.fm-compatible scrobbling API
+	lastfmCompat := apiLastfmCompatHandler(app.database, app.sessionManager, app.atprotoService, app.mbService, app.playingNowService)
+	mux.HandleFunc("/2.0", lastfmCompat)
+	mux.HandleFunc("/2.0/", lastfmCompat)
+
 	serverUrlRoot := viper.GetString("server.root_url")
 	mux.HandleFunc("/oauth-client-metadata.json", func(w http.ResponseWriter, r *http.Request) {
 		app.atprotoService.HandleClientMetadata(w, r, serverUrlRoot)

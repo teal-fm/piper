@@ -72,6 +72,46 @@ links the MusicBrainz username it belongs to, imports the latest 25 listens, and
 polls for completed listens and playing-now updates. ListenBrainz-resolved MusicBrainz
 IDs and streaming links are used when they are available.
 
+##### last.fm compatible API
+
+Piper exposes a small Last.fm-compatible scrobbling API at `/2.0/` for clients that
+can be pointed at a self-hosted server. It supports `track.scrobble`,
+`track.updateNowPlaying`, `auth.getToken`, `auth.getSession`, and
+`auth.getMobileSession`. This is a compatibility shim for those methods, not a
+complete Last.fm API implementation, and it has not been validated end to end
+against a specific client.
+
+Create an API key under **API keys** in Piper, then use it as both the Last.fm
+`api_key` and `sk` (session key) in your client. Keys can also be sent as
+`Authorization: Bearer <key>`. Piper ignores `api_sig`; there is no separate
+Last.fm application secret. The `auth.*` methods simply echo the piper API key
+so clients that require the usual handshake can complete it.
+
+Responses are XML by default, matching Last.fm. Add `format=json` to receive JSON.
+`track.*` methods require POST; `auth.*` methods also accept GET. Accepted
+scrobbles are stored under their own source, hydrated with MusicBrainz metadata
+in the background, and published to the user's PDS. Keeping them separate means
+direct submissions do not move the Last.fm poller's import cursor.
+
+The originating service is unknown for direct submissions, so `musicServiceUri`
+is omitted from published plays rather than attributed to Last.fm. If you also
+link a Last.fm username, note that the Last.fm poller clears now-playing when
+Last.fm reports nothing playing, which may clear status set through this
+endpoint.
+
+```sh
+curl -X POST 'https://piper.example.com/2.0/' \
+  -d 'method=track.scrobble' \
+  -d 'api_key=<piper-api-key>' \
+  -d 'sk=<piper-api-key>' \
+  -d 'artist[0]=Daft Punk' \
+  -d 'track[0]=One More Time' \
+  -d 'album[0]=Discovery' \
+  -d 'timestamp[0]=1704067200' \
+  -d 'duration[0]=320' \
+  -d 'format=json'
+```
+
 ##### apple music
 
 requires an apple developer account
