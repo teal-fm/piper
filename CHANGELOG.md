@@ -1,5 +1,13 @@
 # piper
 
+## 0.2.1
+
+### Patch Changes
+
+- Fill missing Apple Music ISRC and duration from the catalog even when a recent play already has a share URL. ([#100](https://github.com/teal-fm/piper/pull/100))
+
+- Request a fresh Apple Music token when linking an account so users can recover after changing their Apple ID password. Fix unlinking from the Apple Music link page. ([#101](https://github.com/teal-fm/piper/pull/101))
+
 ## 0.2.0
 
 ### Minor Changes
