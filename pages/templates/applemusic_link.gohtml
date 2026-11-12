@@ -18,6 +18,7 @@
   <div class="space-y-3">
     <button
       id="authorizeBtn"
+      disabled
       class="block w-full px-4 py-2 rounded-lg bg-accent text-neutral-950 font-medium cursor-pointer hover:opacity-90">
       Authorize Apple Music
     </button>
@@ -25,14 +26,8 @@
     <form
       id="unlinkForm"
       method="post"
-      action="/api/v1/applemusic/unlink"
-      onsubmit="
-        (async () => {
-          const music = window.MusicKit.getInstance();
-          await music.unauthorize();
-          handleUnlink(event);
-        })()
-      ">
+      action="/unlink-applemusic"
+      onsubmit="return confirm('Unlink Apple Music from your account?')">
       <button
         class="block w-full px-4 py-2 rounded-lg border border-neutral-400/30 bg-white/50 dark:bg-neutral-900/50 backdrop-blur-sm text-neutral-600 dark:text-neutral-300 font-medium cursor-pointer hover:border-neutral-400/50"
         type="submit">
@@ -78,7 +73,7 @@
         });
       }
       try {
-        window.MusicKit.configure({
+        await window.MusicKit.configure({
           developerToken: devToken,
           app: { name: "Piper", build: "1.0.0" },
         });
@@ -87,22 +82,9 @@
         throw cfgErr;
       }
       const music = window.MusicKit.getInstance();
-      async function handleUnlink(event) {
-        event.preventDefault();
-        if (!confirm("Unlink Apple Music from your account?")) {
-          return;
-        }
-        try {
-          const music = window.MusicKit.getInstance();
-          await music.unauthorize();
-          document.getElementById("unlinkForm").submit();
-        } catch (e) {
-          console.error("Error unauthorizing:", e);
-          status.textContent =
-            "Error unauthorizing: " +
-            (e && e.message ? e.message : String(e));
-        }
-      }
+      // Unlinking on the server cannot clear MusicKit's browser cache. Reset it
+      // before enabling the button so authorize() runs fresh on a user gesture.
+      await music.unauthorize();
       try {
         music.addEventListener("authorizationStatusDidChange", (e) => {
           console.debug(
@@ -140,6 +122,7 @@
               (e && e.message ? e.message : String(e));
           }
         });
+      document.getElementById("authorizeBtn").disabled = false;
     } catch (e) {
       console.error("MusicKit setup failed", e);
       status.textContent =
