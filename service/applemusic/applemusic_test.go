@@ -340,3 +340,73 @@ func TestGenerateUploadHash(t *testing.T) {
 		})
 	}
 }
+
+func TestProcessUserPopulatesCatalogMetadata(t *testing.T) {
+	const originalURL = "https://music.apple.com/us/album/song/123?i=456"
+	for _, tc := range []struct {
+		name, recent, catalog, wantISRC, wantURL string
+		wantDuration                             int64
+		catalogStatus                            int
+	}{
+		{"catalog song with URL", `{"id":"456","type":"songs","attributes":{"name":"Song","artistName":"Artist","url":"` + originalURL + `","durationInMillis":170500}}`, `{"data":[{"attributes":{"isrc":"USABC1234567","durationInMillis":180000,"url":"https://music.apple.com/us/song/song/456"}}]}`, "USABC1234567", originalURL, 170500, 200},
+		{"library song", `{"id":"i.library","type":"library-songs","attributes":{"name":"Song","artistName":"Artist","playParams":{"catalogId":"456"}}}`, `{"data":[{"attributes":{"isrc":"USABC1234567","durationInMillis":180000,"url":"https://music.apple.com/us/song/song/456"}}]}`, "USABC1234567", "https://music.apple.com/us/song/song/456", 180000, 200},
+		{"preserve ISRC", `{"id":"456","type":"songs","attributes":{"name":"Song","artistName":"Artist","url":"` + originalURL + `","isrc":"ORIGINAL"}}`, `{"data":[{"attributes":{"isrc":"OTHER","durationInMillis":180000}}]}`, "ORIGINAL", originalURL, 180000, 200},
+		{"catalog failure", `{"id":"456","type":"songs","attributes":{"name":"Song","artistName":"Artist","url":"` + originalURL + `","durationInMillis":170500}}`, `{"errors":[{"title":"Unavailable"}]}`, "", originalURL, 170500, 503},
+		{"empty catalog", `{"id":"456","type":"songs","attributes":{"name":"Song","artistName":"Artist","url":"` + originalURL + `","durationInMillis":170500}}`, `{"data":[]}`, "", originalURL, 170500, 200},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testDB := newTestDB(t)
+			transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				body, status := "", http.StatusOK
+				switch req.URL.Path {
+				case "/v1/me/recent/played/tracks":
+					body = `{"data":[` + tc.recent + `]}`
+				case "/v1/me/storefront":
+					body = `{"data":[{"id":"us"}]}`
+				case "/v1/catalog/us/songs":
+					if got := req.URL.Query().Get("ids"); got != "456" {
+						t.Errorf("catalog ids = %q, want 456", got)
+					}
+					body, status = tc.catalog, tc.catalogStatus
+				default:
+					return nil, fmt.Errorf("unexpected request %s", req.URL)
+				}
+				return &http.Response{StatusCode: status, Status: http.StatusText(status), Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+			})
+			svc := newTestService(t, testDB, transport)
+			user := createTestUser(t, testDB)
+			if err := svc.ProcessUser(context.Background(), user); err != nil {
+				t.Fatal(err)
+			}
+			track, err := testDB.GetLatestTrackForService(user.ID, db.SourceAppleMusic)
+			if err != nil || track == nil {
+				t.Fatalf("saved track = %v, err = %v", track, err)
+			}
+			if track.ISRC != tc.wantISRC || track.URL != tc.wantURL || track.DurationMs != tc.wantDuration || track.ProgressMs != tc.wantDuration {
+				t.Fatalf("saved metadata: ISRC=%q URL=%q duration=%d progress=%d; want %q %q %d", track.ISRC, track.URL, track.DurationMs, track.ProgressMs, tc.wantISRC, tc.wantURL, tc.wantDuration)
+			}
+		})
+	}
+}
+
+func TestGetCurrentAppleMusicTrackSkipsUnneededCatalogLookup(t *testing.T) {
+	for _, recent := range []string{
+		`{"id":"456","type":"songs","attributes":{"name":"Song","url":"https://music.apple.com/us/song/456","isrc":"USABC1234567","durationInMillis":180000}}`,
+		`{"id":"i.upload","type":"library-songs","attributes":{"name":"Upload","playParams":{"id":"i.upload","kind":"song"}}}`,
+	} {
+		t.Run(recent, func(t *testing.T) {
+			testDB := newTestDB(t)
+			transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if req.URL.Path != "/v1/me/recent/played/tracks" {
+					t.Errorf("unexpected catalog lookup: %s", req.URL)
+				}
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"data":[` + recent + `]}`)), Header: make(http.Header)}, nil
+			})
+			svc := newTestService(t, testDB, transport)
+			track, err := svc.GetCurrentAppleMusicTrack(context.Background(), createTestUser(t, testDB))
+			if err != nil || track == nil {
+				t.Fatalf("track = %v, err = %v", track, err)
+			}
+		})
+	}
+}
