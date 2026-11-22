@@ -302,6 +302,14 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 			newest = track.Timestamp
 		}
 
+		exists, err := s.db.HasListenBrainzTrack(user.ID, sourceIdentity, legacyMappedListenIdentity(listen))
+		if err != nil {
+			return err
+		}
+		if exists {
+			continue
+		}
+
 		if track.RecordingMBID == nil && s.hydrateTrack != nil {
 			hydrated, err := s.hydrateTrack(track)
 			if err != nil {
@@ -312,13 +320,6 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 		}
 
 		s.enrichTrack(ctx, &track)
-		exists, err := s.db.HasListenBrainzTrack(user.ID, sourceIdentity)
-		if err != nil {
-			return err
-		}
-		if exists {
-			continue
-		}
 		trackID, err := s.db.SaveListenBrainzTrack(user.ID, sourceIdentity, &track)
 		if err != nil {
 			return fmt.Errorf("saving %s by %s: %w", track.Name, track.Artist[0].Name, err)
@@ -339,6 +340,31 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 }
 
 func listenSourceIdentity(listen *models.ListenBrainzPayload) string {
+	return listenIdentity(listen, submittedRecordingID(listen))
+}
+
+// Older Piper builds used the inferred mapping when the client sent no ID.
+func legacyMappedListenIdentity(listen *models.ListenBrainzPayload) string {
+	mapping := listen.TrackMetadata.MBIDMapping
+	if submittedRecordingID(listen) != "" || mapping == nil || mapping.RecordingMBID == "" {
+		return ""
+	}
+	return listenIdentity(listen, mapping.RecordingMBID)
+}
+
+func submittedRecordingID(listen *models.ListenBrainzPayload) string {
+	if info := listen.TrackMetadata.AdditionalInfo; info != nil {
+		if info.RecordingMSID != nil {
+			return *info.RecordingMSID
+		}
+		if info.RecordingMBID != nil {
+			return *info.RecordingMBID
+		}
+	}
+	return ""
+}
+
+func listenIdentity(listen *models.ListenBrainzPayload, recording string) string {
 	timestamp := int64(0)
 	if listen.ListenedAt != nil {
 		timestamp = *listen.ListenedAt
@@ -346,17 +372,6 @@ func listenSourceIdentity(listen *models.ListenBrainzPayload) string {
 	release := ""
 	if listen.TrackMetadata.ReleaseName != nil {
 		release = *listen.TrackMetadata.ReleaseName
-	}
-	recording := ""
-	if info := listen.TrackMetadata.AdditionalInfo; info != nil {
-		if info.RecordingMSID != nil {
-			recording = *info.RecordingMSID
-		} else if info.RecordingMBID != nil {
-			recording = *info.RecordingMBID
-		}
-	}
-	if recording == "" && listen.TrackMetadata.MBIDMapping != nil {
-		recording = listen.TrackMetadata.MBIDMapping.RecordingMBID
 	}
 	identity := fmt.Sprintf("%d\x00%s\x00%s\x00%s\x00%s", timestamp, listen.TrackMetadata.ArtistName, listen.TrackMetadata.TrackName, release, recording)
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(identity)))

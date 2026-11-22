@@ -9,10 +9,12 @@ import (
 	"github.com/teal-fm/piper/models"
 )
 
-// HasListenBrainzTrack checks the immutable identity captured from the source payload.
-func (db *DB) HasListenBrainzTrack(userID int64, sourceIdentity string) (bool, error) {
+// HasListenBrainzTrack checks the source identity and the equivalent pre-upgrade key.
+func (db *DB) HasListenBrainzTrack(userID int64, sourceIdentity, legacyIdentity string) (bool, error) {
 	var exists bool
-	err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM tracks WHERE user_id = ? AND source = ? AND source_identity = ?)`, userID, SourceListenBrainz, sourceIdentity).Scan(&exists)
+	err := db.QueryRow(`
+		SELECT EXISTS(SELECT 1 FROM tracks WHERE user_id = ? AND source = ? AND source_identity IN (?, ?))
+	`, userID, SourceListenBrainz, sourceIdentity, legacyIdentity).Scan(&exists)
 	return exists, err
 }
 
