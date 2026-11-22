@@ -286,6 +286,18 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 		return *listens[i].ListenedAt < *listens[j].ListenedAt
 	})
 
+	// A row that exactly matches a submitted ID belongs to that listen. Reserve
+	// those old keys before trying to recover inferred mappings for other listens.
+	submittedKeys := make(map[string]struct{})
+	for i := range listens {
+		listen := &listens[i]
+		if listen.ListenedAt != nil {
+			if id := submittedRecordingID(listen); id != "" {
+				submittedKeys[listenIdentity(listen, id)] = struct{}{}
+			}
+		}
+	}
+
 	var newest time.Time
 	for i := range listens {
 		listen := &listens[i]
@@ -302,7 +314,7 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 			newest = track.Timestamp
 		}
 
-		exists, err := s.hasImportedListen(user.ID, listen, &track, sourceIdentity)
+		exists, err := s.hasImportedListen(user.ID, listen, &track, sourceIdentity, submittedKeys)
 		if err != nil {
 			return err
 		}
@@ -343,20 +355,26 @@ func listenSourceIdentity(listen *models.ListenBrainzPayload) string {
 	return "v2:" + listenIdentity(listen, submittedRecordingID(listen))
 }
 
-func (s *Service) hasImportedListen(userID int64, listen *models.ListenBrainzPayload, track *models.Track, key string) (bool, error) {
-	recording := submittedRecordingID(listen)
-	// Older builds treated even an empty MSID as present before using the mapping.
-	legacySubmitted := recording
+func (s *Service) hasImportedListen(userID int64, listen *models.ListenBrainzPayload, track *models.Track, key string, submittedKeys map[string]struct{}) (bool, error) {
+	submittedID := submittedRecordingID(listen)
+	legacySubmittedID := submittedID
+	// Older builds let an empty MSID override the submitted recording MBID.
 	if info := listen.TrackMetadata.AdditionalInfo; info != nil && info.RecordingMSID != nil {
-		legacySubmitted = *info.RecordingMSID
+		legacySubmittedID = *info.RecordingMSID
 	}
-	legacyRecording := legacySubmitted
-	if mapping := listen.TrackMetadata.MBIDMapping; legacyRecording == "" && mapping != nil {
-		legacyRecording = mapping.RecordingMBID
+	legacyKey := listenIdentity(listen, legacySubmittedID)
+	if mapping := listen.TrackMetadata.MBIDMapping; legacySubmittedID == "" && mapping != nil {
+		legacyKey = listenIdentity(listen, mapping.RecordingMBID)
+		if _, reserved := submittedKeys[legacyKey]; reserved {
+			legacyKey = ""
+		}
 	}
-	exists, err := s.db.HasListenBrainzTrack(userID, key, listenIdentity(listen, recording), listenIdentity(listen, legacyRecording))
-	if err != nil || exists || legacySubmitted != "" {
+	exists, err := s.db.HasListenBrainzTrack(userID, key, listenIdentity(listen, submittedID), legacyKey)
+	if err != nil || exists {
 		return exists, err
+	}
+	if legacySubmittedID != "" {
+		return false, nil
 	}
 
 	// A legacy key may contain a mapping that has changed since import. Only
@@ -366,6 +384,9 @@ func (s *Service) hasImportedListen(userID int64, listen *models.ListenBrainzPay
 		return false, err
 	}
 	for _, identity := range legacy {
+		if _, reserved := submittedKeys[identity.Key]; reserved {
+			continue
+		}
 		if identity.Key == listenIdentity(listen, identity.RecordingMBID) {
 			return true, nil
 		}
