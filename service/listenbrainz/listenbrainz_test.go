@@ -257,9 +257,10 @@ func TestSyncListensDeduplicatesWhenHydrationChanges(t *testing.T) {
 }
 
 type fakePlayingNow struct {
-	mu        sync.Mutex
-	published []*models.Track
-	cleared   []int64
+	mu         sync.Mutex
+	published  []*models.Track
+	cleared    []int64
+	clearError error
 }
 
 func (f *fakePlayingNow) PublishPlayingNow(_ context.Context, _ int64, track *models.Track) error {
@@ -274,7 +275,9 @@ func (f *fakePlayingNow) ClearPlayingNow(_ context.Context, userID int64) error 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.cleared = append(f.cleared, userID)
-	return nil
+	err := f.clearError
+	f.clearError = nil
+	return err
 }
 
 func TestSyncPlayingNowPublishesChangesAndClears(t *testing.T) {
@@ -313,6 +316,41 @@ func TestSyncPlayingNowPublishesChangesAndClears(t *testing.T) {
 	}
 	if len(fake.cleared) != 1 || fake.cleared[0] != user.ID {
 		t.Errorf("cleared = %v", fake.cleared)
+	}
+}
+
+func TestSyncPlayingNowRetriesFailedClear(t *testing.T) {
+	database := testDatabase(t)
+	user := linkedUser(t, database, "listener", "secret")
+	polls := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		polls++
+		w.Header().Set("Content-Type", "application/json")
+		if polls == 1 {
+			w.Write([]byte(`{"payload":{"listens":[{"track_metadata":{"artist_name":"Artist","track_name":"Song"}}]}}`))
+			return
+		}
+		w.Write([]byte(`{"payload":{"listens":[]}}`))
+	}))
+	defer server.Close()
+
+	clearError := errors.New("temporary clear failure")
+	publisher := &fakePlayingNow{clearError: clearError}
+	service := testService(database, server, publisher)
+	ctx := context.Background()
+	if err := service.syncPlayingNow(ctx, user); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.syncPlayingNow(ctx, user); !errors.Is(err, clearError) {
+		t.Fatalf("clearing returned %v, want %v", err, clearError)
+	}
+	for range 2 {
+		if err := service.syncPlayingNow(ctx, user); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(publisher.cleared) != 2 {
+		t.Fatalf("clear attempts = %d, want the initial attempt and one retry", len(publisher.cleared))
 	}
 }
 

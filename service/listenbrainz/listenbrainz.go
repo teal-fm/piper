@@ -192,14 +192,18 @@ func (s *Service) syncPlayingNow(ctx context.Context, user *models.User) error {
 
 	if len(response.Payload.Listens) == 0 {
 		s.mu.Lock()
-		_, published := s.lastSeenNowPlaying[user.ID]
-		delete(s.lastSeenNowPlaying, user.ID)
+		signature, published := s.lastSeenNowPlaying[user.ID]
 		s.mu.Unlock()
 		if published && s.playingNowService != nil {
 			if err := s.playingNowService.ClearPlayingNow(ctx, user.ID); err != nil {
 				return fmt.Errorf("clearing playing-now listen for %s: %w", *user.ListenBrainzUsername, err)
 			}
 		}
+		s.mu.Lock()
+		if s.lastSeenNowPlaying[user.ID] == signature {
+			delete(s.lastSeenNowPlaying, user.ID)
+		}
+		s.mu.Unlock()
 		return nil
 	}
 
