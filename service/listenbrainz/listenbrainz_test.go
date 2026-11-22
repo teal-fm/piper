@@ -258,35 +258,58 @@ func TestSyncListensDeduplicatesWhenMappingChanges(t *testing.T) {
 }
 
 func TestSyncListensRecognizesLegacyMappedIdentity(t *testing.T) {
-	database := testDatabase(t)
-	user := linkedUser(t, database, "listener", "secret")
-	listenedAt := int64(200)
-	release := "Album"
-	listen := models.ListenBrainzPayload{ListenedAt: &listenedAt, TrackMetadata: models.ListenBrainzTrackMetadata{
-		TrackName: "Song", ArtistName: "Artist", ReleaseName: &release,
-		MBIDMapping: &models.ListenBrainzMBIDMapping{RecordingMBID: "legacy-mapped"},
-	}}
-	// This is the key written by Piper v0.2.1 for the above payload.
-	const previousKey = "ddf05968b2273bb47d614223dda91bf3afc01ed86ddbb8f1e726096499096989"
-	track := syncedTrack(&listen)
-	if _, err := database.SaveListenBrainzTrack(user.ID, previousKey, &track); err != nil {
-		t.Fatal(err)
+	for _, tc := range []struct {
+		name, mapping, artist string
+		emptyMSID             bool
+		want                  int
+	}{
+		{"unchanged mapping", "legacy-mapped", "Artist", false, 1},
+		{"changed mapping", "new-mapping", "Artist", false, 1},
+		{"changed mapping with empty MSID", "new-mapping", "Artist", true, 1},
+		{"removed mapping", "", "Artist", false, 1},
+		{"different submitted artist", "new-mapping", "Other Artist", false, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			database := testDatabase(t)
+			user := linkedUser(t, database, "listener", "secret")
+			listenedAt := int64(200)
+			release := "Album"
+			listen := models.ListenBrainzPayload{ListenedAt: &listenedAt, TrackMetadata: models.ListenBrainzTrackMetadata{
+				TrackName: "Song", ArtistName: "Artist", ReleaseName: &release,
+				MBIDMapping: &models.ListenBrainzMBIDMapping{RecordingMBID: "legacy-mapped"},
+			}}
+			if tc.emptyMSID {
+				msid, mbid := "", "submitted"
+				listen.TrackMetadata.AdditionalInfo = &models.ListenBrainzAdditionalInfo{RecordingMSID: &msid, RecordingMBID: &mbid}
+			}
+			// This is the key written by Piper v0.2.1 for the above payload.
+			const previousKey = "ddf05968b2273bb47d614223dda91bf3afc01ed86ddbb8f1e726096499096989"
+			track := syncedTrack(&listen)
+			if _, err := database.SaveListenBrainzTrack(user.ID, previousKey, &track); err != nil {
+				t.Fatal(err)
+			}
+			if err := database.SaveListenBrainzSyncTimestamp(user.ID, track.Timestamp); err != nil {
+				t.Fatal(err)
+			}
+			user, err := database.GetUserByID(user.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			listen.TrackMetadata.ArtistName = tc.artist
+			listen.TrackMetadata.MBIDMapping = nil
+			if tc.mapping != "" {
+				listen.TrackMetadata.MBIDMapping = &models.ListenBrainzMBIDMapping{RecordingMBID: tc.mapping}
+			}
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				json.NewEncoder(w).Encode(map[string]any{"payload": map[string]any{"listens": []models.ListenBrainzPayload{listen}}})
+			}))
+			defer server.Close()
+			if err := testService(database, server, nil).syncListens(context.Background(), user); err != nil {
+				t.Fatal(err)
+			}
+			assertListenAndSubmissionCounts(t, database, user.ID, tc.want)
+		})
 	}
-	if err := database.SaveListenBrainzSyncTimestamp(user.ID, track.Timestamp); err != nil {
-		t.Fatal(err)
-	}
-	user, err := database.GetUserByID(user.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		json.NewEncoder(w).Encode(map[string]any{"payload": map[string]any{"listens": []models.ListenBrainzPayload{listen}}})
-	}))
-	defer server.Close()
-	if err := testService(database, server, nil).syncListens(context.Background(), user); err != nil {
-		t.Fatal(err)
-	}
-	assertListenAndSubmissionCounts(t, database, user.ID, 1)
 }
 
 func TestSyncListensKeepsDistinctSubmittedIDsInSameSecond(t *testing.T) {

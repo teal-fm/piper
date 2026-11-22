@@ -302,7 +302,7 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 			newest = track.Timestamp
 		}
 
-		exists, err := s.db.HasListenBrainzTrack(user.ID, sourceIdentity, legacyListenSourceIdentity(listen))
+		exists, err := s.hasImportedListen(user.ID, listen, &track, sourceIdentity)
 		if err != nil {
 			return err
 		}
@@ -340,23 +340,37 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 }
 
 func listenSourceIdentity(listen *models.ListenBrainzPayload) string {
-	return listenIdentity(listen, submittedRecordingID(listen))
+	return "v2:" + listenIdentity(listen, submittedRecordingID(listen))
 }
 
-// Older builds used the mapping when the submitted ID was missing or the MSID was empty.
-func legacyListenSourceIdentity(listen *models.ListenBrainzPayload) string {
+func (s *Service) hasImportedListen(userID int64, listen *models.ListenBrainzPayload, track *models.Track, key string) (bool, error) {
 	recording := submittedRecordingID(listen)
-	legacyRecording := recording
+	// Older builds treated even an empty MSID as present before using the mapping.
+	legacySubmitted := recording
 	if info := listen.TrackMetadata.AdditionalInfo; info != nil && info.RecordingMSID != nil {
-		legacyRecording = *info.RecordingMSID
+		legacySubmitted = *info.RecordingMSID
 	}
+	legacyRecording := legacySubmitted
 	if mapping := listen.TrackMetadata.MBIDMapping; legacyRecording == "" && mapping != nil {
 		legacyRecording = mapping.RecordingMBID
 	}
-	if legacyRecording == recording {
-		return ""
+	exists, err := s.db.HasListenBrainzTrack(userID, key, listenIdentity(listen, recording), listenIdentity(listen, legacyRecording))
+	if err != nil || exists || legacySubmitted != "" {
+		return exists, err
 	}
-	return listenIdentity(listen, legacyRecording)
+
+	// A legacy key may contain a mapping that has changed since import. Only
+	// reuse it when the stored recording reconstructs the exact source key.
+	legacy, err := s.db.ListenBrainzLegacyIdentities(userID, track)
+	if err != nil {
+		return false, err
+	}
+	for _, identity := range legacy {
+		if identity.Key == listenIdentity(listen, identity.RecordingMBID) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func submittedRecordingID(listen *models.ListenBrainzPayload) string {

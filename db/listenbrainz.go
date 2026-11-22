@@ -9,13 +9,40 @@ import (
 	"github.com/teal-fm/piper/models"
 )
 
-// HasListenBrainzTrack checks the source identity and the equivalent pre-upgrade key.
-func (db *DB) HasListenBrainzTrack(userID int64, sourceIdentity, legacyIdentity string) (bool, error) {
+// HasListenBrainzTrack checks the current key and the exact pre-upgrade keys.
+func (db *DB) HasListenBrainzTrack(userID int64, sourceIdentity, legacySubmitted, legacyMapped string) (bool, error) {
 	var exists bool
 	err := db.QueryRow(`
-		SELECT EXISTS(SELECT 1 FROM tracks WHERE user_id = ? AND source = ? AND source_identity IN (?, ?))
-	`, userID, SourceListenBrainz, sourceIdentity, legacyIdentity).Scan(&exists)
+		SELECT EXISTS(SELECT 1 FROM tracks WHERE user_id = ? AND source = ? AND source_identity IN (?, ?, ?))
+	`, userID, SourceListenBrainz, sourceIdentity, legacySubmitted, legacyMapped).Scan(&exists)
 	return exists, err
+}
+
+type ListenBrainzLegacyIdentity struct {
+	Key           string
+	RecordingMBID string
+}
+
+// ListenBrainzLegacyIdentities finds old, unprefixed SHA-256 keys for the same track and second.
+func (db *DB) ListenBrainzLegacyIdentities(userID int64, track *models.Track) ([]ListenBrainzLegacyIdentity, error) {
+	rows, err := db.Query(`
+		SELECT source_identity, recording_mbid FROM tracks
+		WHERE user_id = ? AND source = ? AND timestamp = ? AND name = ? AND album = ?
+			AND length(source_identity) = 64 AND recording_mbid IS NOT NULL
+	`, userID, SourceListenBrainz, track.Timestamp, track.Name, track.Album)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var identities []ListenBrainzLegacyIdentity
+	for rows.Next() {
+		var identity ListenBrainzLegacyIdentity
+		if err := rows.Scan(&identity.Key, &identity.RecordingMBID); err != nil {
+			return nil, err
+		}
+		identities = append(identities, identity)
+	}
+	return identities, rows.Err()
 }
 
 func (db *DB) SaveListenBrainzTrack(userID int64, sourceIdentity string, track *models.Track) (int64, error) {
