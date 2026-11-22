@@ -308,6 +308,25 @@ func TestSyncListensKeepsDistinctSubmittedIDsInSameSecond(t *testing.T) {
 	assertListenAndSubmissionCounts(t, database, user.ID, 2)
 }
 
+func TestSyncListensUsesRecordingMBIDWhenMSIDIsEmpty(t *testing.T) {
+	database := testDatabase(t)
+	user := linkedUser(t, database, "listener", "secret")
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"payload":{"listens":[
+			{"listened_at":200,"track_metadata":{"track_name":"Song","artist_name":"Artist","additional_info":{"recording_msid":"","recording_mbid":"first"},"mbid_mapping":{"recording_mbid":"mapped-first"}}},
+			{"listened_at":200,"track_metadata":{"track_name":"Song","artist_name":"Artist","additional_info":{"recording_msid":"","recording_mbid":"second"},"mbid_mapping":{"recording_mbid":"mapped-second"}}}
+		]}}`))
+	}))
+	defer server.Close()
+	service := testService(database, server, nil)
+	for range 2 {
+		if err := service.syncListens(context.Background(), user); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertListenAndSubmissionCounts(t, database, user.ID, 2)
+}
+
 func assertListenAndSubmissionCounts(t *testing.T, database *db.DB, userID int64, want int) {
 	t.Helper()
 	tracks, err := database.GetRecentTracks(userID, 10)

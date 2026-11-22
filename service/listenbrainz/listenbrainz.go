@@ -302,7 +302,7 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 			newest = track.Timestamp
 		}
 
-		exists, err := s.db.HasListenBrainzTrack(user.ID, sourceIdentity, legacyMappedListenIdentity(listen))
+		exists, err := s.db.HasListenBrainzTrack(user.ID, sourceIdentity, legacyListenSourceIdentity(listen))
 		if err != nil {
 			return err
 		}
@@ -343,18 +343,25 @@ func listenSourceIdentity(listen *models.ListenBrainzPayload) string {
 	return listenIdentity(listen, submittedRecordingID(listen))
 }
 
-// Older Piper builds used the inferred mapping when the client sent no ID.
-func legacyMappedListenIdentity(listen *models.ListenBrainzPayload) string {
-	mapping := listen.TrackMetadata.MBIDMapping
-	if submittedRecordingID(listen) != "" || mapping == nil || mapping.RecordingMBID == "" {
+// Older builds used the mapping when the submitted ID was missing or the MSID was empty.
+func legacyListenSourceIdentity(listen *models.ListenBrainzPayload) string {
+	recording := submittedRecordingID(listen)
+	legacyRecording := recording
+	if info := listen.TrackMetadata.AdditionalInfo; info != nil && info.RecordingMSID != nil {
+		legacyRecording = *info.RecordingMSID
+	}
+	if mapping := listen.TrackMetadata.MBIDMapping; legacyRecording == "" && mapping != nil {
+		legacyRecording = mapping.RecordingMBID
+	}
+	if legacyRecording == recording {
 		return ""
 	}
-	return listenIdentity(listen, mapping.RecordingMBID)
+	return listenIdentity(listen, legacyRecording)
 }
 
 func submittedRecordingID(listen *models.ListenBrainzPayload) string {
 	if info := listen.TrackMetadata.AdditionalInfo; info != nil {
-		if info.RecordingMSID != nil {
+		if info.RecordingMSID != nil && *info.RecordingMSID != "" {
 			return *info.RecordingMSID
 		}
 		if info.RecordingMBID != nil {
