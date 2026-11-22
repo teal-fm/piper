@@ -261,22 +261,27 @@ type fakePlayingNow struct {
 	published  []*models.Track
 	cleared    []int64
 	clearError error
+	currentCID string
 }
 
-func (f *fakePlayingNow) PublishPlayingNow(_ context.Context, _ int64, track *models.Track) error {
+func (f *fakePlayingNow) PublishPlayingNowWithCID(_ context.Context, _ int64, track *models.Track) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	copy := *track
 	f.published = append(f.published, &copy)
-	return nil
+	f.currentCID = track.Name
+	return f.currentCID, nil
 }
 
-func (f *fakePlayingNow) ClearPlayingNow(_ context.Context, userID int64) error {
+func (f *fakePlayingNow) ClearPlayingNowIfCurrent(_ context.Context, userID int64, expectedCID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.cleared = append(f.cleared, userID)
 	err := f.clearError
 	f.clearError = nil
+	if err == nil && expectedCID == f.currentCID {
+		f.currentCID = ""
+	}
 	return err
 }
 
@@ -320,6 +325,16 @@ func TestSyncPlayingNowPublishesChangesAndClears(t *testing.T) {
 }
 
 func TestSyncPlayingNowRetriesFailedClear(t *testing.T) {
+	t.Run("clears original publication", func(t *testing.T) {
+		testPlayingNowClearRetry(t, "")
+	})
+	t.Run("preserves newer publication", func(t *testing.T) {
+		testPlayingNowClearRetry(t, "newer-status")
+	})
+}
+
+func testPlayingNowClearRetry(t *testing.T, newerCID string) {
+	t.Helper()
 	database := testDatabase(t)
 	user := linkedUser(t, database, "listener", "secret")
 	polls := 0
@@ -344,6 +359,9 @@ func TestSyncPlayingNowRetriesFailedClear(t *testing.T) {
 	if err := service.syncPlayingNow(ctx, user); !errors.Is(err, clearError) {
 		t.Fatalf("clearing returned %v, want %v", err, clearError)
 	}
+	if newerCID != "" {
+		publisher.currentCID = newerCID
+	}
 	for range 2 {
 		if err := service.syncPlayingNow(ctx, user); err != nil {
 			t.Fatal(err)
@@ -351,6 +369,9 @@ func TestSyncPlayingNowRetriesFailedClear(t *testing.T) {
 	}
 	if len(publisher.cleared) != 2 {
 		t.Fatalf("clear attempts = %d, want the initial attempt and one retry", len(publisher.cleared))
+	}
+	if publisher.currentCID != newerCID {
+		t.Fatalf("status after retry = %q, want %q", publisher.currentCID, newerCID)
 	}
 }
 
