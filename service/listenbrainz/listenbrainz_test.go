@@ -257,11 +257,13 @@ func TestSyncListensDeduplicatesWhenHydrationChanges(t *testing.T) {
 }
 
 type fakePlayingNow struct {
-	mu         sync.Mutex
-	published  []*models.Track
-	cleared    []int64
-	clearError error
-	currentCID string
+	mu                  sync.Mutex
+	published           []*models.Track
+	cleared             []int64
+	clearError          error
+	clearAppliedOnError bool
+	noSession           bool
+	currentCID          string
 }
 
 func (f *fakePlayingNow) PublishPlayingNowWithCID(_ context.Context, _ int64, track *models.Track) (string, error) {
@@ -269,6 +271,9 @@ func (f *fakePlayingNow) PublishPlayingNowWithCID(_ context.Context, _ int64, tr
 	defer f.mu.Unlock()
 	copy := *track
 	f.published = append(f.published, &copy)
+	if f.noSession {
+		return "", nil
+	}
 	f.currentCID = track.Name
 	return f.currentCID, nil
 }
@@ -279,7 +284,7 @@ func (f *fakePlayingNow) ClearPlayingNowIfCurrent(_ context.Context, userID int6
 	f.cleared = append(f.cleared, userID)
 	err := f.clearError
 	f.clearError = nil
-	if err == nil && expectedCID == f.currentCID {
+	if (err == nil || f.clearAppliedOnError) && expectedCID == f.currentCID {
 		f.currentCID = ""
 	}
 	return err
@@ -372,6 +377,58 @@ func testPlayingNowClearRetry(t *testing.T, newerCID string) {
 	}
 	if publisher.currentCID != newerCID {
 		t.Fatalf("status after retry = %q, want %q", publisher.currentCID, newerCID)
+	}
+}
+
+func TestSyncPlayingNowRepublishesAfterUncertainClear(t *testing.T) {
+	database := testDatabase(t)
+	user := linkedUser(t, database, "listener", "secret")
+	polls := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		polls++
+		if polls == 2 {
+			w.Write([]byte(`{"payload":{"listens":[]}}`))
+			return
+		}
+		w.Write([]byte(`{"payload":{"listens":[{"track_metadata":{"artist_name":"Artist","track_name":"Song"}}]}}`))
+	}))
+	defer server.Close()
+
+	timeout := errors.New("clear applied but response timed out")
+	publisher := &fakePlayingNow{clearError: timeout, clearAppliedOnError: true}
+	service := testService(database, server, publisher)
+	ctx := context.Background()
+	if err := service.syncPlayingNow(ctx, user); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.syncPlayingNow(ctx, user); !errors.Is(err, timeout) {
+		t.Fatalf("clearing returned %v, want %v", err, timeout)
+	}
+	if err := service.syncPlayingNow(ctx, user); err != nil {
+		t.Fatal(err)
+	}
+	if len(publisher.published) != 2 || publisher.currentCID != "Song" {
+		t.Fatalf("published %d times, current publication %q", len(publisher.published), publisher.currentCID)
+	}
+}
+
+func TestSyncPlayingNowSkipsRepeatWithoutSession(t *testing.T) {
+	database := testDatabase(t)
+	user := linkedUser(t, database, "listener", "secret")
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"payload":{"listens":[{"track_metadata":{"artist_name":"Artist","track_name":"Song"}}]}}`))
+	}))
+	defer server.Close()
+
+	publisher := &fakePlayingNow{noSession: true}
+	service := testService(database, server, publisher)
+	for range 2 {
+		if err := service.syncPlayingNow(context.Background(), user); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(publisher.published) != 1 {
+		t.Fatalf("publish attempts = %d, want 1", len(publisher.published))
 	}
 }
 

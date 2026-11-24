@@ -206,6 +206,12 @@ func (s *Service) syncPlayingNow(ctx context.Context, user *models.User) error {
 			return nil
 		}
 		if err := s.playingNowService.ClearPlayingNowIfCurrent(ctx, user.ID, publication.cid); err != nil {
+			s.mu.Lock()
+			if s.lastSeenNowPlaying[user.ID] == publication {
+				// Retry the clear on an empty poll and republish if the song resumes.
+				s.lastSeenNowPlaying[user.ID] = playingNowPublication{cid: publication.cid}
+			}
+			s.mu.Unlock()
 			return fmt.Errorf("clearing playing-now listen for %s: %w", *user.ListenBrainzUsername, err)
 		}
 		s.mu.Lock()
@@ -231,11 +237,9 @@ func (s *Service) syncPlayingNow(ctx context.Context, user *models.User) error {
 	if err != nil {
 		return fmt.Errorf("publishing playing-now listen for %s: %w", *user.ListenBrainzUsername, err)
 	}
-	if cid != "" {
-		s.mu.Lock()
-		s.lastSeenNowPlaying[user.ID] = playingNowPublication{signature: signature, cid: cid}
-		s.mu.Unlock()
-	}
+	s.mu.Lock()
+	s.lastSeenNowPlaying[user.ID] = playingNowPublication{signature: signature, cid: cid}
+	s.mu.Unlock()
 	return nil
 }
 
