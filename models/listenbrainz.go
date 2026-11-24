@@ -16,6 +16,7 @@ type ListenBrainzSubmission struct {
 // ListenBrainzPayload represents individual listen data
 type ListenBrainzPayload struct {
 	ListenedAt    *int64                    `json:"listened_at,omitempty"`
+	RecordingMSID string                    `json:"recording_msid,omitempty"`
 	TrackMetadata ListenBrainzTrackMetadata `json:"track_metadata"`
 }
 
