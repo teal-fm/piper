@@ -410,6 +410,40 @@ func TestSyncListensKeepsDistinctTopLevelMSIDs(t *testing.T) {
 	assertListenAndSubmissionCounts(t, database, user.ID, 2)
 }
 
+func TestSyncListensKeepsDistinctMSIDsAtLegacyBoundary(t *testing.T) {
+	database := testDatabase(t)
+	user := linkedUser(t, database, "listener", "secret")
+	timestamp := int64(200)
+	legacy := models.ListenBrainzPayload{
+		ListenedAt: &timestamp,
+		TrackMetadata: models.ListenBrainzTrackMetadata{
+			TrackName: "Song", ArtistName: "Artist",
+			MBIDMapping: &models.ListenBrainzMBIDMapping{RecordingMBID: "same-mapping"},
+		},
+	}
+	track := syncedTrack(&legacy)
+	if _, err := database.SaveListenBrainzTrack(user.ID, listenIdentity(&legacy, "same-mapping"), &track); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"payload":{"listens":[
+			{"listened_at":200,"recording_msid":"first","track_metadata":{"track_name":"Song","artist_name":"Artist","additional_info":{"duration_ms":180000},"mbid_mapping":{"recording_mbid":"same-mapping"}}},
+			{"listened_at":200,"recording_msid":"second","track_metadata":{"track_name":"Song","artist_name":"Artist","additional_info":{"duration_ms":181000},"mbid_mapping":{"recording_mbid":"same-mapping"}}}
+		]}}`))
+	}))
+	defer server.Close()
+	service := testService(database, server, nil)
+	for range 2 {
+		if err := service.syncListens(context.Background(), user); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The legacy row does not say which MSID it came from. Keep it and import
+	// both source records so that neither distinct listen disappears.
+	assertListenAndSubmissionCounts(t, database, user.ID, 3)
+}
+
 func TestSyncListensRecoversLegacyEmptyRecording(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
