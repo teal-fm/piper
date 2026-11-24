@@ -21,10 +21,14 @@ import (
 	"github.com/teal-fm/piper/service/musicbrainz"
 )
 
+type atprotoClientProvider interface {
+	GetATProtoClient(accountDID, sessionID string, ctx context.Context) (*client.APIClient, error)
+}
+
 // Service handles publishing current playing status to ATProto
 type Service struct {
 	db             *db.DB
-	atprotoService *atprotoauth.AuthService
+	atprotoService atprotoClientProvider
 	logger         *log.Logger
 	mu             sync.RWMutex
 	mb             *musicbrainz.Service
