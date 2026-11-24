@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -28,10 +29,12 @@ func (p testStatusClient) GetATProtoClient(_ string, _ string, _ context.Context
 func TestClearPlayingNowOnlyWritesOriginalStatus(t *testing.T) {
 	for _, tc := range []struct {
 		name, storedCID string
+		rejectSwap      bool
 		wantWrites      int32
 	}{
-		{"original status", "original", 1},
-		{"newer status", "newer", 0},
+		{"original status", "original", false, 1},
+		{"newer status", "newer", false, 0},
+		{"status changes during clear", "original", true, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			did := syntax.DID("did:plc:status-test")
@@ -57,7 +60,11 @@ func TestClearPlayingNowOnlyWritesOriginalStatus(t *testing.T) {
 				w.Header().Set("Content-Type", "application/json")
 				switch r.URL.Path {
 				case "/xrpc/com.atproto.repo.getRecord":
-					json.NewEncoder(w).Encode(map[string]string{"uri": uri, "cid": tc.storedCID})
+					cid := tc.storedCID
+					if tc.rejectSwap && writes.Load() > 0 {
+						cid = "newer"
+					}
+					json.NewEncoder(w).Encode(map[string]string{"uri": uri, "cid": cid})
 				case "/xrpc/com.atproto.repo.putRecord":
 					writes.Add(1)
 					var body struct {
@@ -65,6 +72,11 @@ func TestClearPlayingNowOnlyWritesOriginalStatus(t *testing.T) {
 					}
 					if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.SwapRecord != "original" {
 						t.Errorf("putRecord swapped %q, want the original CID: %v", body.SwapRecord, err)
+					}
+					if tc.rejectSwap {
+						w.WriteHeader(http.StatusBadRequest)
+						json.NewEncoder(w).Encode(map[string]string{"error": "InvalidSwap"})
+						return
 					}
 					json.NewEncoder(w).Encode(map[string]string{"uri": uri, "cid": "expired"})
 				default:
@@ -77,7 +89,14 @@ func TestClearPlayingNowOnlyWritesOriginalStatus(t *testing.T) {
 			pds.AccountDID = &did
 			service := NewPlayingNowService(database, nil, nil)
 			service.atprotoService = testStatusClient{pds}
-			if err := service.ClearPlayingNowIfCurrent(t.Context(), user.ID, "original"); err != nil {
+			err = service.ClearPlayingNowIfCurrent(t.Context(), user.ID, "original")
+			if tc.rejectSwap {
+				if err == nil || !strings.Contains(err.Error(), "InvalidSwap") {
+					t.Fatalf("first clear = %v, want InvalidSwap", err)
+				}
+				err = service.ClearPlayingNowIfCurrent(t.Context(), user.ID, "original")
+			}
+			if err != nil {
 				t.Fatal(err)
 			}
 			if got := writes.Load(); got != tc.wantWrites {
