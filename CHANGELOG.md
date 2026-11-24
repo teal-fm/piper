@@ -1,5 +1,11 @@
 # piper
 
+## 0.2.2
+
+### Patch Changes
+
+- Look up the ISRC for Spotify tracks when the currently-playing response omits it, so MusicBrainz metadata and artwork are found again. ([#103](https://github.com/teal-fm/piper/pull/103))
+
 ## 0.2.1
 
 ### Patch Changes

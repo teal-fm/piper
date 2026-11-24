@@ -464,23 +464,23 @@ func generateLocalHash(track *models.Track) string {
 	return fmt.Sprintf("sp_local_%x", hash)
 }
 
-func (s *Service) FetchCurrentTrack(userID int64) (*SpotifyTrackResponse, error) {
+func (s *Service) makeSpotifyRequest(url string, userID int64, result any) error {
 	s.mu.RLock()
 	token, exists := s.userTokens[userID]
 	s.mu.RUnlock()
 
 	if !exists || token == "" {
-		return nil, fmt.Errorf("no access token for user %d", userID)
+		return fmt.Errorf("no access token for user %d", userID)
 	}
 
-	req, rErr := http.NewRequest("GET", "https://api.spotify.com/v1/me/player/currently-playing", nil)
-	if rErr != nil {
-		return nil, rErr
+	req, err := http.NewRequest("GET", url, nil)
+
+	if err != nil {
+		return err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token)
 	var resp *http.Response
-	var err error
 
 	// Retry logic: try once, if 401, refresh and try again
 	for attempt := range 2 {
@@ -489,7 +489,7 @@ func (s *Service) FetchCurrentTrack(userID int64) (*SpotifyTrackResponse, error)
 		resp, err = s.httpClient.Do(req) // Use = instead of := inside loop
 		if err != nil {
 			// Network or other client error, don't retry
-			return nil, fmt.Errorf("failed to execute spotify request on attempt %d: %w", attempt+1, err)
+			return fmt.Errorf("failed to execute spotify request on attempt %d: %w", attempt+1, err)
 		}
 		// Defer close inside the loop IF we continue, otherwise close after the loop
 		// Simplified: Always defer close, it's idempotent for nil resp.Body
@@ -502,7 +502,7 @@ func (s *Service) FetchCurrentTrack(userID int64) (*SpotifyTrackResponse, error)
 			if refreshErr != nil {
 				s.logger.Printf("Token refresh failed for user %d: %v", userID, refreshErr)
 				// No point retrying if refresh failed
-				return nil, fmt.Errorf("spotify token expired or invalid for user %d and refresh failed: %w", userID, refreshErr)
+				return fmt.Errorf("spotify token expired or invalid for user %d and refresh failed: %w", userID, refreshErr)
 			}
 			s.logger.Printf("Token refreshed for user %d, retrying request...", userID)
 			token = newAccessToken                           // Update token for the next attempt
@@ -513,7 +513,9 @@ func (s *Service) FetchCurrentTrack(userID int64) (*SpotifyTrackResponse, error)
 		// If it's not 200 or 204, or if it's 401 on the second attempt, break and return error
 		if resp.StatusCode != 200 && resp.StatusCode != 204 {
 			body, _ := io.ReadAll(resp.Body)
-			return nil, fmt.Errorf("spotify API error (%d) for user %d after %d attempts: %s", resp.StatusCode, userID, attempt+1, string(body))
+			resp.Body.Close()
+
+			return fmt.Errorf("spotify API error (%d) for user %d after %d attempts: %s", resp.StatusCode, userID, attempt+1, string(body))
 		}
 
 		// If status is 200 or 204, break the loop, we have a valid response (or no content)
@@ -533,20 +535,33 @@ func (s *Service) FetchCurrentTrack(userID int64) (*SpotifyTrackResponse, error)
 	// Handle final response after loop
 	if resp == nil {
 		// This should ideally not happen if client.Do succeeded but we check defensively
-		return nil, fmt.Errorf("spotify request failed with no response after retries")
+		return fmt.Errorf("spotify request failed with no response after retries")
 	}
+
 	if resp.StatusCode == 204 {
-		return nil, nil // Nothing playing
+		return nil // Nothing playing
 	}
 
 	// Read body now that we know it's a successful 200
 	bodyBytes, err := io.ReadAll(resp.Body) // Read the already fetched successful response body
+
 	if err != nil {
-		return nil, fmt.Errorf("failed to read successful spotify response body: %w", err)
+		return fmt.Errorf("failed to read successful spotify response body: %w", err)
 	}
 
+	err = json.Unmarshal(bodyBytes, result) // Use bodyBytes here
+
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal spotify response: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Service) FetchCurrentTrack(userID int64) (*SpotifyTrackResponse, error) {
 	var response struct {
 		Item struct {
+			ID      string `json:"id"`
 			Name    string `json:"name"`
 			Artists []struct {
 				Name string `json:"name"`
@@ -567,9 +582,8 @@ func (s *Service) FetchCurrentTrack(userID int64) (*SpotifyTrackResponse, error)
 		IsPlaying  bool `json:"is_playing"`
 	}
 
-	err = json.Unmarshal(bodyBytes, &response) // Use bodyBytes here
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal spotify response: %w", err)
+	if err := s.makeSpotifyRequest("https://api.spotify.com/v1/me/player/currently-playing", userID, &response); err != nil {
+		return nil, err
 	}
 
 	var artists []models.Artist
@@ -585,6 +599,17 @@ func (s *Service) FetchCurrentTrack(userID int64) (*SpotifyTrackResponse, error)
 		return &SpotifyTrackResponse{Track: nil, IsPlaying: response.IsPlaying}, nil
 	}
 
+	isrc := response.Item.ExternalIDs.ISRC
+
+	// Local files have no Spotify ID, so there is nothing to look up.
+	if isrc == "" && response.Item.ID != "" {
+		isrc = s.cachedISRC(userID, response.Item.ExternalURLs.Spotify)
+
+		if isrc == "" {
+			isrc = s.getTrackISRC(response.Item.ID, userID)
+		}
+	}
+
 	// assemble Track
 	track := &models.Track{
 		Name:           response.Item.Name,
@@ -594,7 +619,7 @@ func (s *Service) FetchCurrentTrack(userID int64) (*SpotifyTrackResponse, error)
 		DurationMs:     int64(response.Item.DurationMs),
 		ProgressMs:     int64(response.ProgressMS),
 		ServiceBaseUrl: "open.spotify.com",
-		ISRC:           response.Item.ExternalIDs.ISRC,
+		ISRC:           isrc,
 		HasStamped:     false,
 		Timestamp:      time.Now().UTC(),
 	}
@@ -613,6 +638,36 @@ func getFirstArtist(track *models.Track) string {
 		return track.Artist[0].Name
 	}
 	return "Unknown Artist"
+}
+
+// cachedISRC returns the ISRC already resolved for the user's current track,
+// so the catalog lookup runs once per track instead of on every poll.
+func (s *Service) cachedISRC(userID int64, url string) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if state := s.userPlayStates[userID]; state != nil && state.track != nil && state.track.URL == url {
+		return state.track.ISRC
+	}
+
+	return ""
+}
+
+// getTrackISRC looks up a track's ISRC from the catalog. A failed lookup is
+// logged and returns "" so it doesn't fail the whole poll.
+func (s *Service) getTrackISRC(id string, userID int64) string {
+	var response struct {
+		ExternalIDs struct {
+			ISRC string `json:"isrc"`
+		} `json:"external_ids"`
+	}
+
+	if err := s.makeSpotifyRequest("https://api.spotify.com/v1/tracks/"+id, userID, &response); err != nil {
+		s.logger.Printf("Could not look up ISRC for track %s for user %d: %v", id, userID, err)
+		return ""
+	}
+
+	return response.ExternalIDs.ISRC
 }
 
 // computeStateUpdate holds the lock, updates user play state based on the

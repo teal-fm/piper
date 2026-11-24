@@ -430,7 +430,6 @@ func HydrateTrack(mb *Service, track models.Track) (*models.Track, error) {
 			Track:   track.Name,
 			Artist:  strings.Join(artistArray, ", "),
 			Release: track.Album,
-			ISRC:    track.ISRC,
 		}
 		fullRes, err := mb.SearchMusicBrainz(ctx, params)
 		if err != nil {
