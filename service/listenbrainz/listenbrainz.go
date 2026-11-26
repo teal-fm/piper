@@ -303,6 +303,35 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 		return *listens[i].ListenedAt < *listens[j].ListenedAt
 	})
 
+	// Reserve pre-upgrade keys for explicit listens before matching inferred ones.
+	submittedKeys := make(map[string]struct{})
+	mappedKeys := make(map[string]struct{})
+	inferredMSIDs := make(map[string]string)
+	for i := range listens {
+		listen := &listens[i]
+		if listen.ListenedAt == nil {
+			continue
+		}
+		id := submittedRecordingID(listen)
+		if id == "" {
+			if listen.RecordingMSID != "" {
+				group := listenIdentity(listen, "")
+				if previous, exists := inferredMSIDs[group]; !exists {
+					inferredMSIDs[group] = listen.RecordingMSID
+				} else if previous != listen.RecordingMSID {
+					// Distinct MSIDs share this pre-upgrade group.
+					inferredMSIDs[group] = ""
+				}
+			}
+			continue
+		}
+		submittedKeys[listenIdentity(listen, id)] = struct{}{}
+		info, mapping := listen.TrackMetadata.AdditionalInfo, listen.TrackMetadata.MBIDMapping
+		if info != nil && info.RecordingMSID != nil && *info.RecordingMSID == "" && mapping != nil && mapping.RecordingMBID != "" {
+			mappedKeys[listenIdentity(listen, mapping.RecordingMBID)] = struct{}{}
+		}
+	}
+
 	var newest time.Time
 	for i := range listens {
 		listen := &listens[i]
@@ -319,6 +348,14 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 			newest = track.Timestamp
 		}
 
+		exists, err := s.hasImportedListen(user.ID, listen, &track, sourceIdentity, submittedKeys, mappedKeys, inferredMSIDs)
+		if err != nil {
+			return err
+		}
+		if exists {
+			continue
+		}
+
 		if track.RecordingMBID == nil && s.hydrateTrack != nil {
 			hydrated, err := s.hydrateTrack(track)
 			if err != nil {
@@ -329,13 +366,6 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 		}
 
 		s.enrichTrack(ctx, &track)
-		exists, err := s.db.HasListenBrainzTrack(user.ID, sourceIdentity)
-		if err != nil {
-			return err
-		}
-		if exists {
-			continue
-		}
 		trackID, err := s.db.SaveListenBrainzTrack(user.ID, sourceIdentity, &track)
 		if err != nil {
 			return fmt.Errorf("saving %s by %s: %w", track.Name, track.Artist[0].Name, err)
@@ -356,6 +386,86 @@ func (s *Service) syncListens(ctx context.Context, user *models.User) error {
 }
 
 func listenSourceIdentity(listen *models.ListenBrainzPayload) string {
+	recording := listen.RecordingMSID
+	if recording == "" {
+		recording = submittedRecordingID(listen)
+	}
+	return "v2:" + listenIdentity(listen, recording)
+}
+
+func (s *Service) hasImportedListen(userID int64, listen *models.ListenBrainzPayload, track *models.Track, key string, submittedKeys, mappedKeys map[string]struct{}, inferredMSIDs map[string]string) (bool, error) {
+	submittedID := submittedRecordingID(listen)
+	emptyKey := listenIdentity(listen, "")
+	if msid, grouped := inferredMSIDs[emptyKey]; submittedID == "" && listen.RecordingMSID != "" && grouped && msid == "" {
+		// An older inferred key can't identify which of these source records
+		// was imported. Use the source keys and leave the old row alone.
+		return s.db.HasListenBrainzTrack(userID, key, "", "")
+	}
+	legacySubmittedID := submittedID
+	// Older builds let an empty MSID override the submitted recording MBID.
+	if info := listen.TrackMetadata.AdditionalInfo; info != nil && info.RecordingMSID != nil {
+		legacySubmittedID = *info.RecordingMSID
+	}
+	legacyKey := listenIdentity(listen, legacySubmittedID)
+	if mapping := listen.TrackMetadata.MBIDMapping; legacySubmittedID == "" && mapping != nil {
+		legacyKey = listenIdentity(listen, mapping.RecordingMBID)
+		_, reservedSubmitted := submittedKeys[legacyKey]
+		_, reservedMapping := mappedKeys[legacyKey]
+		if reservedSubmitted || (reservedMapping && submittedID == "") {
+			legacyKey = ""
+		}
+	}
+	if submittedID != "" && legacyKey == emptyKey {
+		legacyKey = ""
+	}
+	exists, err := s.db.HasListenBrainzTrack(userID, key, listenIdentity(listen, submittedID), legacyKey)
+	if err != nil || exists {
+		return exists, err
+	}
+	if legacySubmittedID != "" {
+		return false, nil
+	}
+
+	// A legacy key may contain a mapping that has changed since import. Only
+	// reuse it when the stored recording reconstructs the exact source key.
+	legacy, err := s.db.ListenBrainzLegacyIdentities(userID, track)
+	if err != nil {
+		return false, err
+	}
+	for _, identity := range legacy {
+		if _, reserved := submittedKeys[identity.Key]; reserved {
+			continue
+		}
+		if _, reserved := mappedKeys[identity.Key]; reserved {
+			continue
+		}
+		// An empty key alone doesn't identify a submitted recording.
+		if identity.Key == emptyKey && submittedID != "" {
+			if identity.RecordingMBID == submittedID {
+				return true, nil
+			}
+			continue
+		}
+		if identity.Key == listenIdentity(listen, identity.RecordingMBID) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func submittedRecordingID(listen *models.ListenBrainzPayload) string {
+	if info := listen.TrackMetadata.AdditionalInfo; info != nil {
+		if info.RecordingMSID != nil && *info.RecordingMSID != "" {
+			return *info.RecordingMSID
+		}
+		if info.RecordingMBID != nil {
+			return *info.RecordingMBID
+		}
+	}
+	return ""
+}
+
+func listenIdentity(listen *models.ListenBrainzPayload, recording string) string {
 	timestamp := int64(0)
 	if listen.ListenedAt != nil {
 		timestamp = *listen.ListenedAt
@@ -363,17 +473,6 @@ func listenSourceIdentity(listen *models.ListenBrainzPayload) string {
 	release := ""
 	if listen.TrackMetadata.ReleaseName != nil {
 		release = *listen.TrackMetadata.ReleaseName
-	}
-	recording := ""
-	if info := listen.TrackMetadata.AdditionalInfo; info != nil {
-		if info.RecordingMSID != nil {
-			recording = *info.RecordingMSID
-		} else if info.RecordingMBID != nil {
-			recording = *info.RecordingMBID
-		}
-	}
-	if recording == "" && listen.TrackMetadata.MBIDMapping != nil {
-		recording = listen.TrackMetadata.MBIDMapping.RecordingMBID
 	}
 	identity := fmt.Sprintf("%d\x00%s\x00%s\x00%s\x00%s", timestamp, listen.TrackMetadata.ArtistName, listen.TrackMetadata.TrackName, release, recording)
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(identity)))

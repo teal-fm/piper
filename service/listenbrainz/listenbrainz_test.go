@@ -209,6 +209,317 @@ func TestSyncListensIncludesLatestSecond(t *testing.T) {
 	}
 }
 
+func TestSyncListensDeduplicatesWhenMappingChanges(t *testing.T) {
+	database := testDatabase(t)
+	user := linkedUser(t, database, "listener", "secret")
+	listenedAt := int64(200)
+	listen := models.ListenBrainzPayload{ListenedAt: &listenedAt, TrackMetadata: models.ListenBrainzTrackMetadata{
+		TrackName: "Song", ArtistName: "Artist",
+	}}
+	mappings := []*models.ListenBrainzMBIDMapping{
+		nil, {RecordingMBID: "first-mapping"}, {RecordingMBID: "updated-mapping"}, nil,
+	}
+	request := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if request >= len(mappings) {
+			t.Error("unexpected additional ListenBrainz request")
+			http.Error(w, "no fixture response left", http.StatusBadRequest)
+			return
+		}
+		if request > 0 && r.URL.Query().Get("min_ts") != "199" {
+			t.Errorf("min_ts = %q, want 199", r.URL.Query().Get("min_ts"))
+		}
+		listen.TrackMetadata.MBIDMapping = mappings[request]
+		request++
+		json.NewEncoder(w).Encode(map[string]any{"payload": map[string]any{"listens": []models.ListenBrainzPayload{listen}}})
+	}))
+	defer server.Close()
+
+	hydrations := 0
+	for range mappings {
+		service := testService(database, server, nil)
+		service.hydrateTrack = func(models.Track) (*models.Track, error) {
+			hydrations++
+			return nil, nil
+		}
+		if err := service.syncListens(context.Background(), user); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		user, err = database.GetUserByID(user.ID)
+		if err != nil || user == nil || user.ListenBrainzSyncedAt == nil {
+			t.Fatalf("sync cursor was not saved: %v", err)
+		}
+	}
+	assertListenAndSubmissionCounts(t, database, user.ID, 1)
+	if hydrations != 1 {
+		t.Fatalf("hydrated %d times, want one attempt for the initial import", hydrations)
+	}
+}
+
+func TestSyncListensRecognizesLegacyMappedIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		name, mapping, artist string
+		emptyMSID             bool
+		want                  int
+	}{
+		{"unchanged mapping", "legacy-mapped", "Artist", false, 1},
+		{"changed mapping", "new-mapping", "Artist", false, 1},
+		{"changed mapping with empty MSID", "new-mapping", "Artist", true, 1},
+		{"removed mapping", "", "Artist", false, 1},
+		{"different submitted artist", "new-mapping", "Other Artist", false, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			database := testDatabase(t)
+			user := linkedUser(t, database, "listener", "secret")
+			listenedAt := int64(200)
+			release := "Album"
+			listen := models.ListenBrainzPayload{ListenedAt: &listenedAt, TrackMetadata: models.ListenBrainzTrackMetadata{
+				TrackName: "Song", ArtistName: "Artist", ReleaseName: &release,
+				MBIDMapping: &models.ListenBrainzMBIDMapping{RecordingMBID: "legacy-mapped"},
+			}}
+			if tc.emptyMSID {
+				msid, mbid := "", "submitted"
+				listen.TrackMetadata.AdditionalInfo = &models.ListenBrainzAdditionalInfo{RecordingMSID: &msid, RecordingMBID: &mbid}
+			}
+			// This is the key written by Piper v0.2.1 for the above payload.
+			const previousKey = "ddf05968b2273bb47d614223dda91bf3afc01ed86ddbb8f1e726096499096989"
+			track := syncedTrack(&listen)
+			if _, err := database.SaveListenBrainzTrack(user.ID, previousKey, &track); err != nil {
+				t.Fatal(err)
+			}
+			if err := database.SaveListenBrainzSyncTimestamp(user.ID, track.Timestamp); err != nil {
+				t.Fatal(err)
+			}
+			user, err := database.GetUserByID(user.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			listen.TrackMetadata.ArtistName = tc.artist
+			listen.TrackMetadata.MBIDMapping = nil
+			if tc.mapping != "" {
+				listen.TrackMetadata.MBIDMapping = &models.ListenBrainzMBIDMapping{RecordingMBID: tc.mapping}
+			}
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				json.NewEncoder(w).Encode(map[string]any{"payload": map[string]any{"listens": []models.ListenBrainzPayload{listen}}})
+			}))
+			defer server.Close()
+			if err := testService(database, server, nil).syncListens(context.Background(), user); err != nil {
+				t.Fatal(err)
+			}
+			assertListenAndSubmissionCounts(t, database, user.ID, tc.want)
+		})
+	}
+}
+
+func TestSyncListensKeepsDistinctSubmittedIDsInSameSecond(t *testing.T) {
+	database := testDatabase(t)
+	user := linkedUser(t, database, "listener", "secret")
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"payload":{"listens":[
+			{"listened_at":200,"track_metadata":{"track_name":"Song","artist_name":"Artist","additional_info":{"recording_msid":"first"},"mbid_mapping":{"recording_mbid":"same-mapping"}}},
+			{"listened_at":200,"track_metadata":{"track_name":"Song","artist_name":"Artist","additional_info":{"recording_msid":"second"},"mbid_mapping":{"recording_mbid":"same-mapping"}}}
+		]}}`))
+	}))
+	defer server.Close()
+	service := testService(database, server, nil)
+	for range 2 {
+		if err := service.syncListens(context.Background(), user); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertListenAndSubmissionCounts(t, database, user.ID, 2)
+}
+
+func TestSyncListensReservesLegacyKeysForExactMatches(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		mappedLegacy  bool
+		reverse       bool
+		sharedMapping bool
+	}{
+		{name: "submitted first"},
+		{name: "inferred first", reverse: true},
+		{name: "legacy mapping, submitted first", mappedLegacy: true},
+		{name: "legacy mapping, inferred first", mappedLegacy: true, reverse: true},
+		{name: "shared mapping, inferred first", mappedLegacy: true, reverse: true, sharedMapping: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			database := testDatabase(t)
+			user := linkedUser(t, database, "listener", "secret")
+			timestamp, submitted := int64(200), "submitted-recording"
+			explicit := models.ListenBrainzPayload{
+				ListenedAt: &timestamp,
+				TrackMetadata: models.ListenBrainzTrackMetadata{
+					TrackName: "Song", ArtistName: "Artist",
+					AdditionalInfo: &models.ListenBrainzAdditionalInfo{RecordingMBID: &submitted},
+				},
+			}
+			mapped := explicit
+			mapped.TrackMetadata.AdditionalInfo = nil
+			mapped.TrackMetadata.MBIDMapping = &models.ListenBrainzMBIDMapping{RecordingMBID: "mapped-recording"}
+			legacyRecording := submitted
+			if tc.mappedLegacy {
+				empty := ""
+				explicit.TrackMetadata.AdditionalInfo.RecordingMSID = &empty
+				legacyRecording = "legacy-mapping"
+				explicit.TrackMetadata.MBIDMapping = &models.ListenBrainzMBIDMapping{RecordingMBID: legacyRecording}
+				if tc.sharedMapping {
+					mapped.TrackMetadata.MBIDMapping.RecordingMBID = legacyRecording
+				}
+			}
+			track := syncedTrack(&explicit)
+			if _, err := database.SaveListenBrainzTrack(user.ID, listenIdentity(&explicit, legacyRecording), &track); err != nil {
+				t.Fatal(err)
+			}
+			listens := []models.ListenBrainzPayload{explicit, mapped}
+			if tc.reverse {
+				listens[0], listens[1] = listens[1], listens[0]
+			}
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				json.NewEncoder(w).Encode(map[string]any{"payload": map[string]any{"listens": listens}})
+			}))
+			defer server.Close()
+			service := testService(database, server, nil)
+			for range 2 {
+				if err := service.syncListens(context.Background(), user); err != nil {
+					t.Fatal(err)
+				}
+			}
+			assertListenAndSubmissionCounts(t, database, user.ID, 2)
+		})
+	}
+}
+
+func TestSyncListensKeepsDistinctTopLevelMSIDs(t *testing.T) {
+	database := testDatabase(t)
+	user := linkedUser(t, database, "listener", "secret")
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"payload":{"listens":[
+			{"listened_at":200,"recording_msid":"first","track_metadata":{"track_name":"Song","artist_name":"Artist"}},
+			{"listened_at":200,"recording_msid":"second","track_metadata":{"track_name":"Song","artist_name":"Artist"}}
+		]}}`))
+	}))
+	defer server.Close()
+	service := testService(database, server, nil)
+	for range 2 {
+		if err := service.syncListens(context.Background(), user); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertListenAndSubmissionCounts(t, database, user.ID, 2)
+}
+
+func TestSyncListensKeepsDistinctMSIDsAtLegacyBoundary(t *testing.T) {
+	database := testDatabase(t)
+	user := linkedUser(t, database, "listener", "secret")
+	timestamp := int64(200)
+	legacy := models.ListenBrainzPayload{
+		ListenedAt: &timestamp,
+		TrackMetadata: models.ListenBrainzTrackMetadata{
+			TrackName: "Song", ArtistName: "Artist",
+			MBIDMapping: &models.ListenBrainzMBIDMapping{RecordingMBID: "same-mapping"},
+		},
+	}
+	track := syncedTrack(&legacy)
+	if _, err := database.SaveListenBrainzTrack(user.ID, listenIdentity(&legacy, "same-mapping"), &track); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"payload":{"listens":[
+			{"listened_at":200,"recording_msid":"first","track_metadata":{"track_name":"Song","artist_name":"Artist","additional_info":{"duration_ms":180000},"mbid_mapping":{"recording_mbid":"same-mapping"}}},
+			{"listened_at":200,"recording_msid":"second","track_metadata":{"track_name":"Song","artist_name":"Artist","additional_info":{"duration_ms":181000},"mbid_mapping":{"recording_mbid":"same-mapping"}}}
+		]}}`))
+	}))
+	defer server.Close()
+	service := testService(database, server, nil)
+	for range 2 {
+		if err := service.syncListens(context.Background(), user); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The legacy row does not say which MSID it came from. Keep it and import
+	// both source records so that neither distinct listen disappears.
+	assertListenAndSubmissionCounts(t, database, user.ID, 3)
+}
+
+func TestSyncListensRecoversLegacyEmptyRecording(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		submitted string
+		mapping   string
+		want      int
+	}{
+		{name: "mapping appears", submitted: "original-recording", mapping: "new-mapping", want: 1},
+		{name: "different submitted recording", submitted: "different-recording", want: 2},
+		{name: "different submitted recording with mapping", submitted: "different-recording", mapping: "new-mapping", want: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			database := testDatabase(t)
+			user := linkedUser(t, database, "listener", "secret")
+			timestamp, empty, original := int64(200), "", "original-recording"
+			listen := models.ListenBrainzPayload{
+				ListenedAt: &timestamp,
+				TrackMetadata: models.ListenBrainzTrackMetadata{
+					TrackName: "Song", ArtistName: "Artist",
+					AdditionalInfo: &models.ListenBrainzAdditionalInfo{RecordingMSID: &empty, RecordingMBID: &original},
+				},
+			}
+			track := syncedTrack(&listen)
+			if _, err := database.SaveListenBrainzTrack(user.ID, listenIdentity(&listen, ""), &track); err != nil {
+				t.Fatal(err)
+			}
+			listen.TrackMetadata.AdditionalInfo.RecordingMBID = &tc.submitted
+			if tc.mapping != "" {
+				listen.TrackMetadata.MBIDMapping = &models.ListenBrainzMBIDMapping{RecordingMBID: tc.mapping}
+			}
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				json.NewEncoder(w).Encode(map[string]any{"payload": map[string]any{"listens": []models.ListenBrainzPayload{listen}}})
+			}))
+			defer server.Close()
+			service := testService(database, server, nil)
+			for range 2 {
+				if err := service.syncListens(context.Background(), user); err != nil {
+					t.Fatal(err)
+				}
+			}
+			assertListenAndSubmissionCounts(t, database, user.ID, tc.want)
+		})
+	}
+}
+
+func TestSyncListensUsesRecordingMBIDWhenMSIDIsEmpty(t *testing.T) {
+	database := testDatabase(t)
+	user := linkedUser(t, database, "listener", "secret")
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"payload":{"listens":[
+			{"listened_at":200,"track_metadata":{"track_name":"Song","artist_name":"Artist","additional_info":{"recording_msid":"","recording_mbid":"first"},"mbid_mapping":{"recording_mbid":"mapped-first"}}},
+			{"listened_at":200,"track_metadata":{"track_name":"Song","artist_name":"Artist","additional_info":{"recording_msid":"","recording_mbid":"second"},"mbid_mapping":{"recording_mbid":"mapped-second"}}}
+		]}}`))
+	}))
+	defer server.Close()
+	service := testService(database, server, nil)
+	for range 2 {
+		if err := service.syncListens(context.Background(), user); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertListenAndSubmissionCounts(t, database, user.ID, 2)
+}
+
+func assertListenAndSubmissionCounts(t *testing.T, database *db.DB, userID int64, want int) {
+	t.Helper()
+	tracks, err := database.GetRecentTracks(userID, 10)
+	if err != nil || len(tracks) != want {
+		t.Fatalf("stored %d listens, want %d, error %v", len(tracks), want, err)
+	}
+	submissions, err := database.ListUnpublishedPlays(userID, 10, 0)
+	if err != nil || len(submissions) != want {
+		t.Fatalf("queued %d plays, want %d, error %v", len(submissions), want, err)
+	}
+}
+
 func TestSyncListensDeduplicatesWhenHydrationChanges(t *testing.T) {
 	database := testDatabase(t)
 	user := linkedUser(t, database, "retry", "secret")
