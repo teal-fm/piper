@@ -1,5 +1,13 @@
 # piper
 
+## 0.2.3
+
+### Patch Changes
+
+- Retry clearing ListenBrainz now-playing status when a temporary failure leaves it visible. ([#106](https://github.com/teal-fm/piper/pull/106))
+
+- Keep ListenBrainz imports from duplicating a listen when its inferred MusicBrainz recording changes. ([#107](https://github.com/teal-fm/piper/pull/107))
+
 ## 0.2.2
 
 ### Patch Changes
