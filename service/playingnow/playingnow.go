@@ -21,10 +21,14 @@ import (
 	"github.com/teal-fm/piper/service/musicbrainz"
 )
 
+type atprotoClientProvider interface {
+	GetATProtoClient(accountDID, sessionID string, ctx context.Context) (*client.APIClient, error)
+}
+
 // Service handles publishing current playing status to ATProto
 type Service struct {
 	db             *db.DB
-	atprotoService *atprotoauth.AuthService
+	atprotoService atprotoClientProvider
 	logger         *log.Logger
 	mu             sync.RWMutex
 	mb             *musicbrainz.Service
@@ -46,22 +50,28 @@ func NewPlayingNowService(database *db.DB, atprotoService *atprotoauth.AuthServi
 
 // PublishPlayingNow publishes a currently playing track as actor status
 func (p *Service) PublishPlayingNow(ctx context.Context, userID int64, track *models.Track) error {
+	_, err := p.PublishPlayingNowWithCID(ctx, userID, track)
+	return err
+}
+
+// PublishPlayingNowWithCID returns the record identity for an ownership-checked clear.
+func (p *Service) PublishPlayingNowWithCID(ctx context.Context, userID int64, track *models.Track) (string, error) {
 	// Get user information to find their DID
 	user, err := p.db.GetUserByID(userID)
 	if err != nil {
-		return fmt.Errorf("failed to get user: %w", err)
+		return "", fmt.Errorf("failed to get user: %w", err)
 	}
 	if user == nil {
-		return fmt.Errorf("user not found user ID: %d", userID)
+		return "", fmt.Errorf("user not found user ID: %d", userID)
 	}
 
 	if user.ATProtoDID == nil {
 		p.logger.Printf("User %d has no ATProto DID, skipping playing now", userID)
-		return nil
+		return "", nil
 	}
 	if user.MostRecentAtProtoSessionID == nil || *user.MostRecentAtProtoSessionID == "" {
 		p.logger.Printf("User %d has no ATProto session, skipping playing now", userID)
-		return nil
+		return "", nil
 	}
 
 	did := *user.ATProtoDID
@@ -69,7 +79,7 @@ func (p *Service) PublishPlayingNow(ctx context.Context, userID int64, track *mo
 	// Get ATProto atProtoClient
 	atProtoClient, err := p.atprotoService.GetATProtoClient(did, *user.MostRecentAtProtoSessionID, ctx)
 	if err != nil || atProtoClient == nil {
-		return fmt.Errorf("failed to get ATProto atProtoClient: %w", err)
+		return "", fmt.Errorf("failed to get ATProto atProtoClient: %w", err)
 	}
 
 	if p.mb != nil && track.RecordingMBID == nil {
@@ -85,7 +95,7 @@ func (p *Service) PublishPlayingNow(ctx context.Context, userID int64, track *mo
 	// Convert track to PlayView format
 	playView, err := p.trackToPlayView(track)
 	if err != nil {
-		return fmt.Errorf("failed to convert track to PlayView: %w", err)
+		return "", fmt.Errorf("failed to convert track to PlayView: %w", err)
 	}
 
 	// Create actor status record
@@ -102,7 +112,7 @@ func (p *Service) PublishPlayingNow(ctx context.Context, userID int64, track *mo
 	var swapRecord *comatproto.RepoGetRecord_Output
 	swapRecord, err = p.getStatusSwapRecord(ctx, atProtoClient)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	var swapCid *string
@@ -122,9 +132,10 @@ func (p *Service) PublishPlayingNow(ctx context.Context, userID int64, track *mo
 	}
 
 	// Submit to PDS
-	if _, err := comatproto.RepoPutRecord(ctx, atProtoClient, &input); err != nil {
+	result, err := comatproto.RepoPutRecord(ctx, atProtoClient, &input)
+	if err != nil {
 		p.logger.Printf("Error creating playing now status for DID %s: %v", did, err)
-		return fmt.Errorf("failed to create playing now status for DID %s: %w", did, err)
+		return "", fmt.Errorf("failed to create playing now status for DID %s: %w", did, err)
 	}
 
 	// Removes the cleared marker since there is a song playing. The publish playing state is kept in the services from
@@ -133,17 +144,29 @@ func (p *Service) PublishPlayingNow(ctx context.Context, userID int64, track *mo
 	delete(p.clearedStatus, userID)
 	p.mu.Unlock()
 
-	return nil
+	return result.Cid, nil
 }
 
 // ClearPlayingNow removes the current playing status by setting an expired status
 func (p *Service) ClearPlayingNow(ctx context.Context, userID int64) error {
+	return p.clearPlayingNow(ctx, userID, "")
+}
+
+// ClearPlayingNowIfCurrent clears only the record published with expectedCID.
+func (p *Service) ClearPlayingNowIfCurrent(ctx context.Context, userID int64, expectedCID string) error {
+	if expectedCID == "" {
+		return nil
+	}
+	return p.clearPlayingNow(ctx, userID, expectedCID)
+}
+
+func (p *Service) clearPlayingNow(ctx context.Context, userID int64, expectedCID string) error {
 	// Check if status is already cleared to avoid clearing on the users repo over and over
 	p.mu.RLock()
 	alreadyCleared := p.clearedStatus[userID]
 	p.mu.RUnlock()
 
-	if alreadyCleared {
+	if expectedCID == "" && alreadyCleared {
 		return nil
 	}
 
@@ -203,6 +226,10 @@ func (p *Service) ClearPlayingNow(ctx context.Context, userID int64) error {
 		swapCid = swapRecord.Cid
 	}
 
+	if expectedCID != "" && (swapCid == nil || *swapCid != expectedCID) {
+		return nil
+	}
+
 	// Update the record
 	input := comatproto.RepoPutRecord_Input{
 		Collection: "fm.teal.actor.status",
@@ -220,9 +247,11 @@ func (p *Service) ClearPlayingNow(ctx context.Context, userID int64) error {
 	p.logger.Printf("Successfully cleared playing now status for user %d (DID: %s)", userID, did)
 
 	// Mark status as cleared so we don't clear again until user starts playing a song again
-	p.mu.Lock()
-	p.clearedStatus[userID] = true
-	p.mu.Unlock()
+	if expectedCID == "" {
+		p.mu.Lock()
+		p.clearedStatus[userID] = true
+		p.mu.Unlock()
+	}
 
 	return nil
 }

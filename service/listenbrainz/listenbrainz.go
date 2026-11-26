@@ -32,8 +32,13 @@ const (
 )
 
 type playingNowPublisher interface {
-	PublishPlayingNow(ctx context.Context, userID int64, track *models.Track) error
-	ClearPlayingNow(ctx context.Context, userID int64) error
+	PublishPlayingNowWithCID(ctx context.Context, userID int64, track *models.Track) (string, error)
+	ClearPlayingNowIfCurrent(ctx context.Context, userID int64, expectedCID string) error
+}
+
+type playingNowPublication struct {
+	signature string
+	cid       string
 }
 
 type Service struct {
@@ -48,7 +53,7 @@ type Service struct {
 	playingNowService  playingNowPublisher
 
 	mu                 sync.Mutex
-	lastSeenNowPlaying map[int64]string
+	lastSeenNowPlaying map[int64]playingNowPublication
 	logger             *log.Logger
 }
 
@@ -93,7 +98,7 @@ func NewService(database *db.DB, apiURL, userAgent string, musicBrainzService *m
 		musicBrainzService: musicBrainzService,
 		atprotoService:     atprotoService,
 		playingNowService:  playingNowService,
-		lastSeenNowPlaying: make(map[int64]string),
+		lastSeenNowPlaying: make(map[int64]playingNowPublication),
 		logger:             log.New(os.Stdout, "listenbrainz: ", log.LstdFlags|log.Lmsgprefix),
 	}
 	if musicBrainzService != nil {
@@ -184,6 +189,9 @@ func (s *Service) UnloadUser(userID int64) {
 }
 
 func (s *Service) syncPlayingNow(ctx context.Context, user *models.User) error {
+	if s.playingNowService == nil {
+		return nil
+	}
 	path := "/1/user/" + url.PathEscape(*user.ListenBrainzUsername) + "/playing-now"
 	var response listensResponse
 	if err := s.getJSON(ctx, path, *user.ListenBrainzToken, nil, &response); err != nil {
@@ -192,14 +200,25 @@ func (s *Service) syncPlayingNow(ctx context.Context, user *models.User) error {
 
 	if len(response.Payload.Listens) == 0 {
 		s.mu.Lock()
-		_, published := s.lastSeenNowPlaying[user.ID]
-		delete(s.lastSeenNowPlaying, user.ID)
+		publication, published := s.lastSeenNowPlaying[user.ID]
 		s.mu.Unlock()
-		if published && s.playingNowService != nil {
-			if err := s.playingNowService.ClearPlayingNow(ctx, user.ID); err != nil {
-				return fmt.Errorf("clearing playing-now listen for %s: %w", *user.ListenBrainzUsername, err)
-			}
+		if !published {
+			return nil
 		}
+		if err := s.playingNowService.ClearPlayingNowIfCurrent(ctx, user.ID, publication.cid); err != nil {
+			s.mu.Lock()
+			if s.lastSeenNowPlaying[user.ID] == publication {
+				// Retry the clear on an empty poll and republish if the song resumes.
+				s.lastSeenNowPlaying[user.ID] = playingNowPublication{cid: publication.cid}
+			}
+			s.mu.Unlock()
+			return fmt.Errorf("clearing playing-now listen for %s: %w", *user.ListenBrainzUsername, err)
+		}
+		s.mu.Lock()
+		if s.lastSeenNowPlaying[user.ID] == publication {
+			delete(s.lastSeenNowPlaying, user.ID)
+		}
+		s.mu.Unlock()
 		return nil
 	}
 
@@ -209,20 +228,18 @@ func (s *Service) syncPlayingNow(ctx context.Context, user *models.User) error {
 	signature := nowPlayingSignature(&track)
 
 	s.mu.Lock()
-	unchanged := s.lastSeenNowPlaying[user.ID] == signature
-	if !unchanged {
-		s.lastSeenNowPlaying[user.ID] = signature
-	}
+	unchanged := s.lastSeenNowPlaying[user.ID].signature == signature
 	s.mu.Unlock()
-	if unchanged || s.playingNowService == nil {
+	if unchanged {
 		return nil
 	}
-	if err := s.playingNowService.PublishPlayingNow(ctx, user.ID, &track); err != nil {
-		s.mu.Lock()
-		delete(s.lastSeenNowPlaying, user.ID)
-		s.mu.Unlock()
+	cid, err := s.playingNowService.PublishPlayingNowWithCID(ctx, user.ID, &track)
+	if err != nil {
 		return fmt.Errorf("publishing playing-now listen for %s: %w", *user.ListenBrainzUsername, err)
 	}
+	s.mu.Lock()
+	s.lastSeenNowPlaying[user.ID] = playingNowPublication{signature: signature, cid: cid}
+	s.mu.Unlock()
 	return nil
 }
 

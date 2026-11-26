@@ -2,14 +2,109 @@ package playingnow
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/bluesky-social/indigo/atproto/client"
+	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/teal-fm/piper/db"
 	"github.com/teal-fm/piper/models"
 )
+
+type testStatusClient struct {
+	client *client.APIClient
+}
+
+func (p testStatusClient) GetATProtoClient(_ string, _ string, _ context.Context) (*client.APIClient, error) {
+	return p.client, nil
+}
+
+func TestClearPlayingNowOnlyWritesOriginalStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name, storedCID string
+		rejectSwap      bool
+		wantWrites      int32
+	}{
+		{"original status", "original", false, 1},
+		{"newer status", "newer", false, 0},
+		{"status changes during clear", "original", true, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			did := syntax.DID("did:plc:status-test")
+			const uri = "at://did:plc:status-test/fm.teal.actor.status/self"
+			database, err := db.New(":memory:")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer database.Close()
+			if err := database.Initialize(); err != nil {
+				t.Fatal(err)
+			}
+			user, err := database.FindOrCreateUserByDID(did.String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := database.SetLatestATProtoSessionId(did.String(), "fixture"); err != nil {
+				t.Fatal(err)
+			}
+
+			var writes atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/xrpc/com.atproto.repo.getRecord":
+					cid := tc.storedCID
+					if tc.rejectSwap && writes.Load() > 0 {
+						cid = "newer"
+					}
+					json.NewEncoder(w).Encode(map[string]string{"uri": uri, "cid": cid})
+				case "/xrpc/com.atproto.repo.putRecord":
+					writes.Add(1)
+					var body struct {
+						SwapRecord string `json:"swapRecord"`
+					}
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.SwapRecord != "original" {
+						t.Errorf("putRecord swapped %q, want the original CID: %v", body.SwapRecord, err)
+					}
+					if tc.rejectSwap {
+						w.WriteHeader(http.StatusBadRequest)
+						json.NewEncoder(w).Encode(map[string]string{"error": "InvalidSwap"})
+						return
+					}
+					json.NewEncoder(w).Encode(map[string]string{"uri": uri, "cid": "expired"})
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+
+			pds := client.NewAPIClient(server.URL)
+			pds.AccountDID = &did
+			service := NewPlayingNowService(database, nil, nil)
+			service.atprotoService = testStatusClient{pds}
+			err = service.ClearPlayingNowIfCurrent(t.Context(), user.ID, "original")
+			if tc.rejectSwap {
+				if err == nil || !strings.Contains(err.Error(), "InvalidSwap") {
+					t.Fatalf("first clear = %v, want InvalidSwap", err)
+				}
+				err = service.ClearPlayingNowIfCurrent(t.Context(), user.ID, "original")
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := writes.Load(); got != tc.wantWrites {
+				t.Fatalf("putRecord calls = %d, want %d", got, tc.wantWrites)
+			}
+		})
+	}
+}
 
 func TestPlayingNowSkipsUserWithoutATProtoSession(t *testing.T) {
 	database, err := db.New(":memory:")
